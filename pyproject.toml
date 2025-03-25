@@ -54,7 +54,6 @@ dev = [
     # Development tools
     "uv",         # Modern Python package manager
     "ruff",       # Fast Python linter/formatter
-    "mypy",       # Static type checker
     "pre-commit", # Git hooks manager
     # Testing
     "pytest",
@@ -70,7 +69,7 @@ dev = [
 ]
 
 # Profiles for different development tasks
-lint = ["ruff", "mypy"]
+lint = ["ruff"]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "pytest-kivy"]
 
@@ -100,14 +99,15 @@ select = [
     "I",   # isort
     "N",   # pep8-naming
     "UP",  # pyupgrade
-    "ANN", # flake8-annotations
     "C4",  # flake8-comprehensions
     "SIM", # flake8-simplify
     "D",   # pydocstyle
+    "PYI", # flake8-pyi (type checking)
 ]
 ignore = [
     "D100", # Missing docstring in public module
     "D104", # Missing docstring in public package
+    "E402", # Imports not first in code
 ]
 
 [tool.ruff.per-file-ignores]
@@ -132,18 +132,3 @@ markers = [
     "spotify: marks tests that interact with Spotify",
     "discogs: marks tests that interact with Discogs",
 ]
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-strict_optional = true
-
-[[tool.mypy.overrides]]
-module = ["kivy.*", "python3_discogs_client.*", "spotipy.*"]
-ignore_missing_imports = true

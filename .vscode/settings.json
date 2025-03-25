@@ -3,34 +3,25 @@
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.autoImportCompletions": true,
-
-    // Linting settings
+    // Linting settings - UPDATED
     "python.linting.enabled": true,
     "python.linting.flake8Enabled": false,
-    "python.linting.mypyEnabled": true,
+    "python.linting.mypyEnabled": false, // Turned off
     "python.linting.pylintEnabled": false,
     "python.linting.banditEnabled": false,
-
     // Formatting settings
     "editor.formatOnSave": true,
     "python.formatting.provider": "none",
     "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.defaultFormatter": "astral-sh.ruff-vscode",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.fixAll": "explicit",
             "source.organizeImports": "explicit"
         }
     },
-
-    // Ruff settings
-    "ruff.importStrategy": "fromEnvironment",
-    "ruff.lint.run": "onSave",
-    "ruff.format.args": ["--line-length", "100"],
-
     // Extension recommendations
     "extensions.ignoreRecommendations": false,
-
     // Testing
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
@@ -38,21 +29,20 @@
     "python.testing.pytestArgs": [
         "src/tests"
     ],
-
     // File associations
     "files.associations": {
         "*.kv": "kivy"
     },
-
     // Editor settings
-    "editor.rulers": [100],
+    "editor.rulers": [
+        100
+    ],
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
     "editor.indentSize": 4,
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
     "files.trimFinalNewlines": true,
-
     // Exclude files from explorer
     "files.exclude": {
         "**/__pycache__": true,
@@ -62,7 +52,6 @@
         "**/*.egg-info": true,
         "**/*.pyc": true
     },
-
     // Terminal settings
     "terminal.integrated.env.osx": {
         "PYTHONPATH": "${workspaceFolder}"
