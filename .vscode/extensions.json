@@ -1,0 +1,15 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "matangover.mypy",
+        "tamasfe.even-better-toml",
+        "njpwerner.autodocstring",
+        "kevinrose.vsc-python-indent",
+        "visualstudioexptteam.vscodeintellicode",
+        "github.vscode-github-actions",
+        "eamodio.gitlens",
+        "gruntfuggly.todo-tree"
+    ]
+}

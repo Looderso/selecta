@@ -8,10 +8,8 @@ version = "0.1.0"
 description = "A unified music library manager for Rekordbox, Spotify, and Discogs"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [
-    {name = "Lorenz Häusler", email = "Haeusler.Lorenz@gmail.com"},
-]
+license = { text = "MIT" }
+authors = [{ name = "Lorenz Häusler", email = "Haeusler.Lorenz@gmail.com" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
@@ -25,26 +23,26 @@ classifiers = [
 ]
 dependencies = [
     "kivy",
-    "kivy-garden.iconfonts",
+    # Garden packages will be added later once the core setup is working
     # API clients
-    "spotipy",                      # Spotify API client
-    "python3-discogs-client",       # Discogs API client
+    "spotipy",                # Spotify API client
+    "python3-discogs-client", # Discogs API client
     # Database and data handling
-    "sqlalchemy",                   # ORM for database access
-    "alembic",                      # Database migrations
-    "sqlite-utils",                 # SQLite utilities (for Rekordbox DB)
+    "sqlalchemy",   # ORM for database access
+    "alembic",      # Database migrations
+    "sqlite-utils", # SQLite utilities (for Rekordbox DB)
     # Audio file handling
-    "mutagen",                      # Audio metadata handling
-    "tinytag",                      # Audio tag reading
+    "mutagen", # Audio metadata handling
+    "tinytag", # Audio tag reading
     # Utilities
-    "pydantic",                     # Data validation
-    "python-dotenv",                # Environment management
-    "loguru",                       # Better logging
-    "httpx",                        # Modern HTTP client
-    "rich",                         # Rich text and formatting
-    "click",                        # Command-line interface
+    "pydantic",         # Data validation
+    "python-dotenv",    # Environment management
+    "loguru",           # Better logging
+    "httpx",            # Modern HTTP client
+    "rich",             # Rich text and formatting
+    "click",            # Command-line interface
     "click-completion",
-    "appdirs",                      # App directories management
+    "appdirs",          # App directories management
     # Mac-specific dependencies
     "pyobjc-core; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
@@ -54,10 +52,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     # Development tools
-    "uv",                 # Modern Python package manager
-    "ruff",               # Fast Python linter/formatter
-    "mypy",               # Static type checker
-    "pre-commit",         # Git hooks manager
+    "uv",         # Modern Python package manager
+    "ruff",       # Fast Python linter/formatter
+    "mypy",       # Static type checker
+    "pre-commit", # Git hooks manager
     # Testing
     "pytest",
     "pytest-cov",
@@ -67,37 +65,26 @@ dev = [
     "mkdocs",
     "mkdocs-material",
     # Packaging
-    "pyinstaller",       # For bundling macOS app
-    "briefcase",         # Alternative packaging system
+    "pyinstaller", # For bundling macOS app
+    "briefcase",   # Alternative packaging system
 ]
 
 # Profiles for different development tasks
-lint = [
-    "ruff",
-    "mypy",
-]
+lint = ["ruff", "mypy"]
 
-test = [
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "pytest-kivy",
-]
+test = ["pytest", "pytest-cov", "pytest-mock", "pytest-kivy"]
 
-docs = [
-    "mkdocs",
-    "mkdocs-material",
-]
+docs = ["mkdocs", "mkdocs-material"]
 
 [project.urls]
 "Homepage" = "https://github.com/Looderso/selecta"
 "Bug Tracker" = "https://github.com/Looderso/selecta/issues"
 
 [project.scripts]
-selecta = "selecta.__main__:main"
+selecta = "selecta.cli.main:cli"
 
 [project.gui-scripts]
-selecta-gui = "selecta.__main__:main"
+selecta-gui = "selecta.app:run_app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/selecta"]
@@ -107,25 +94,25 @@ src = ["src"]
 target-version = "py311"
 line-length = 100
 select = [
-    "E",    # pycodestyle errors
-    "F",    # pyflakes
-    "B",    # flake8-bugbear
-    "I",    # isort
-    "N",    # pep8-naming
-    "UP",   # pyupgrade
-    "ANN",  # flake8-annotations
-    "C4",   # flake8-comprehensions
-    "SIM",  # flake8-simplify
-    "D",    # pydocstyle
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "ANN", # flake8-annotations
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "D",   # pydocstyle
 ]
 ignore = [
-    "D100",    # Missing docstring in public module
-    "D104",    # Missing docstring in public package
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
 ]
 
 [tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]  # Unused imports
-"tests/**/*.py" = ["D", "ANN"]  # Docstring and annotation requirements in tests
+"__init__.py" = ["F401"]       # Unused imports
+"tests/**/*.py" = ["D", "ANN"] # Docstring and annotation requirements in tests
 
 [tool.ruff.pydocstyle]
 convention = "google"
@@ -158,9 +145,5 @@ no_implicit_optional = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = [
-    "kivy.*",
-    "python3_discogs_client.*",
-    "spotipy.*",
-]
+module = ["kivy.*", "python3_discogs_client.*", "spotipy.*"]
 ignore_missing_imports = true
