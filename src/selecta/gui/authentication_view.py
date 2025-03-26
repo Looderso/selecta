@@ -51,7 +51,7 @@ class PlatformAuthenticationView(BoxLayout):
             # Add platform indicators
             for platform, indicator in self.platform_indicators.items():
                 # Bind authentication button
-                indicator.auth_button.bind(
+                indicator.auth_button.bind(  # type: ignore
                     on_press=lambda _, p=platform: self._authenticate_platform(p)
                 )
                 self.add_widget(indicator)
@@ -137,7 +137,7 @@ class PlatformAuthenticationView(BoxLayout):
 
             if platform == "rekordbox":
                 # Special handling for Rekordbox
-                auth_manager = RekordboxAuthManager(self.settings_repo)
+                auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)  # type: ignore
 
                 # Try to download key
                 key = auth_manager.download_key()
@@ -162,7 +162,7 @@ class PlatformAuthenticationView(BoxLayout):
                         size_hint=(None, None),
                         size=(400, 300),
                     )
-                    close_btn.bind(on_press=popup.dismiss)
+                    close_btn.bind(on_press=popup.dismiss)  # type: ignore
                     popup.open()
 
                     return

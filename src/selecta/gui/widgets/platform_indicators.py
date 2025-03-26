@@ -25,7 +25,7 @@ class PlatformIndicator(BoxLayout):
             self.padding = [10, 5]
             self.size_hint_y = None
             self.height = "50dp"
-            self.bind(size=self._update_background)
+            self.bind(size=self._update_background)  # type: ignore
 
             # Set icon source based on platform name
             icon_map = {
@@ -61,10 +61,10 @@ class PlatformIndicator(BoxLayout):
         from kivy.graphics import Color, Rectangle
 
         # Clear previous instructions
-        self.canvas.before.clear()
+        self.canvas.before.clear()  # type: ignore
 
         # Draw new background
-        with self.canvas.before:
+        with self.canvas.before:  # type: ignore
             Color(*self.status_color)
             Rectangle(pos=self.pos, size=self.size)
 
