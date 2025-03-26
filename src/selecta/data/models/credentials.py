@@ -45,7 +45,7 @@ class PlatformCredentials(Base):
         Returns:
             bool: True if token is expired or missing
         """
-        if not self.access_token or not self.token_expiry:
+        if not self.access_token or not self.token_expiry:  # type: ignore
             return True
 
-        return datetime.utcnow() > self.token_expiry
+        return datetime.utcnow() > self.token_expiry  # type: ignore

@@ -20,7 +20,7 @@ class SpotifyClient(AbstractPlatform):
         Args:
             settings_repo: Repository for accessing settings (optional)
         """
-        self.settings_repo = settings_repo or SettingsRepository()
+        super().__init__(settings_repo)
         self.auth_manager = SpotifyAuthManager(settings_repo=self.settings_repo)
         self.client: spotipy.Spotify | None = None
 

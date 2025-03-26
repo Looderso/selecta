@@ -49,8 +49,8 @@ class SpotifyAuthManager:
         if client_id is None or client_secret is None:
             stored_creds = self.settings_repo.get_credentials("spotify")
             if stored_creds:
-                client_id = client_id or stored_creds.client_id
-                client_secret = client_secret or stored_creds.client_secret
+                client_id = client_id or stored_creds.client_id  # type: ignore
+                client_secret = client_secret or stored_creds.client_secret  # type: ignore
 
         self.client_id = client_id
         self.client_secret = client_secret
@@ -109,7 +109,7 @@ class SpotifyAuthManager:
                 # Extract the code from the query string
                 query_components = parse_qs(urlparse(self.path).query)
                 if "code" in query_components:
-                    code_received["code"] = query_components["code"][0]
+                    code_received["code"] = query_components["code"][0]  # type: ignore
                     success_html = """
                     <html>
                     <body>
@@ -166,7 +166,7 @@ class SpotifyAuthManager:
 
         # Exchange the code for tokens
         try:
-            token_info = self.sp_oauth.get_access_token(auth_code, as_dict=True)
+            token_info = self.sp_oauth.get_access_token(auth_code, as_dict=True)  # type: ignore
 
             # Store tokens in settings
             self._save_tokens(token_info)
@@ -190,7 +190,7 @@ class SpotifyAuthManager:
             return None
 
         # Check if we need to refresh the token
-        if self.sp_oauth.is_token_expired(token_info):
+        if self.sp_oauth and self.sp_oauth.is_token_expired(token_info):
             logger.info("Spotify access token expired, refreshing...")
             try:
                 token_info = self.sp_oauth.refresh_access_token(token_info["refresh_token"])
@@ -239,7 +239,7 @@ class SpotifyAuthManager:
             Dictionary with token information or None if not found
         """
         creds = self.settings_repo.get_credentials("spotify")
-        if not creds or not creds.access_token or not creds.refresh_token:
+        if not creds or not creds.access_token or not creds.refresh_token:  # type: ignore
             return None
 
         # Convert to the format expected by Spotipy

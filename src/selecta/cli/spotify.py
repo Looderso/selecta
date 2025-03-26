@@ -62,7 +62,7 @@ def authenticate_spotify() -> None:
 
     # Check if we have credentials
     creds = settings_repo.get_credentials("spotify")
-    if not creds or not creds.client_id or not creds.client_secret:
+    if not creds or not creds.client_id or not creds.client_secret:  # type: ignore
         click.secho(
             "Spotify credentials not found. Please run 'selecta spotify setup' first.",
             fg="red",
@@ -88,7 +88,7 @@ def check_spotify_status() -> None:
 
     # Check if we have credentials
     creds = settings_repo.get_credentials("spotify")
-    if not creds or not creds.client_id or not creds.client_secret:
+    if not creds or not creds.client_id or not creds.client_secret:  # type: ignore
         click.secho("Spotify API credentials not configured.", fg="yellow")
         click.echo("Run 'selecta spotify setup' to configure Spotify integration.")
         return
@@ -106,7 +106,7 @@ def check_spotify_status() -> None:
             logger.exception(f"Error fetching user profile: {e}")
             click.echo("Could not fetch user profile information.")
     else:
-        if creds.access_token:
+        if creds.access_token:  # type: ignore
             click.secho("Spotify authentication status: Token expired or invalid", fg="yellow")
             click.echo("Run 'selecta spotify auth' to re-authenticate.")
         else:
