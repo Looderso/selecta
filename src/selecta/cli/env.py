@@ -81,9 +81,7 @@ def env():
     pass
 
 
-@env.command(
-    name="reinstall", help="Reinstall the development environment from scratch"
-)
+@env.command(name="reinstall", help="Reinstall the development environment from scratch")
 @click.option(
     "--force/--no-force",
     default=False,
@@ -98,13 +96,16 @@ def reinstall_environment(force: bool) -> None:
     project_root = get_project_root()
     venv_path = project_root / ".venv"
 
-    if venv_path.exists() and not force:
-        if not click.confirm(
+    if (
+        venv_path.exists()
+        and not force
+        and not click.confirm(
             "This will delete the existing virtual environment and reinstall. Continue?",
             default=True,
-        ):
-            logger.info("Operation cancelled")
-            return
+        )
+    ):
+        logger.info("Operation cancelled")
+        return
 
     # Delete existing virtual environment if it exists
     if venv_path.exists():
@@ -132,9 +133,7 @@ def reinstall_environment(force: bool) -> None:
         logger.error("Failed to reinstall environment")
 
 
-@env.command(
-    name="activate", help="Print the command to activate the virtual environment"
-)
+@env.command(name="activate", help="Print the command to activate the virtual environment")
 def activate_environment() -> None:
     """Print the command to activate the virtual environment.
 
@@ -145,9 +144,7 @@ def activate_environment() -> None:
     venv_path = project_root / ".venv"
 
     if not venv_path.exists():
-        logger.error(
-            "Virtual environment not found. Please run 'selecta env reinstall' first."
-        )
+        logger.error("Virtual environment not found. Please run 'selecta env reinstall' first.")
         return
 
     # Determine the appropriate activation script based on the platform

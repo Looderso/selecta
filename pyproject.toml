@@ -110,6 +110,7 @@ ignore = [
     "D104", # Missing docstring in public package
     "E402", # Imports not first in code
     "E722", # Allow bare excepts
+    "N802", # Allow uppercase method names
 ]
 
 [tool.ruff.per-file-ignores]

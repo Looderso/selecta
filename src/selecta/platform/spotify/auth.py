@@ -100,7 +100,7 @@ class SpotifyAuthManager:
         server_closed = {"closed": False}
 
         class CallbackHandler(BaseHTTPRequestHandler):
-            def do_get(self):
+            def do_GET(self):
                 """Handle the OAuth callback GET request."""
                 self.send_response(200)
                 self.send_header("Content-type", "text/html")
