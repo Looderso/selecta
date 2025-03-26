@@ -3,21 +3,17 @@
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.autoImportCompletions": true,
-    // Linting settings - UPDATED
-    "python.linting.enabled": true,
-    "python.linting.flake8Enabled": false,
-    "python.linting.mypyEnabled": false, // Turned off
-    "python.linting.pylintEnabled": false,
-    "python.linting.banditEnabled": false,
     // Formatting settings
     "editor.formatOnSave": true,
-    "python.formatting.provider": "none",
+    // Ruff-specific settings
+    "ruff.organizeImports": true,
+    // Python-specific settings
     "[python]": {
-        "editor.defaultFormatter": "astral-sh.ruff-vscode",
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
-            "source.fixAll": "explicit",
-            "source.organizeImports": "explicit"
+            "source.fixAll.ruff": "always",
+            "source.organizeImports.ruff": "explicit"
         }
     },
     // Extension recommendations
@@ -25,7 +21,6 @@
     // Testing
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
-    "python.testing.nosetestsEnabled": false,
     "python.testing.pytestArgs": [
         "src/tests"
     ],

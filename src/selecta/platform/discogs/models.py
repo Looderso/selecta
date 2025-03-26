@@ -3,7 +3,70 @@
 import contextlib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
+
+
+def safe_get_attr(obj: Any, attr_name: str, default: T = None) -> T:
+    """Safely get an attribute from an object.
+
+    Args:
+        obj: Object to get attribute from
+        attr_name: Name of the attribute
+        default: Default value if attribute doesn't exist
+
+    Returns:
+        Attribute value or default
+    """
+    return getattr(obj, attr_name, default)
+
+
+def extract_list_attr(obj: Any, attr_name: str, key_name: str = "name") -> list[str]:
+    """Extract a list of attributes from an object.
+
+    Args:
+        obj: Object to extract from
+        attr_name: Name of the list attribute
+        key_name: Name of the key to extract from each item
+
+    Returns:
+        List of extracted values
+    """
+    result = []
+    attr_list = safe_get_attr(obj, attr_name, [])
+
+    if not attr_list:
+        return result
+
+    for item in attr_list:
+        if isinstance(item, dict) and key_name in item:
+            result.append(item[key_name])
+        elif hasattr(item, key_name):
+            result.append(getattr(item, key_name))
+
+    return result
+
+
+def extract_first_item(obj: Any, attr_name: str, key_name: str = "name") -> str | None:
+    """Extract first item from a list attribute.
+
+    Args:
+        obj: Object to extract from
+        attr_name: Name of the list attribute
+        key_name: Name of the key to extract
+
+    Returns:
+        Extracted value or None
+    """
+    attr_list = safe_get_attr(obj, attr_name, [])
+    if not attr_list:
+        return None
+
+    first_item = attr_list[0]
+    if isinstance(first_item, dict):
+        return first_item.get(key_name)
+    return safe_get_attr(first_item, key_name)
 
 
 @dataclass
@@ -34,65 +97,43 @@ class DiscogsRelease:
             DiscogsRelease instance
         """
         # Get basic fields
-        release_id = getattr(release_obj, "id", None)
-        title = getattr(release_obj, "title", "")
+        release_id = safe_get_attr(release_obj, "id")
+        if not release_id:
+            raise ValueError("No release_id")
+        title = safe_get_attr(release_obj, "title", "")
 
-        # Handle artist differently based on object type
+        # Handle artist
+        artist = "Unknown Artist"
         if hasattr(release_obj, "artists"):
-            # For full release objects
-            artist_names = [artist.name for artist in release_obj.artists]
+            artist_names = extract_list_attr(release_obj, "artists")
             artist = ", ".join(artist_names)
         elif hasattr(release_obj, "artist"):
-            # For search results
             artist = release_obj.artist
-        else:
-            artist = "Unknown Artist"
 
-        # Get year - different depending on whether it's a search result or release
-        year = getattr(release_obj, "year", None)
+        # Get year
+        year = safe_get_attr(release_obj, "year")
 
-        # Get other fields
-        formats = []
-        if hasattr(release_obj, "formats"):
-            for fmt in release_obj.formats:
-                if isinstance(fmt, dict) and "name" in fmt:
-                    formats.append(fmt["name"])
-                elif hasattr(fmt, "name"):
-                    formats.append(fmt.name)
+        # Get formats
+        formats = extract_list_attr(release_obj, "formats")
 
-        # Get genres if available
-        genres = getattr(release_obj, "genres", [])
+        # Get genres
+        genres = safe_get_attr(release_obj, "genres", [])
         if not genres:
-            genres = getattr(release_obj, "genre", [])
+            genres = safe_get_attr(release_obj, "genre", [])
 
-        # Get label info
-        label = None
-        catno = None
-        # TODO make method for this kind of stuff
-        if hasattr(release_obj, "labels") and release_obj.labels:
-            if isinstance(release_obj.labels[0], dict):
-                label = release_obj.labels[0].get("name")
-                catno = release_obj.labels[0].get("catno")
-            else:
-                label = getattr(release_obj.labels[0], "name", None)
-                catno = getattr(release_obj.labels[0], "catno", None)
+        # Get label and catalog number
+        label = extract_first_item(release_obj, "labels")
+        catno = extract_first_item(release_obj, "labels", "catno")
 
         # Get country
-        country = getattr(release_obj, "country", None)
+        country = safe_get_attr(release_obj, "country")
 
         # Get image URLs
-        thumb_url = None
-        cover_url = None
-        if hasattr(release_obj, "thumb"):
-            thumb_url = release_obj.thumb
-        if hasattr(release_obj, "images") and release_obj.images:
-            if isinstance(release_obj.images[0], dict):
-                cover_url = release_obj.images[0].get("uri")
-            else:
-                cover_url = getattr(release_obj.images[0], "uri", None)
+        thumb_url = safe_get_attr(release_obj, "thumb")
+        cover_url = extract_first_item(release_obj, "images", "uri")
 
         # Get URI
-        uri = getattr(release_obj, "uri", None)
+        uri = safe_get_attr(release_obj, "uri")
         if not uri and release_id:
             uri = f"https://www.discogs.com/release/{release_id}"
 
@@ -142,21 +183,15 @@ class DiscogsVinyl:
 
         # Get collection-specific metadata
         date_added = None
-        rating = None
-        notes = None
-
-        # Try to get date_added
         if hasattr(release_obj, "date_added"):
             with contextlib.suppress(ValueError, AttributeError):
-                date_added = datetime.fromisoformat(release_obj.date_added.replace("Z", "+00:00"))
+                date_added = datetime.fromisoformat(
+                    safe_get_attr(release_obj, "date_added", "").replace("Z", "+00:00")
+                )
 
-        # Try to get rating
-        if hasattr(release_obj, "rating"):
-            rating = getattr(release_obj, "rating", None)
-
-        # Try to get notes
-        if hasattr(release_obj, "notes"):
-            notes = getattr(release_obj, "notes", None)
+        # Get rating and notes
+        rating = safe_get_attr(release_obj, "rating")
+        notes = safe_get_attr(release_obj, "notes")
 
         return cls(
             release=release,
