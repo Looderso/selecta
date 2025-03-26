@@ -5,6 +5,7 @@ from loguru import logger
 from selecta.data.repositories.settings_repository import SettingsRepository
 from selecta.platform.abstract_platform import AbstractPlatform
 from selecta.platform.discogs.client import DiscogsClient  # Add this import
+from selecta.platform.rekordbox.client import RekordboxClient
 from selecta.platform.spotify.client import SpotifyClient
 
 
@@ -15,7 +16,7 @@ class PlatformFactory:
     _platform_types: dict[str, type[AbstractPlatform]] = {
         "spotify": SpotifyClient,
         "discogs": DiscogsClient,  # Add this line
-        # "rekordbox": RekordboxClient,  # Add this once implemented
+        "rekordbox": RekordboxClient,  # Add this once implemented
     }
 
     @classmethod
