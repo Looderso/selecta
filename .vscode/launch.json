@@ -3,7 +3,7 @@
     "configurations": [
         {
             "name": "Run Selecta",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "selecta.app",
             "console": "integratedTerminal",
@@ -11,15 +11,15 @@
         },
         {
             "name": "Run Current File",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false
         },
         {
             "name": "Run CLI Command",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "selecta.cli.main",
             "console": "integratedTerminal",
@@ -28,7 +28,7 @@
         },
         {
             "name": "Debug Tests",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "pytest",
             "args": [

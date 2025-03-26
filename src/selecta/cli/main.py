@@ -3,6 +3,7 @@
 import click
 
 from selecta.cli.env import env
+from selecta.cli.spotify import spotify
 
 
 @click.group()
@@ -14,6 +15,7 @@ def cli():
 
 # Add subcommands
 cli.add_command(env)
+cli.add_command(spotify)
 
 
 @cli.command(help="Print shell completion instructions")
@@ -58,9 +60,7 @@ echo 'source ~/.config/fish/selecta-complete.fish' >> ~/.config/fish/config.fish
 
     click.echo(f"Shell completion setup for {shell}:\n")
     click.echo(shell_instructions[shell])
-    click.echo(
-        "After adding the above, restart your shell or source the configuration file."
-    )
+    click.echo("After adding the above, restart your shell or source the configuration file.")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ dependencies = [
     # API clients
     "spotipy",                # Spotify API client
     "python3-discogs-client", # Discogs API client
+    "pyrekordbox",            # Rekordbox API client
     # Database and data handling
     "sqlalchemy",   # ORM for database access
     "alembic",      # Database migrations
@@ -108,6 +109,7 @@ ignore = [
     "D100", # Missing docstring in public module
     "D104", # Missing docstring in public package
     "E402", # Imports not first in code
+    "E722", # Allow bare excepts
 ]
 
 [tool.ruff.per-file-ignores]
