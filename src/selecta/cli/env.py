@@ -64,8 +64,9 @@ def run_command(command: str, cwd: Path | None = None) -> int:
         )
 
         # Stream output to console
-        for line in process.stdout:
-            sys.stdout.write(line)
+        if process.stdout:
+            for line in process.stdout:
+                sys.stdout.write(line)
 
         return_code = process.wait()
         return return_code

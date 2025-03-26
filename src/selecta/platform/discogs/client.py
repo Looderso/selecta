@@ -121,7 +121,9 @@ class DiscogsClient(AbstractPlatform):
 
         # If no username is provided, use the authenticated user
         if not username:
-            username = self.client.identity().username
+            # Convert the SimpleField to a string explicitly
+            identity = self.client.identity()
+            username = str(identity.username) if identity and hasattr(identity, "username") else ""
 
         # Get the user's collection
         collection_items = []
@@ -129,8 +131,11 @@ class DiscogsClient(AbstractPlatform):
             user = self.client.user(username)
             collection = user.collection_folders[0].releases  # Folder 0 is "All"
 
+            # Convert collection to list if needed
+            items = list(collection) if hasattr(collection, "__iter__") else []
+
             # Convert to our model
-            for item in collection:
+            for item in items:
                 release = item.release
                 vinyl = DiscogsVinyl.from_discogs_object(release, is_owned=True)
                 collection_items.append(vinyl)
@@ -157,7 +162,8 @@ class DiscogsClient(AbstractPlatform):
 
         # If no username is provided, use the authenticated user
         if not username:
-            username = self.client.identity().username
+            identity = self.client.identity()
+            username = str(identity.username) if identity and hasattr(identity, "username") else ""
 
         # Get the user's wantlist
         wantlist_items = []
@@ -166,7 +172,7 @@ class DiscogsClient(AbstractPlatform):
             wantlist = user.wantlist
 
             # Convert to our model
-            for item in wantlist:
+            for item in wantlist:  # type: ignore
                 release = item.release
                 vinyl = DiscogsVinyl.from_discogs_object(release, is_wanted=True)
                 wantlist_items.append(vinyl)

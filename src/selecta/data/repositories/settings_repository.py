@@ -96,11 +96,11 @@ class SettingsRepository:
         setting = self.get_setting(key)
         if setting:
             # Update existing using setattr to avoid type checking issues
-            setting.value = value_str
+            setting.value = value_str  # type: ignore
             if data_type is not None:
-                setting.data_type = data_type
+                setting.data_type = data_type  # type: ignore
             if description is not None:
-                setting.description = description
+                setting.description = description  # type: ignore
         else:
             # Create new
             setting = UserSettings(
@@ -171,33 +171,40 @@ class SettingsRepository:
         )
 
     def set_credentials(self, platform: str, credentials_data: dict) -> PlatformCredentials:
-        """Set credentials for a platform.
+        """Set credentials for a platform."""
+        from loguru import logger
 
-        Args:
-            platform: Platform name
-            credentials_data: Dictionary with credential data
+        # Log what we're trying to save
+        logger.debug(f"Setting credentials for {platform}: {list(credentials_data.keys())}")
 
-        Returns:
-            The updated or created credentials
-        """
         credentials = self.get_credentials(platform)
 
         if credentials:
             # Update existing
+            logger.debug(f"Updating existing credentials for {platform}")
             for key, value in credentials_data.items():
                 # Only update if the field exists on the model
                 if hasattr(credentials, key):
+                    logger.debug(f"Setting {key}={value is not None}")
                     setattr(credentials, key, value)
         else:
             # Create new
+            logger.debug(f"Creating new credentials for {platform}")
             credentials_data["platform"] = platform
             credentials = PlatformCredentials(**credentials_data)
             self.session.add(credentials)
 
         # Use setattr to bypass type checking issues
-        credentials.updated_at = datetime.utcnow()
+        credentials.updated_at = datetime.utcnow()  # type: ignore
 
-        self.session.commit()
+        try:
+            self.session.commit()
+            logger.debug("Credentials committed to database")
+        except Exception as e:
+            logger.exception(f"Error committing credentials: {e}")
+            self.session.rollback()
+            raise
+
         return credentials
 
     def delete_credentials(self, platform: str) -> bool:

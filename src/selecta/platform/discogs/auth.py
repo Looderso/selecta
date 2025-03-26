@@ -9,6 +9,7 @@ import discogs_client
 from loguru import logger
 
 from selecta.data.repositories.settings_repository import SettingsRepository
+from selecta.utils.type_helpers import column_to_str, is_column_truthy
 
 
 class DiscogsAuthManager:
@@ -33,8 +34,8 @@ class DiscogsAuthManager:
         if consumer_key is None or consumer_secret is None:
             stored_creds = self.settings_repo.get_credentials("discogs")
             if stored_creds:
-                consumer_key = consumer_key or stored_creds.client_id  # type: ignore
-                consumer_secret = consumer_secret or stored_creds.client_secret  # type: ignore
+                consumer_key = consumer_key or column_to_str(stored_creds.client_id)
+                consumer_secret = consumer_secret or column_to_str(stored_creds.client_secret)
 
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
@@ -86,7 +87,7 @@ class DiscogsAuthManager:
         token, secret, auth_url = auth_result
 
         # Create a server to catch the OAuth callback
-        verifier_received = {"verifier": None}
+        verifier_received: dict[str, str | None] = {"verifier": None}
         server_closed = {"closed": False}
 
         class CallbackHandler(BaseHTTPRequestHandler):
@@ -166,6 +167,12 @@ class DiscogsAuthManager:
         # Exchange the verifier for an access token
         try:
             logger.debug("Exchanging verifier for access token...")
+
+            # Add null check for client
+            if not self.client:
+                logger.error("Discogs client is not initialized")
+                return None
+
             access_token, access_secret = self.client.get_access_token(verifier)
 
             logger.debug("Access token received successfully")
@@ -250,7 +257,11 @@ class DiscogsAuthManager:
             Dictionary with token information or None if not found
         """
         creds = self.settings_repo.get_credentials("discogs")
-        if not creds or not creds.access_token or not creds.refresh_token:  # type: ignore
+        if (
+            not creds
+            or not is_column_truthy(creds.access_token)
+            or not is_column_truthy(creds.refresh_token)
+        ):
             return None
 
         return {
