@@ -113,6 +113,8 @@ ignore = [
     "N802", # Allow uppercase method names
 ]
 
+fixable = ["ALL"]
+
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]       # Unused imports
 "tests/**/*.py" = ["D", "ANN"] # Docstring and annotation requirements in tests
