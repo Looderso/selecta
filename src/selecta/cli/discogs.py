@@ -7,6 +7,7 @@ from loguru import logger
 from selecta.data.repositories.settings_repository import SettingsRepository
 from selecta.platform.discogs.auth import DiscogsAuthManager, validate_discogs_credentials
 from selecta.platform.discogs.client import DiscogsClient
+from selecta.utils.type_helpers import is_column_truthy
 
 
 @click.group(name="discogs")
@@ -63,7 +64,11 @@ def authenticate_discogs() -> None:
 
     # Check if we have credentials
     creds = settings_repo.get_credentials("discogs")
-    if not creds or not creds.client_id or not creds.client_secret:  # type: ignore
+    if (
+        not creds
+        or not is_column_truthy(creds.client_id)
+        or not is_column_truthy(creds.client_secret)
+    ):
         click.secho(
             "Discogs credentials not found. Please run 'selecta discogs setup' first.",
             fg="red",
@@ -89,7 +94,11 @@ def check_discogs_status() -> None:
 
     # Check if we have credentials
     creds = settings_repo.get_credentials("discogs")
-    if not creds or not creds.client_id or not creds.client_secret:  # type: ignore
+    if (
+        not creds
+        or not is_column_truthy(creds.client_id)
+        or not is_column_truthy(creds.client_secret)
+    ):
         click.secho("Discogs API credentials not configured.", fg="yellow")
         click.echo("Run 'selecta discogs setup' to configure Discogs integration.")
         return
@@ -107,7 +116,7 @@ def check_discogs_status() -> None:
             logger.exception(f"Error fetching user profile: {e}")
             click.echo("Could not fetch user profile information.")
     else:
-        if creds.access_token:  # type: ignore
+        if is_column_truthy(creds.access_token):
             click.secho("Discogs authentication status: Token expired or invalid", fg="yellow")
             click.echo("Run 'selecta discogs auth' to re-authenticate.")
         else:

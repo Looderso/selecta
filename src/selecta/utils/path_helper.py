@@ -63,7 +63,7 @@ def get_project_root() -> Path:
     # Check if we're in a PyInstaller bundle
     if getattr(sys, "frozen", False):
         # We're running in a bundle
-        return Path(sys._MEIPASS)  # type: ignore
+        return Path(getattr(sys, "_MEIPASS", "."))
 
     # We're running in a normal Python environment
     # Walk up from the current file until we find the project root

@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from selecta.data.database import Base
+from selecta.utils.type_helpers import is_column_truthy
 
 
 class PlatformCredentials(Base):
@@ -45,7 +46,7 @@ class PlatformCredentials(Base):
         Returns:
             bool: True if token is expired or missing
         """
-        if not self.access_token or not self.token_expiry:  # type: ignore
+        if not is_column_truthy(self.access_token) or not is_column_truthy(self.token_expiry):
             return True
 
         return datetime.utcnow() > self.token_expiry  # type: ignore

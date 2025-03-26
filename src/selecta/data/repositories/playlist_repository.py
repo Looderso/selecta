@@ -259,11 +259,11 @@ class PlaylistRepository:
 
         # The following comparison is a SQLAlchemy expression, not a Python comparison
         # We need to evaluate it explicitly to get a boolean result
-        if old_position == new_position:  # type: ignore
+        if old_position == new_position:
             return True
 
         # For the conditional, use IS comparison for clarity
-        if old_position < new_position:  # type: ignore
+        if old_position < new_position:
             # Moving down - shift tracks in between up
             self.session.query(PlaylistTrack).filter(
                 PlaylistTrack.playlist_id == playlist_id,

@@ -17,6 +17,7 @@ from selecta.data.repositories.settings_repository import SettingsRepository
 from selecta.data.repositories.tag_repository import TagRepository
 from selecta.data.repositories.track_repository import TrackRepository
 from selecta.data.repositories.vinyl_repository import VinylRepository
+from selecta.utils.type_helpers import column_to_int
 
 
 def create_test_data(db_path: Path) -> None:
@@ -43,9 +44,9 @@ def create_test_data(db_path: Path) -> None:
     afternoon_tag = tag_repo.create_tag("afternoon", "Tracks for afternoon sessions", "#66CC99")
 
     # Keep track of IDs as Python integers
-    sunset_tag_id = int(sunset_tag.id)
-    club_tag_id = int(club_tag.id)
-    afternoon_tag_id = int(afternoon_tag.id)
+    sunset_tag_id = column_to_int(sunset_tag.id)
+    club_tag_id = column_to_int(club_tag.id)
+    afternoon_tag_id = column_to_int(afternoon_tag.id)
 
     # Create tracks
     logger.info("Creating tracks...")
@@ -74,9 +75,9 @@ def create_test_data(db_path: Path) -> None:
     )
 
     # Store track IDs as Python integers
-    track1_id = int(track1.id)
-    track2_id = int(track2.id)
-    track3_id = int(track3.id)
+    track1_id = column_to_int(track1.id)
+    track2_id = column_to_int(track2.id)
+    track3_id = column_to_int(track3.id)
 
     # Add platform information to tracks
     track_repo.add_platform_info(
@@ -123,8 +124,8 @@ def create_test_data(db_path: Path) -> None:
     )
 
     # Store playlist IDs as Python integers
-    sunset_playlist_id = int(sunset_playlist.id)
-    club_playlist_id = int(club_playlist.id)
+    sunset_playlist_id = column_to_int(sunset_playlist.id)
+    club_playlist_id = column_to_int(club_playlist.id)
 
     # Add tracks to playlists
     playlist_repo.add_track(sunset_playlist_id, track1_id, 0)

@@ -7,9 +7,11 @@ from urllib.parse import parse_qs, urlparse
 
 import spotipy
 from loguru import logger
+from redis import AuthenticationError
 from spotipy.oauth2 import SpotifyOAuth
 
 from selecta.data.repositories.settings_repository import SettingsRepository
+from selecta.utils.type_helpers import column_to_str, is_column_truthy
 
 
 class SpotifyAuthManager:
@@ -49,8 +51,8 @@ class SpotifyAuthManager:
         if client_id is None or client_secret is None:
             stored_creds = self.settings_repo.get_credentials("spotify")
             if stored_creds:
-                client_id = client_id or stored_creds.client_id  # type: ignore
-                client_secret = client_secret or stored_creds.client_secret  # type: ignore
+                client_id = client_id or column_to_str(stored_creds.client_id)
+                client_secret = client_secret or column_to_str(stored_creds.client_secret)
 
         self.client_id = client_id
         self.client_secret = client_secret
@@ -96,7 +98,7 @@ class SpotifyAuthManager:
             return None
 
         # Create a server to catch the OAuth callback
-        code_received = {"code": None}
+        code_received: dict[str, str | None] = {"code": None}
         server_closed = {"closed": False}
 
         class CallbackHandler(BaseHTTPRequestHandler):
@@ -109,7 +111,7 @@ class SpotifyAuthManager:
                 # Extract the code from the query string
                 query_components = parse_qs(urlparse(self.path).query)
                 if "code" in query_components:
-                    code_received["code"] = query_components["code"][0]  # type: ignore
+                    code_received["code"] = query_components["code"][0]
                     success_html = """
                     <html>
                     <body>
@@ -166,12 +168,16 @@ class SpotifyAuthManager:
 
         # Exchange the code for tokens
         try:
-            token_info = self.sp_oauth.get_access_token(auth_code, as_dict=True)  # type: ignore
+            # With:
+            if self.sp_oauth:
+                token_info = self.sp_oauth.get_access_token(auth_code)
+                # Store tokens in settings
+                self._save_tokens(token_info)
+                return token_info
+            else:
+                # Handle the None case
+                raise AuthenticationError("Oauth failed.")
 
-            # Store tokens in settings
-            self._save_tokens(token_info)
-
-            return token_info
         except Exception as e:
             logger.exception(f"Error exchanging Spotify auth code for tokens: {e}")
             return None
@@ -239,7 +245,11 @@ class SpotifyAuthManager:
             Dictionary with token information or None if not found
         """
         creds = self.settings_repo.get_credentials("spotify")
-        if not creds or not creds.access_token or not creds.refresh_token:  # type: ignore
+        if (
+            not creds
+            or not is_column_truthy(creds.access_token)
+            or not is_column_truthy(creds.refresh_token)
+        ):
             return None
 
         # Convert to the format expected by Spotipy
