@@ -124,4 +124,40 @@ def is_column_truthy(column_value: Any) -> bool:
     Returns:
         True if the column value is truthy, False otherwise
     """
-    return column_to_bool(column_value)
+    from loguru import logger
+
+    # Log the actual value and its type for debugging
+    logger.debug(f"Column value: {column_value!r} (type: {type(column_value).__name__})")
+
+    # Handle None case
+    if column_value is None:
+        return False
+
+    # For actual booleans
+    if isinstance(column_value, bool):
+        return column_value
+
+    # For string values
+    if isinstance(column_value, str):
+        # Empty strings are falsey
+        if not column_value:
+            return False
+        # Check for common false strings
+        return column_value.lower() not in ("false", "0", "no", "n", "f", "")
+
+    # Handle SQLAlchemy Column objects
+    if hasattr(column_value, "__clause_element__"):
+        # For SQLAlchemy objects, convert to string and check
+        try:
+            str_value = str(column_value)
+            logger.debug(f"Converted SQL value to string: {str_value!r}")
+            return bool(str_value) and str_value.lower() not in ("false", "0", "no", "n", "f", "")
+        except Exception as e:
+            logger.error(f"Error converting SQL value to bool: {e}")
+            return False
+
+    # For other values, try to convert to bool
+    try:
+        return bool(column_value)
+    except (TypeError, ValueError):
+        return False

@@ -191,6 +191,11 @@ class SpotifyAuthManager:
         # Check if we have stored credentials
         token_info = self._load_tokens()
 
+        logger.debug(f"Loaded tokens: {token_info is not None}")
+        if token_info:
+            logger.debug(f"Token info contains access_token: {'access_token' in token_info}")
+            logger.debug(f"Token info contains refresh_token: {'refresh_token' in token_info}")
+
         if not token_info:
             logger.warning("No stored Spotify tokens found.")
             return None
@@ -210,12 +215,9 @@ class SpotifyAuthManager:
         return spotify
 
     def _save_tokens(self, token_info: dict) -> None:
-        """Save Spotify tokens to the application settings.
-
-        Args:
-            token_info: Dictionary containing access_token, refresh_token, and expires_at
-        """
+        """Save Spotify tokens to the application settings."""
         if not token_info:
+            logger.warning("No token info to save")
             return
 
         # Calculate token expiry datetime
@@ -224,27 +226,52 @@ class SpotifyAuthManager:
         expires_at = token_info.get("expires_at", 0)
         expires_datetime = datetime.fromtimestamp(expires_at)
 
-        # Save to settings repository
-        self.settings_repo.set_credentials(
-            "spotify",
-            {
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "access_token": token_info.get("access_token"),
-                "refresh_token": token_info.get("refresh_token"),
-                "token_expiry": expires_datetime,
-            },
+        # Create a credentials dict with the token info
+        creds_data = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "access_token": token_info.get("access_token"),
+            "refresh_token": token_info.get("refresh_token"),
+            "token_expiry": expires_datetime,
+        }
+
+        # Log what we're trying to save
+        logger.debug(
+            f"Saving tokens: access_token={token_info.get('access_token') is not None}, "
+            f"refresh_token={token_info.get('refresh_token') is not None}"
         )
+
+        # Save to settings repository
+        try:
+            result = self.settings_repo.set_credentials("spotify", creds_data)
+            logger.debug(f"Token save result: {result is not None}")
+
+            # Verify the save worked by immediately reading back
+            verification = self.settings_repo.get_credentials("spotify")
+            if verification:
+                logger.debug(
+                    f"Verification - access_token present: {verification.access_token is not None}"
+                )
+                logger.debug(
+                    f"Verification - refresh_token present:"
+                    f" {verification.refresh_token is not None}"
+                )
+            else:
+                logger.warning("Verification failed - couldn't read back saved credentials")
+        except Exception as e:
+            logger.exception(f"Error saving tokens: {e}")
 
         logger.info(f"Spotify tokens saved. Expires at: {expires_datetime}")
 
     def _load_tokens(self) -> dict | None:
-        """Load Spotify tokens from the application settings.
-
-        Returns:
-            Dictionary with token information or None if not found
-        """
+        """Load Spotify tokens from the application settings."""
         creds = self.settings_repo.get_credentials("spotify")
+        logger.debug(f"Loading tokens for Spotify: credentials found = {creds is not None}")
+
+        if creds:
+            logger.debug(f"access_token present: {is_column_truthy(creds.access_token)}")
+            logger.debug(f"refresh_token present: {is_column_truthy(creds.refresh_token)}")
+
         if (
             not creds
             or not is_column_truthy(creds.access_token)
@@ -253,7 +280,6 @@ class SpotifyAuthManager:
             return None
 
         # Convert to the format expected by Spotipy
-
         expires_at = int(creds.token_expiry.timestamp())
 
         return {
