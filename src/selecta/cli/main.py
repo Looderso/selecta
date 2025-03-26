@@ -2,6 +2,7 @@
 
 import click
 
+from selecta.cli.database import database
 from selecta.cli.discogs import discogs
 from selecta.cli.env import env
 from selecta.cli.rekordbox import rekordbox
@@ -20,6 +21,7 @@ cli.add_command(env)
 cli.add_command(spotify)
 cli.add_command(discogs)
 cli.add_command(rekordbox)
+cli.add_command(database)
 
 
 @cli.command(help="Print shell completion instructions")

@@ -1,0 +1,117 @@
+#:kivy 2.3.1
+<BoxLayout>
+    <PlatformAuthPanel>
+        <size_hint_y>None</size_hint_y>
+        <height>dp(250)</height>
+    </PlatformAuthPanel>
+</BoxLayout>
+
+<PlatformAuthPanel@BoxLayout>:
+    orientation: 'vertical'
+    padding: dp(10)
+    spacing: dp(10)
+
+    canvas.before:
+        Color:
+            rgba: 0.9, 0.9, 0.9, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(5)]
+
+    Label:
+        text: 'Platform Authentication'
+        size_hint_y: None
+        height: dp(30)
+        font_size: sp(18)
+        bold: True
+
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: dp(10)
+
+        PlatformAuthCard:
+            platform: 'spotify'
+            icon: 'resources/images/spotify-logo.png'  # You'll need to add this image
+            is_authenticated: root.ids.spotify_auth.is_authenticated
+            on_authenticate: root.ids.spotify_auth.authenticate()
+
+        PlatformAuthCard:
+            platform: 'discogs'
+            icon: 'resources/images/discogs-logo.png'  # You'll need to add this image
+            is_authenticated: root.ids.discogs_auth.is_authenticated
+            on_authenticate: root.ids.discogs_auth.authenticate()
+
+        PlatformAuthCard:
+            platform: 'rekordbox'
+            icon: 'resources/images/rekordbox-logo.png'  # You'll need to add this image
+            is_authenticated: root.ids.rekordbox_auth.is_authenticated
+            on_authenticate: root.ids.rekordbox_auth.authenticate()
+
+    SpotifyAuth:
+        id: spotify_auth
+    DiscogsAuth:
+        id: discogs_auth
+    RekordboxAuth:
+        id: rekordbox_auth
+
+<PlatformAuthCard@BoxLayout>:
+    orientation: 'vertical'
+    padding: dp(10)
+    spacing: dp(5)
+    platform: ''
+    icon: ''
+    is_authenticated: False
+
+    canvas.before:
+        Color:
+            rgba: 0.95, 0.95, 0.95, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(5)]
+
+    AsyncImage:
+        source: root.icon
+        size_hint: None, None
+        size: dp(64), dp(64)
+        pos_hint: {'center_x': 0.5}
+
+    Label:
+        text: root.platform.capitalize()
+        size_hint_y: None
+        height: dp(30)
+        font_size: sp(16)
+
+    Widget:
+        size_hint_y: None
+        height: dp(10)
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(30)
+
+        Widget:
+            size_hint_x: 0.25
+
+        Image:
+            size_hint: None, None
+            size: dp(24), dp(24)
+            source: 'resources/images/check.png' if root.is_authenticated else 'resources/images/x.png'
+
+        Label:
+            text: 'Authenticated' if root.is_authenticated else 'Not Authenticated'
+            size_hint_x: 2
+
+        Widget:
+            size_hint_x: 0.25
+
+    Button:
+        text: 'Connect' if not root.is_authenticated else 'Disconnect'
+        size_hint_y: None
+        height: dp(40)
+        on_release: root.dispatch('on_authenticate') if not root.is_authenticated else root.dispatch('on_disconnect')
+
+    # Define custom events
+    on_authenticate:
+    on_disconnect:

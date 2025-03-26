@@ -10,8 +10,9 @@ from loguru import logger
 from redis import AuthenticationError
 from spotipy.oauth2 import SpotifyOAuth
 
+from selecta.config.config_manager import load_platform_credentials
 from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.utils.type_helpers import column_to_str, is_column_truthy
+from selecta.utils.type_helpers import is_column_truthy
 
 
 class SpotifyAuthManager:
@@ -40,19 +41,18 @@ class SpotifyAuthManager:
         """Initialize the Spotify authentication manager.
 
         Args:
-            client_id: Spotify API client ID (can be loaded from settings if None)
-            client_secret: Spotify API client secret (can be loaded from settings if None)
+            client_id: Spotify API client ID (can be loaded from .env if None)
+            client_secret: Spotify API client secret (can be loaded from .env if None)
             redirect_uri: OAuth redirect URI (defaults to http://localhost:8080)
             settings_repo: Repository for accessing application settings
         """
         self.settings_repo = settings_repo or SettingsRepository()
 
-        # Load credentials from settings if not provided
+        # Load credentials from .env if not provided
         if client_id is None or client_secret is None:
-            stored_creds = self.settings_repo.get_credentials("spotify")
-            if stored_creds:
-                client_id = client_id or column_to_str(stored_creds.client_id)
-                client_secret = client_secret or column_to_str(stored_creds.client_secret)
+            spotify_creds = load_platform_credentials("spotify")
+            client_id = client_id or spotify_creds.get("client_id")
+            client_secret = client_secret or spotify_creds.get("client_secret")
 
         self.client_id = client_id
         self.client_secret = client_secret

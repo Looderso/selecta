@@ -56,5 +56,6 @@
     },
     "terminal.integrated.env.windows": {
         "PYTHONPATH": "${workspaceFolder}"
-    }
+    },
+    "kvlang.pythonPath": "/Users/lorenzhausler/Documents/repos/selecta/.venv/bin/python"
 }

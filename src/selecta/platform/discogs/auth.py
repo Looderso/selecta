@@ -8,8 +8,9 @@ from urllib.parse import parse_qs, urlparse
 import discogs_client
 from loguru import logger
 
+from selecta.config.config_manager import load_platform_credentials
 from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.utils.type_helpers import column_to_str, is_column_truthy
+from selecta.utils.type_helpers import is_column_truthy
 
 
 class DiscogsAuthManager:
@@ -24,18 +25,17 @@ class DiscogsAuthManager:
         """Initialize the Discogs authentication manager.
 
         Args:
-            consumer_key: Discogs API consumer key (can be loaded from settings if None)
-            consumer_secret: Discogs API consumer secret (can be loaded from settings if None)
+            consumer_key: Discogs API consumer key (can be loaded from .env if None)
+            consumer_secret: Discogs API consumer secret (can be loaded from .env if None)
             settings_repo: Repository for accessing application settings
         """
         self.settings_repo = settings_repo or SettingsRepository()
 
-        # Load credentials from settings if not provided
+        # Load credentials from .env if not provided
         if consumer_key is None or consumer_secret is None:
-            stored_creds = self.settings_repo.get_credentials("discogs")
-            if stored_creds:
-                consumer_key = consumer_key or column_to_str(stored_creds.client_id)
-                consumer_secret = consumer_secret or column_to_str(stored_creds.client_secret)
+            discogs_creds = load_platform_credentials("discogs")
+            consumer_key = consumer_key or discogs_creds.get("client_id")
+            consumer_secret = consumer_secret or discogs_creds.get("client_secret")
 
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
