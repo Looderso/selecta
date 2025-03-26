@@ -37,6 +37,17 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false
+        },
+        {
+            "name": "Debug Discogs Client",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/python/discogs/debug_client.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
         }
     ]
 }

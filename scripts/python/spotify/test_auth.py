@@ -55,7 +55,7 @@ def demonstrate_spotify_features():
     print(f"\nYour Playlists ({len(playlists)}):")
 
     for i, playlist in enumerate(playlists[:5]):
-        print(f"{i+1}. {playlist['name']} ({playlist['tracks']['total']} tracks)")
+        print(f"{i + 1}. {playlist['name']} ({playlist['tracks']['total']} tracks)")
 
     if len(playlists) > 5:
         print(f"...and {len(playlists) - 5} more")
@@ -70,7 +70,7 @@ def demonstrate_spotify_features():
 
         for i, track in enumerate(tracks[:10]):
             artists = ", ".join(track.artist_names)
-            print(f"{i+1}. {artists} - {track.name}")
+            print(f"{i + 1}. {artists} - {track.name}")
 
         if len(tracks) > 10:
             print(f"...and {len(tracks) - 10} more")
@@ -83,7 +83,7 @@ def demonstrate_spotify_features():
 
     for i, track in enumerate(search_results):
         artists = ", ".join(track.artist_names)
-        print(f"{i+1}. {artists} - {track.name} ({track.album_name})")
+        print(f"{i + 1}. {artists} - {track.name} ({track.album_name})")
 
     print("\nDemo completed successfully!")
 
