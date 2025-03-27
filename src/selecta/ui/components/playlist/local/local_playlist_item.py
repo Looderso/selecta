@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/local_playlist_item.py
 from typing import Any
 
 from PyQt6.QtGui import QIcon

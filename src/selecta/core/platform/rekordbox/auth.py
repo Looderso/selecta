@@ -1,4 +1,3 @@
-# src/selecta/platform/rekordbox/auth.py
 """Rekordbox authentication utilities."""
 
 import subprocess

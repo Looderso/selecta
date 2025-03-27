@@ -1,4 +1,3 @@
-# src/selecta/cli/rekordbox.py
 """Rekordbox CLI commands."""
 
 import click

@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/tracks_table_model.py
 from typing import Any
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
@@ -17,8 +16,19 @@ class TracksTableModel(QAbstractTableModel):
         """
         super().__init__(parent)
         self.tracks: list[TrackItem] = []
-        self.columns = ["Title", "Artist", "Album", "Duration", "Added"]
-        self.column_keys = ["title", "artist", "album", "duration", "added_at"]
+        self.columns = ["Title", "Artist", "Album", "BPM", "Genre", "Tags", "Platforms", "Duration"]
+        self.column_keys = [
+            "title",
+            "artist",
+            "album",
+            "bpm",
+            "genre",
+            "tags",
+            "platforms",
+            "duration",
+        ]
+        self.columns = ["Title", "Artist", "Tags", "Genre", "BPM", "Platforms"]
+        self.column_keys = ["title", "artist", "tags", "genre", "bpm", "platforms"]
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         """Get the number of rows.
@@ -63,10 +73,20 @@ class TracksTableModel(QAbstractTableModel):
         display_data = track.to_display_data()
 
         if role == Qt.ItemDataRole.DisplayRole:
+            # For platforms column, we'll handle this differently - we return
+            # empty string here and use the custom delegate for icons
+            if column_key == "platforms":
+                return ""
             return display_data.get(column_key, "")
+        elif role == Qt.ItemDataRole.UserRole:
+            # Return the list of platforms for the PlatformIconDelegate
+            if column_key == "platforms":
+                return display_data.get("platforms", [])
         elif role == Qt.ItemDataRole.ToolTipRole:
             if column_key == "title":
                 return f"{display_data.get('title')} by {display_data.get('artist')}"
+            if column_key == "platforms":
+                return display_data.get("platforms_tooltip", "")
             return display_data.get(column_key, "")
 
         return None

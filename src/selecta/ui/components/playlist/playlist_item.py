@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/playlist_item.py
 from abc import ABC, abstractmethod
 from typing import Any
 

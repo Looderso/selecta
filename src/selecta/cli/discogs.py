@@ -1,4 +1,3 @@
-# src/selecta/cli/discogs.py
 """Discogs CLI commands."""
 
 import click

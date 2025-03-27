@@ -1,4 +1,3 @@
-# src/selecta/ui/app.py
 import sys
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
@@ -15,7 +14,11 @@ class SelectaMainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self.setWindowTitle("Selecta")
-        self.setMinimumSize(1000, 700)
+        # Set a reasonable minimum size but don't constrain maximum
+        self.setMinimumSize(800, 600)
+
+        # Resize to fill available screen space
+        self.resize_to_available_screen()
 
         # Setup central widget and main layout
         self.central_widget = QWidget()
@@ -43,6 +46,17 @@ class SelectaMainWindow(QMainWindow):
         self.nav_bar.playlists_button_clicked.connect(self.show_playlists)
         self.nav_bar.tracks_button_clicked.connect(self.show_tracks)
         self.nav_bar.vinyl_button_clicked.connect(self.show_vinyl)
+
+    def resize_to_available_screen(self):
+        """Resize the window to fill the available screen space."""
+        # Get the primary screen
+        screen = QApplication.primaryScreen()
+        if screen:
+            # Get the available geometry (this accounts for taskbars, docks, etc.)
+            available_geometry = screen.availableGeometry()
+
+            # Set the window size to match the available screen space
+            self.setGeometry(available_geometry)
 
     def toggle_side_drawer(self):
         """Toggle the visibility of the side drawer."""

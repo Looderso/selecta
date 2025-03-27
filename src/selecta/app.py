@@ -1,4 +1,3 @@
-# src/selecta/app.py
 """Main application module for Selecta."""
 
 import sys
@@ -7,7 +6,6 @@ import traceback
 from loguru import logger
 
 
-# Modify src/selecta/app.py
 def run_app(args: list[str] | None = None) -> int:
     """Entry point for running the GUI application.
 

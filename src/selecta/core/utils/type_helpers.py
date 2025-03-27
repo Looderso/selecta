@@ -1,4 +1,3 @@
-# src/selecta/utils/type_helpers.py
 """Type conversion and helper utilities for SQLAlchemy models."""
 
 from typing import Any, TypeVar, cast

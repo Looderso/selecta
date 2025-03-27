@@ -1,4 +1,3 @@
-# src/selecta/ui/components/platform_auth_widget.py
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal

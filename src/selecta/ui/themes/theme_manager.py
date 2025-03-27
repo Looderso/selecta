@@ -1,4 +1,3 @@
-# src/selecta/ui/themes/theme_manager.py
 from enum import Enum
 
 import qdarktheme

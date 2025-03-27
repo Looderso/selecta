@@ -4,7 +4,9 @@ from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from selecta.core.data.init_db import initialize_database
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
-from selecta.ui.components.playlist.local_playlist_data_provider import LocalPlaylistDataProvider
+from selecta.ui.components.playlist.local.local_playlist_data_provider import (
+    LocalPlaylistDataProvider,
+)
 from selecta.ui.components.playlist.playlist_component import PlaylistComponent
 
 
