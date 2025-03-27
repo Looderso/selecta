@@ -1,6 +1,5 @@
 # src/selecta/ui/components/playlist/playlist_component.py
-
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -13,8 +12,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.ui.components.playlist.platform_icon_delegate import PlatformIconDelegate
 from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
+from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
 from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
 
 
@@ -39,6 +40,7 @@ class PlaylistComponent(QWidget):
         self._connect_signals()
         self._load_playlists()
 
+    # src/selecta/ui/components/playlist/playlist_component.py
     def _setup_ui(self) -> None:
         """Set up the UI components."""
         layout = QHBoxLayout(self)
@@ -52,51 +54,89 @@ class PlaylistComponent(QWidget):
         self.playlist_tree.setHeaderHidden(True)
         self.playlist_tree.setExpandsOnDoubleClick(True)
         self.playlist_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.playlist_tree.setMinimumWidth(200)
+        self.playlist_tree.setMinimumWidth(200)  # Ensure playlist tree has a reasonable width
 
         # Create model for the playlist tree
         self.playlist_model = PlaylistTreeModel()
         self.playlist_tree.setModel(self.playlist_model)
 
-        # Right side - Container for track list and header
-        self.right_container = QWidget()
-        self.right_layout = QVBoxLayout(self.right_container)
-        self.right_layout.setContentsMargins(0, 0, 0, 0)
+        # Middle - Container for track list and header
+        self.middle_container = QWidget()
+        self.middle_layout = QVBoxLayout(self.middle_container)
+        self.middle_layout.setContentsMargins(0, 0, 0, 0)
 
         # Header with playlist info
         self.playlist_header = QLabel("Select a playlist")
         self.playlist_header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
-        self.right_layout.addWidget(self.playlist_header)
+        self.middle_layout.addWidget(self.playlist_header)
 
         # Tracks table
         self.tracks_table = QTableView()
         self.tracks_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tracks_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tracks_table.verticalHeader().setVisible(False)
+        self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # type: ignore
+        self.tracks_table.verticalHeader().setVisible(False)  # type: ignore
 
         # Create model for the tracks table
         self.tracks_model = TracksTableModel()
         self.tracks_table.setModel(self.tracks_model)
 
-        self.right_layout.addWidget(self.tracks_table)
+        # Set custom delegate for the platforms column
+        platforms_column_index = (
+            self.tracks_model.column_keys.index("platforms")
+            if "platforms" in self.tracks_model.column_keys
+            else -1
+        )
+        if platforms_column_index >= 0:
+            self.tracks_table.setItemDelegateForColumn(
+                platforms_column_index, PlatformIconDelegate(self.tracks_table)
+            )
+
+        self.middle_layout.addWidget(self.tracks_table)
+
+        # Right side - Track details panel
+        self.details_panel = TrackDetailsPanel()
+        self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
 
         # Add widgets to splitter
         self.splitter.addWidget(self.playlist_tree)
-        self.splitter.addWidget(self.right_container)
+        self.splitter.addWidget(self.middle_container)
+        self.splitter.addWidget(self.details_panel)
 
-        # Set default sizes (1:3 ratio)
-        self.splitter.setSizes([1, 3])
-
+        # Make the splitter handle our layout resizing properly
         layout.addWidget(self.splitter)
+
+        # We'll set the desired proportions once the widget is shown
+        # Schedule this to happen after the widget is fully initialized
+        QTimer.singleShot(0, self._apply_splitter_ratio)
+
+    def _apply_splitter_ratio(self):
+        """Apply the desired ratio to the splitter after widget initialization."""
+        # Get the total width
+        total_width = self.splitter.width()
+
+        # Calculate sizes based on desired ratio (1:3:1)
+        left_width = int(total_width * 0.2)  # 20% for playlist tree
+        right_width = int(total_width * 0.2)  # 20% for details panel
+        middle_width = total_width - left_width - right_width  # Remaining 60% for track list
+
+        # Apply the sizes
+        self.splitter.setSizes([left_width, middle_width, right_width])
 
     def _connect_signals(self) -> None:
         """Connect signals to slots."""
         # When a playlist is selected, load its tracks
-        self.playlist_tree.selectionModel().selectionChanged.connect(self._on_playlist_selected)
+        playlist_tree_selection_model = self.playlist_tree.selectionModel()
+        if playlist_tree_selection_model:
+            playlist_tree_selection_model.selectionChanged.connect(self._on_playlist_selected)
+        else:
+            raise ValueError("Playlist tree selection model not available!")
 
-        # When a track is selected, emit signal
-        self.tracks_table.selectionModel().selectionChanged.connect(self._on_track_selected)
+        tracks_table_selection_model = self.tracks_table.selectionModel()
+        if tracks_table_selection_model:
+            tracks_table_selection_model.selectionChanged.connect(self._on_track_selected)
+        else:
+            raise ValueError("Track table selection model not available!")
 
     def _load_playlists(self) -> None:
         """Load playlists from the data provider."""
@@ -122,7 +162,7 @@ class PlaylistComponent(QWidget):
 
     def _on_playlist_selected(self) -> None:
         """Handle playlist selection."""
-        indexes = self.playlist_tree.selectionModel().selectedIndexes()
+        indexes = self.playlist_tree.selectionModel().selectedIndexes()  # type: ignore
         if not indexes:
             return
 
@@ -133,6 +173,8 @@ class PlaylistComponent(QWidget):
         if item.is_folder():
             self.playlist_header.setText(f"Folder: {item.name}")
             self.tracks_model.clear()
+            # Clear track details
+            self.details_panel.set_track(None)
             return
 
         # Load tracks for the selected playlist
@@ -142,13 +184,18 @@ class PlaylistComponent(QWidget):
         tracks = self.data_provider.get_playlist_tracks(item.item_id)
         self.tracks_model.set_tracks(tracks)
 
+        # Clear track details since no track is selected yet
+        self.details_panel.set_track(None)
+
         # Emit signal with the selected playlist
         self.playlist_selected.emit(item)
 
     def _on_track_selected(self) -> None:
         """Handle track selection."""
-        indexes = self.tracks_table.selectionModel().selectedIndexes()
+        indexes = self.tracks_table.selectionModel().selectedIndexes()  # type: ignore
         if not indexes:
+            # Clear track details if no track is selected
+            self.details_panel.set_track(None)
             return
 
         # Get the row of the first selected index
@@ -156,6 +203,9 @@ class PlaylistComponent(QWidget):
         track = self.tracks_model.get_track(row)
 
         if track:
+            # Update track details panel
+            self.details_panel.set_track(track)
+
             # Emit signal with the selected track
             self.track_selected.emit(track)
 
@@ -173,3 +223,6 @@ class PlaylistComponent(QWidget):
             self.current_playlist_id = current_playlist_id
             tracks = self.data_provider.get_playlist_tracks(current_playlist_id)
             self.tracks_model.set_tracks(tracks)
+
+            # Clear track details
+            self.details_panel.set_track(None)

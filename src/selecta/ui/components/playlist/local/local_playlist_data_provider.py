@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from selecta.core.data.database import get_session
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.type_helpers import column_to_bool, column_to_int, column_to_str
-from selecta.ui.components.playlist.local_playlist_item import LocalPlaylistItem
-from selecta.ui.components.playlist.local_track_item import LocalTrackItem
+from selecta.ui.components.playlist.local.local_playlist_item import LocalPlaylistItem
+from selecta.ui.components.playlist.local.local_track_item import LocalTrackItem
 from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
@@ -24,6 +25,7 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
         """
         self.session = session or get_session()
         self.playlist_repo = PlaylistRepository(self.session)
+        self.track_repo = TrackRepository(self.session)
 
     def get_all_playlists(self) -> list[PlaylistItem]:
         """Get all playlists from the local database.
@@ -65,7 +67,6 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
 
         for track in tracks:
             # Find the corresponding playlist track to get added_at date
-            # This is a bit inefficient, but it works for now
             playlist = self.playlist_repo.get_by_id(playlist_id)
             added_at = None
             if playlist and playlist.tracks:
@@ -82,6 +83,39 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
             if track.genres and len(track.genres) > 0:
                 genre = track.genres[0].name
 
+            # Get attribute for BPM if available
+            bpm = None
+            tags = []
+            if track.attributes:
+                for attr in track.attributes:
+                    if attr.name == "bpm":
+                        bpm = attr.value
+                    elif attr.name == "tag":
+                        tags.append(attr.value)
+
+            # Get platform info
+            platform_info = []
+            track_platform_info = self.track_repo.get_all_platform_info(column_to_int(track.id))
+
+            for info in track_platform_info:
+                platform_data = {
+                    "platform": column_to_str(info.platform),
+                    "platform_id": column_to_str(info.platform_id),
+                    "uri": column_to_str(info.uri) if column_to_str(info.uri) else None,
+                }
+
+                # Add additional platform-specific data if available
+                if column_to_str(info.platform_data):
+                    import json
+
+                    try:
+                        additional_data = json.loads(column_to_str(info.platform_data))
+                        platform_data.update(additional_data)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                platform_info.append(platform_data)
+
             track_items.append(
                 LocalTrackItem(
                     track_id=track.id,
@@ -92,6 +126,9 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
                     added_at=added_at,
                     local_path=column_to_str(track.local_path),
                     genre=genre,
+                    bpm=bpm,
+                    tags=tags,
+                    platform_info=platform_info,
                 )
             )
 
