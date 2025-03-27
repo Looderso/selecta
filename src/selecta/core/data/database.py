@@ -14,8 +14,28 @@ from selecta.core.utils.path_helper import get_app_data_path
 # Create a base class for declarative models
 Base = declarative_base()
 
+
 # Define the database file path
-DB_PATH = get_app_data_path() / "selecta.db"
+def get_db_path() -> Path:
+    """Get the database path based on environment.
+
+    Returns:
+        Path: The database file path
+    """
+    # Check for dev mode
+    if os.environ.get("SELECTA_DEV_MODE") == "true":
+        dev_db_path = os.environ.get("SELECTA_DEV_DB_PATH")
+        if dev_db_path:
+            logger.info(f"Using development database at {dev_db_path}")
+            return Path(dev_db_path)
+        else:
+            logger.warning("Dev mode enabled but no database path specified.")
+
+    # Default path for production
+    return get_app_data_path() / "selecta.db"
+
+
+DB_PATH = get_db_path()
 
 
 def get_engine(db_path: Path | str | None = None) -> Any:

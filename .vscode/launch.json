@@ -10,6 +10,18 @@
             "justMyCode": true
         },
         {
+            "name": "Run Selecta (Dev Mode)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "selecta.app",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "SELECTA_DEV_MODE": "true",
+                "SELECTA_DEV_DB_PATH": "${workspaceFolder}/dev-database/dev_selecta.db"
+            }
+        },
+        {
             "name": "Run Current File",
             "type": "debugpy",
             "request": "launch",
