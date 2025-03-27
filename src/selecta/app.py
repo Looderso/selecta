@@ -1,21 +1,24 @@
+# src/selecta/app.py
 """Main application module for Selecta."""
 
 import sys
 import traceback
 
-from kivy.app import App
 from kivy.core.window import Window
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.screenmanager import Screen, ScreenManager, SlideTransition
+from kivymd.app import MDApp
 from loguru import logger
 
 from selecta.gui.authentication_view import PlatformAuthenticationView
+from selecta.gui.playlist_view.unified_playlist_browser import UnifiedPlaylistBrowser
 
 
-class SelectaApp(App):
+class SelectaApp(MDApp):
     """Main Kivy application class for Selecta."""
 
-    def build(self) -> BoxLayout:
+    def build(self):
         """Build the main application layout.
 
         Returns:
@@ -24,22 +27,35 @@ class SelectaApp(App):
         try:
             logger.info("Building Selecta application")
 
+            # Set app theme - using valid color options from KivyMD 2.0+
+            self.theme_cls.primary_palette = "Blue"  # Changed from BlueGray
+            self.theme_cls.accent_palette = "Teal"  # This should be valid
+            self.theme_cls.theme_style = "Dark"  # "Light" or "Dark"
+
             # Set default window size
-            Window.size = (400, 600)
+            Window.size = (800, 600)
 
             # Create the authentication view
-            auth_view = PlatformAuthenticationView()
+            # Create the screen manager
+            self.screen_manager = ScreenManager(transition=SlideTransition())
 
-            # Add a debug label if needed
-            debug_label = Label(
-                text="Authentication View Loaded",
-                size_hint_y=None,
-                height=50,
-                color=(1, 0, 0, 1),  # Red color for visibility
-            )
-            auth_view.add_widget(debug_label)
+            # Create authentication screen
+            auth_screen = Screen(name="authentication")
+            auth_screen.add_widget(PlatformAuthenticationView())
 
-            return auth_view
+            # Create your new screen
+            new_screen = Screen(name="playlist_browser")
+            new_screen.add_widget(UnifiedPlaylistBrowser())
+
+            # Add screens to the manager
+            self.screen_manager.add_widget(auth_screen)
+            self.screen_manager.add_widget(new_screen)
+
+            # Start with the authentication screen
+            self.screen_manager.current = "playlist_browser"
+
+            return self.screen_manager
+
         except Exception as e:
             # Log full traceback
             logger.error(f"Error building app: {e}")

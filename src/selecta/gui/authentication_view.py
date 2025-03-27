@@ -1,11 +1,11 @@
+# src/selecta/gui/authentication_view.py
 """Authentication view for Selecta platforms."""
 
 import traceback
 
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
+from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.label import MDLabel
 from loguru import logger
 
 from selecta.data.repositories.settings_repository import SettingsRepository
@@ -24,21 +24,34 @@ class PlatformAuthenticationView(BoxLayout):
 
             # Configure layout
             self.orientation = "vertical"
-            self.spacing = 15
-            self.padding = [20, 40]
+            self.spacing = 20
+            self.padding = [30, 40]
 
             # Create settings repository
             self.settings_repo = SettingsRepository()
 
-            # Add title
-            title_label = Label(
+            # Add title - using correct font style
+            title_label = MDLabel(
                 text="Platform Authentication",
-                font_size="24sp",
-                bold=True,
+                font_style="Title",  # Valid style from KivyMD 2.0
+                role="large",  # Valid role from KivyMD 2.0
+                halign="center",
                 size_hint_y=None,
                 height=50,
             )
             self.add_widget(title_label)
+
+            # Add subtitle with instructions
+            subtitle_label = MDLabel(
+                text="Connect your accounts to synchronize your music across platforms",
+                font_style="Body",
+                role="medium",
+                theme_text_color="Secondary",
+                halign="center",
+                size_hint_y=None,
+                height=40,
+            )
+            self.add_widget(subtitle_label)
 
             # Create platform indicators
             logger.info("Creating platform indicators")
@@ -56,15 +69,17 @@ class PlatformAuthenticationView(BoxLayout):
                 )
                 self.add_widget(indicator)
 
-            # Add debug label (optional, for tracking)
-            self.debug_label = Label(
-                text="Authentication View Loaded",
-                color=(1, 1, 1, 0.5),
-                font_size="12sp",
+            # Add a footer with information
+            footer_label = MDLabel(
+                text="Authenticate each platform to start syncing your music",
+                font_style="Body",
+                role="small",
+                theme_text_color="Secondary",
+                halign="center",
                 size_hint_y=None,
-                height=30,
+                height=50,
             )
-            self.add_widget(self.debug_label)
+            self.add_widget(footer_label)
 
             logger.info("Authentication view initialized successfully")
         except Exception as e:
@@ -72,9 +87,12 @@ class PlatformAuthenticationView(BoxLayout):
             logger.error(traceback.format_exc())
 
             # Add an error label to the view
-            error_label = Label(
+            error_label = MDLabel(
                 text=f"Initialization Error:\n{e}",
-                color=(1, 0, 0, 1),  # Red color
+                theme_text_color="Error",
+                font_style="Body",  # Valid style from KivyMD 2.0
+                role="medium",  # Valid role from KivyMD 2.0
+                halign="center",
             )
             self.add_widget(error_label)
 
@@ -137,34 +155,54 @@ class PlatformAuthenticationView(BoxLayout):
 
             if platform == "rekordbox":
                 # Special handling for Rekordbox
-                auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)  # type: ignore
+                auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)
 
                 # Try to download key
                 key = auth_manager.download_key()
 
                 if not key:
-                    # Show a popup with manual instructions
-                    popup_content = BoxLayout(orientation="vertical", padding=20, spacing=10)
-                    popup_content.add_widget(
-                        Label(
+                    # Create a popup with error information
+                    from kivy.uix.boxlayout import BoxLayout
+                    from kivy.uix.popup import Popup
+
+                    # Create popup content
+                    content = BoxLayout(orientation="vertical", padding=10, spacing=10)
+                    content.add_widget(
+                        MDLabel(
                             text="Could not automatically download Rekordbox key.\n"
-                            "Please download manually using:\n"
-                            "python -m pyrekordbox download-key\n"
-                            "Then run: selecta rekordbox setup"
+                            "Please download manually using:\n\n"
+                            "python -m pyrekordbox download-key\n\n"
+                            "Then run:\n"
+                            "selecta rekordbox setup",
+                            font_style="Body",
+                            role="medium",
+                            halign="center",
                         )
                     )
-                    close_btn = Button(text="Close", size_hint_y=None, height=50)
-                    popup_content.add_widget(close_btn)
 
+                    # Add close button to content
+                    btn = MDButton(
+                        style="filled",
+                        size_hint=(None, None),
+                        size=("120dp", "50dp"),
+                        pos_hint={"center_x": 0.5},
+                    )
+                    btn.add_widget(MDButtonText(text="CLOSE"))
+                    content.add_widget(btn)
+
+                    # Create and configure popup
                     popup = Popup(
                         title="Rekordbox Authentication Failed",
-                        content=popup_content,
-                        size_hint=(None, None),
-                        size=(400, 300),
+                        content=content,
+                        size_hint=(0.8, 0.6),
+                        background_color=(0.2, 0.2, 0.2, 1),
                     )
-                    close_btn.bind(on_press=popup.dismiss)  # type: ignore
-                    popup.open()
 
+                    # Bind the button to dismiss the popup
+                    btn.bind(on_release=lambda x: popup.dismiss())
+
+                    # Show popup
+                    popup.open()
                     return
 
             # For other platforms
