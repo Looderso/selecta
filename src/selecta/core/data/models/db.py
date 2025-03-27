@@ -244,7 +244,11 @@ class Playlist(Base):
 
     # Relationships
     children = relationship(
-        "Playlist", backref="parent", remote_side=[id], cascade="all, delete-orphan"
+        "Playlist",
+        backref="parent",
+        remote_side=[id],
+        cascade="all, delete-orphan",
+        single_parent=True,  # Add this line to fix the cascade issue
     )
 
     # Tracks in the playlist
