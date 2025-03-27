@@ -6,8 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.playlist import Playlist, PlaylistTrack
-from selecta.core.data.models.track import Track
+from selecta.core.data.models.db import Playlist, PlaylistTrack, Track
 
 
 class PlaylistRepository:
@@ -259,11 +258,11 @@ class PlaylistRepository:
 
         # The following comparison is a SQLAlchemy expression, not a Python comparison
         # We need to evaluate it explicitly to get a boolean result
-        if old_position == new_position:
+        if old_position == new_position:  # type: ignore
             return True
 
         # For the conditional, use IS comparison for clarity
-        if old_position < new_position:
+        if old_position < new_position:  # type: ignore
             # Moving down - shift tracks in between up
             self.session.query(PlaylistTrack).filter(
                 PlaylistTrack.playlist_id == playlist_id,
@@ -285,7 +284,7 @@ class PlaylistRepository:
             )
 
         # Update the track's position using setattr
-        playlist_track.position = new_position
+        playlist_track.position = new_position  # type: ignore
 
         self.session.commit()
         return True

@@ -4,8 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.album import Album
-from selecta.core.data.models.vinyl import Vinyl
+from selecta.core.data.models.db import Album, Vinyl
 
 
 class VinylRepository:

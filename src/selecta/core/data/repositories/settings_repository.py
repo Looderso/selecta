@@ -6,8 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.credentials import PlatformCredentials
-from selecta.core.data.models.settings import UserSettings
+from selecta.core.data.models.db import PlatformCredentials, UserSettings
 
 
 class SettingsRepository:
