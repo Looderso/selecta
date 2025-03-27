@@ -1,10 +1,11 @@
 # src/selecta/ui/app.py
 import sys
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
-from selecta.ui.components.platform_auth_panel import PlatformAuthPanel
+from selecta.ui.components.navigation_bar import NavigationBar
+from selecta.ui.components.side_drawer import SideDrawer
+from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
 class SelectaMainWindow(QMainWindow):
@@ -14,39 +15,52 @@ class SelectaMainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self.setWindowTitle("Selecta")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1000, 700)
 
-        # Setup UI components
-        self._setup_ui()
+        # Setup central widget and main layout
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
-    def _setup_ui(self):
-        """Set up the main UI components."""
-        # Create central widget and layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        # Create the navigation bar
+        self.nav_bar = NavigationBar(self)
+        self.main_layout.addWidget(self.nav_bar)
 
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        # Create the content area
+        self.content_area = QWidget()
+        self.content_layout = QVBoxLayout(self.content_area)
+        self.content_layout.setContentsMargins(20, 20, 20, 20)
+        self.main_layout.addWidget(self.content_area, 1)  # 1 = stretch factor
 
-        # Add title
-        title_label = QLabel("Platform Authentication")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 10px;")
-        main_layout.addWidget(title_label)
+        # Create the side drawer
+        self.side_drawer = SideDrawer(self)
+        self.side_drawer.hide()  # Hidden by default
 
-        # Add subtitle
-        subtitle_label = QLabel("Connect your accounts to synchronize your music across platforms")
-        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle_label.setStyleSheet("font-size: 14px; color: #888; margin-bottom: 20px;")
-        main_layout.addWidget(subtitle_label)
+        # Connect signals
+        self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
 
-        # Add authentication panel
-        self.auth_panel = PlatformAuthPanel()
-        main_layout.addWidget(self.auth_panel)
+    def toggle_side_drawer(self):
+        """Toggle the visibility of the side drawer."""
+        if self.side_drawer.isVisible():
+            self.side_drawer.hide_drawer()
+        else:
+            self.side_drawer.show_drawer()
 
-        # Add spacer to push everything to the top
-        main_layout.addStretch(1)
+    def set_content(self, widget):
+        """Set the content widget in the main area."""
+        # Clear the current content
+        for i in reversed(range(self.content_layout.count())):
+            item = self.content_layout.itemAt(i)
+
+            if item:
+                widget_item = item.widget()
+                if widget_item:
+                    widget_item.deleteLater()
+
+        # Add the new content
+        self.content_layout.addWidget(widget)
 
 
 def run_app():
@@ -57,33 +71,17 @@ def run_app():
     app.setApplicationName("Selecta")
     app.setOrganizationName("Looderso")
 
-    # Apply basic styling
-    app.setStyle("Fusion")
-
-    # Apply dark theme with custom styling
-    app.setStyleSheet("""
-        QMainWindow, QWidget {
-            background-color: #2D2D30;
-            color: #FFFFFF;
-        }
-        QPushButton {
-            background-color: #0078D7;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 8px 16px;
-            font-weight: bold;
-        }
-        QPushButton:hover {
-            background-color: #1988E0;
-        }
-        QPushButton:pressed {
-            background-color: #006CC1;
-        }
-    """)
+    # Apply theming
+    ThemeManager.apply_theme(app, Theme.DARK)
 
     # Create and show the main window
     window = SelectaMainWindow()
+
+    # Add main content
+    from selecta.ui.components.main_content import MainContent
+
+    window.set_content(MainContent())
+
     window.show()
 
     return app.exec()

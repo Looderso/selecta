@@ -7,6 +7,7 @@ import traceback
 from loguru import logger
 
 
+# Modify src/selecta/app.py
 def run_app(args: list[str] | None = None) -> int:
     """Entry point for running the GUI application.
 
@@ -22,8 +23,13 @@ def run_app(args: list[str] | None = None) -> int:
     try:
         # Import and run the PyQt app
         logger.info("Starting Selecta application with PyQt6")
+        from selecta.core.data.init_db import initialize_database
         from selecta.ui.app import run_app as run_pyqt_app
 
+        # Initialize the database
+        initialize_database()
+
+        # Run the app
         return run_pyqt_app()
     except Exception as e:
         logger.exception(f"Error running Selecta application: {e}")
