@@ -13,7 +13,7 @@ class PlatformAuthWidget(QWidget):
 
     auth_button_clicked = pyqtSignal()
 
-    def __init__(self, platform_name, parent=None):
+    def __init__(self, platform_name: str, parent=None) -> None:
         """Initializes the Platform Authentication Widget.
 
         Args:
@@ -33,7 +33,7 @@ class PlatformAuthWidget(QWidget):
 
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Set up the UI components."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
@@ -90,7 +90,7 @@ class PlatformAuthWidget(QWidget):
             }
         """)
 
-    def _get_icon_path(self):
+    def _get_icon_path(self) -> str | None:
         """Get the path to the platform icon."""
         # Map platform names to icon file names
         icon_files = {
@@ -109,11 +109,11 @@ class PlatformAuthWidget(QWidget):
 
         return None
 
-    def is_authenticated(self):
+    def is_authenticated(self) -> bool:
         """Get the authentication status."""
         return self._is_authenticated
 
-    def set_authenticated(self, is_authenticated):
+    def set_authenticated(self, is_authenticated: bool) -> None:
         """Set the authentication status."""
         self._is_authenticated = is_authenticated
 

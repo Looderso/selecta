@@ -11,7 +11,7 @@ from selecta.ui.components.platform_auth_widget import PlatformAuthWidget
 class PlatformAuthPanel(QWidget):
     """Panel containing authentication widgets for all platforms."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         """Initialize the platform authentication panel.
 
         This panel contains authentication widgets for Spotify, Discogs, and Rekordbox.
@@ -27,7 +27,7 @@ class PlatformAuthPanel(QWidget):
 
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Set up the UI components."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -49,7 +49,7 @@ class PlatformAuthPanel(QWidget):
         footer_label.setStyleSheet("color: #888; margin-top: 10px;")
         layout.addWidget(footer_label)
 
-    def _create_spotify_widget(self):
+    def _create_spotify_widget(self) -> PlatformAuthWidget:
         """Create Spotify authentication widget."""
         widget = PlatformAuthWidget("Spotify")
 
@@ -63,7 +63,7 @@ class PlatformAuthPanel(QWidget):
 
         return widget
 
-    def _create_discogs_widget(self):
+    def _create_discogs_widget(self) -> PlatformAuthWidget:
         """Create Discogs authentication widget."""
         widget = PlatformAuthWidget("Discogs")
 
@@ -77,7 +77,7 @@ class PlatformAuthPanel(QWidget):
 
         return widget
 
-    def _create_rekordbox_widget(self):
+    def _create_rekordbox_widget(self) -> PlatformAuthWidget:
         """Create Rekordbox authentication widget."""
         widget = PlatformAuthWidget("Rekordbox")
 
@@ -91,7 +91,7 @@ class PlatformAuthPanel(QWidget):
 
         return widget
 
-    def _authenticate_platform(self, platform):
+    def _authenticate_platform(self, platform: str) -> None:
         """Authenticate a specific platform."""
         if platform == "spotify":
             self._authenticate_spotify()
@@ -100,7 +100,7 @@ class PlatformAuthPanel(QWidget):
         elif platform == "rekordbox":
             self._authenticate_rekordbox()
 
-    def _authenticate_spotify(self):
+    def _authenticate_spotify(self) -> None:
         """Authenticate with Spotify."""
         widget = self.spotify_auth
 
@@ -115,7 +115,7 @@ class PlatformAuthPanel(QWidget):
                 spotify_client.authenticate()
                 widget.set_authenticated(spotify_client.is_authenticated())
 
-    def _authenticate_discogs(self):
+    def _authenticate_discogs(self) -> None:
         """Authenticate with Discogs."""
         widget = self.discogs_auth
 
@@ -130,7 +130,7 @@ class PlatformAuthPanel(QWidget):
                 discogs_client.authenticate()
                 widget.set_authenticated(discogs_client.is_authenticated())
 
-    def _authenticate_rekordbox(self):
+    def _authenticate_rekordbox(self) -> None:
         """Authenticate with Rekordbox."""
         widget = self.rekordbox_auth
 
