@@ -77,18 +77,8 @@ def init_database(db_path: Path | str | None = None) -> None:
         db_path: Path to the database file (default: app data directory)
     """
     engine = get_engine(db_path)
+
     # Import models here to avoid circular imports
-    from selecta.core.data.models import (  # noqa
-        Track,
-        Playlist,
-        Album,
-        Vinyl,
-        Genre,
-        Tag,
-        TrackAttribute,
-        UserSettings,
-        PlatformCredentials,
-    )
 
     # Create all tables
     Base.metadata.create_all(engine)

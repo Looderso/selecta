@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.track import Track, TrackAttribute, TrackPlatformInfo
+from selecta.core.data.models.db import Track, TrackAttribute, TrackPlatformInfo
 
 
 class TrackRepository:
@@ -160,12 +160,12 @@ class TrackRepository:
 
         if existing:
             # Update existing
-            existing.platform_id = platform_id
+            existing.platform_id = platform_id  # type: ignore
             if uri is not None:
-                existing.uri = uri
+                existing.uri = uri  # type: ignore
             if metadata is not None:
                 # Use platform_data instead of metadata
-                existing.platform_data = metadata
+                existing.platform_data = metadata  # type: ignore
             self.session.commit()
             return existing
 
@@ -205,9 +205,9 @@ class TrackRepository:
 
         if existing:
             # Update existing
-            existing.value = value
+            existing.value = value  # type: ignore
             if source is not None:
-                existing.source = source
+                existing.source = source  # type: ignore
             self.session.commit()
             return existing
 
