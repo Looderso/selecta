@@ -7,6 +7,9 @@ class NavigationBar(QWidget):
     """Navigation bar for the application."""
 
     settings_button_clicked = pyqtSignal()
+    playlists_button_clicked = pyqtSignal()
+    tracks_button_clicked = pyqtSignal()
+    vinyl_button_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget):
         """Initialize the navigation bar."""
@@ -64,15 +67,12 @@ class NavigationBar(QWidget):
 
     def _on_playlists_clicked(self):
         """Handle playlists button click."""
-        # To be implemented
-        pass
+        self.playlists_button_clicked.emit()
 
     def _on_tracks_clicked(self):
         """Handle tracks button click."""
-        # To be implemented
-        pass
+        self.tracks_button_clicked.emit()
 
     def _on_vinyl_clicked(self):
         """Handle vinyl button click."""
-        # To be implemented
-        pass
+        self.vinyl_button_clicked.emit()

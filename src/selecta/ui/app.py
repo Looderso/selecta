@@ -40,6 +40,9 @@ class SelectaMainWindow(QMainWindow):
 
         # Connect signals
         self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
+        self.nav_bar.playlists_button_clicked.connect(self.show_playlists)
+        self.nav_bar.tracks_button_clicked.connect(self.show_tracks)
+        self.nav_bar.vinyl_button_clicked.connect(self.show_vinyl)
 
     def toggle_side_drawer(self):
         """Toggle the visibility of the side drawer."""
@@ -62,6 +65,26 @@ class SelectaMainWindow(QMainWindow):
         # Add the new content
         self.content_layout.addWidget(widget)
 
+    def show_playlists(self):
+        """Show playlists content."""
+        from selecta.ui.components.playlist_content import PlaylistContent
+
+        self.set_content(PlaylistContent())
+
+    def show_tracks(self):
+        """Show tracks content."""
+        # For now, just show the main content
+        from selecta.ui.components.main_content import MainContent
+
+        self.set_content(MainContent())
+
+    def show_vinyl(self):
+        """Show vinyl content."""
+        # For now, just show the main content
+        from selecta.ui.components.main_content import MainContent
+
+        self.set_content(MainContent())
+
 
 def run_app():
     """Run the PyQt application."""
@@ -77,7 +100,7 @@ def run_app():
     # Create and show the main window
     window = SelectaMainWindow()
 
-    # Add main content
+    # Add main content initially
     from selecta.ui.components.main_content import MainContent
 
     window.set_content(MainContent())
