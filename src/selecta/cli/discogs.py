@@ -4,10 +4,10 @@
 import click
 from loguru import logger
 
-from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.platform.discogs.auth import DiscogsAuthManager, validate_discogs_credentials
-from selecta.platform.discogs.client import DiscogsClient
-from selecta.utils.type_helpers import is_column_truthy
+from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.platform.discogs.auth import DiscogsAuthManager, validate_discogs_credentials
+from selecta.core.platform.discogs.client import DiscogsClient
+from selecta.core.utils.type_helpers import is_column_truthy
 
 
 @click.group(name="discogs")

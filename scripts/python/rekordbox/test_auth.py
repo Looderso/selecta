@@ -19,9 +19,9 @@ from pathlib import Path
 src_path = Path(__file__).resolve().parent.parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from selecta.data.init_db import initialize_database
-from selecta.platform.platform_factory import PlatformFactory
-from selecta.platform.rekordbox.client import RekordboxClient
+from selecta.core.data.init_db import initialize_database
+from selecta.core.platform.platform_factory import PlatformFactory
+from selecta.core.platform.rekordbox.client import RekordboxClient
 
 
 def demonstrate_rekordbox_features():

@@ -11,13 +11,13 @@ sys.path.insert(0, str(src_path))
 
 from loguru import logger
 
-from selecta.data.database import get_engine, get_session, init_database
-from selecta.data.repositories.playlist_repository import PlaylistRepository
-from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.data.repositories.tag_repository import TagRepository
-from selecta.data.repositories.track_repository import TrackRepository
-from selecta.data.repositories.vinyl_repository import VinylRepository
-from selecta.utils.type_helpers import column_to_int
+from selecta.core.data.database import get_engine, get_session, init_database
+from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.data.repositories.tag_repository import TagRepository
+from selecta.core.data.repositories.track_repository import TrackRepository
+from selecta.core.data.repositories.vinyl_repository import VinylRepository
+from selecta.core.utils.type_helpers import column_to_int
 
 
 def create_test_data(db_path: Path) -> None:

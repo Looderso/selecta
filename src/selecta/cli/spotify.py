@@ -3,9 +3,9 @@
 import click
 from loguru import logger
 
-from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.platform.spotify.auth import SpotifyAuthManager, validate_spotify_credentials
-from selecta.platform.spotify.client import SpotifyClient
+from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.platform.spotify.auth import SpotifyAuthManager, validate_spotify_credentials
+from selecta.core.platform.spotify.client import SpotifyClient
 
 
 @click.group(name="spotify")

@@ -11,9 +11,9 @@ sys.path.insert(0, str(src_path))
 
 from loguru import logger
 
-from selecta.data.init_db import initialize_database
-from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.platform.discogs.client import DiscogsClient
+from selecta.core.data.init_db import initialize_database
+from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.platform.discogs.client import DiscogsClient
 
 # Configure logging to see more details
 logger.remove()

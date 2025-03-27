@@ -4,9 +4,9 @@
 import click
 from loguru import logger
 
-from selecta.data.repositories.settings_repository import SettingsRepository
-from selecta.platform.rekordbox.auth import RekordboxAuthManager
-from selecta.platform.rekordbox.client import RekordboxClient
+from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.platform.rekordbox.auth import RekordboxAuthManager
+from selecta.core.platform.rekordbox.client import RekordboxClient
 
 
 @click.group(name="rekordbox")
