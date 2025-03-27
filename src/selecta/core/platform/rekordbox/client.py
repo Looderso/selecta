@@ -1,4 +1,3 @@
-# src/selecta/platform/rekordbox/client.py
 """Rekordbox client for accessing Rekordbox data."""
 
 from loguru import logger

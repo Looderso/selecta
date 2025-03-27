@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/local_playlist_data_provider.py
 from typing import Any
 
 from sqlalchemy.orm import Session

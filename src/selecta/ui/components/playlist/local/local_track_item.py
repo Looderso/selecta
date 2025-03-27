@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/local_track_item.py
 from datetime import datetime
 from typing import Any
 

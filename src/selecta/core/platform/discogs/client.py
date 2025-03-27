@@ -1,4 +1,3 @@
-# src/selecta/platform/discogs/client.py
 """Discogs API client for accessing Discogs data."""
 
 from typing import Any

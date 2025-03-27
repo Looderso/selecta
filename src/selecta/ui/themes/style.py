@@ -1,4 +1,3 @@
-# src/selecta/ui/themes/style.py
 def apply_global_styles(app):
     """Apply global style rules to the application."""
     app.setStyleSheet("""

@@ -1,4 +1,3 @@
-# src/selecta/ui/components/platform_auth_panel.py
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 

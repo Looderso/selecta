@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/platform_icon_delegate.py
 from PyQt6.QtCore import QModelIndex, QSize, Qt
 from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem

@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/playlist_tree_model.py
 from typing import Any
 
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt

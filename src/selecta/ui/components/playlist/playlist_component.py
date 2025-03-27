@@ -1,4 +1,3 @@
-# src/selecta/ui/components/playlist/playlist_component.py
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -40,7 +39,6 @@ class PlaylistComponent(QWidget):
         self._connect_signals()
         self._load_playlists()
 
-    # src/selecta/ui/components/playlist/playlist_component.py
     def _setup_ui(self) -> None:
         """Set up the UI components."""
         layout = QHBoxLayout(self)
