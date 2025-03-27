@@ -6,8 +6,8 @@ from pathlib import Path
 import click
 from loguru import logger
 
-from selecta.data.init_db import initialize_database
-from selecta.utils.path_helper import get_app_data_path
+from selecta.core.data.init_db import initialize_database
+from selecta.core.utils.path_helper import get_app_data_path
 
 
 @click.group(name="database")

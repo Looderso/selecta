@@ -3,9 +3,31 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
+name = "selecta"
+version = "0.1.0"
+description = "A unified music library manager for Rekordbox, Spotify, and Discogs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Lorenz Häusler", email = "Haeusler.Lorenz@gmail.com" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Operating System :: MacOS :: MacOS X",
+]
+
 dependencies = [
-    "kivy",
-    "kivymd",
+    "PyQt6",         # Modern PyQt version
+    "PyQt6-Qt6",     # Qt6 bindings
+    "PyQt6-sip",     # SIP bindings
+    "qtstylish",     # For modern styling
+    "pyqtdarktheme", # Dark theme support
     # Garden packages will be added later once the core setup is working
     # API clients
     "spotipy",                # Spotify API client
@@ -31,24 +53,6 @@ dependencies = [
     "pyobjc-core; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
     "pyobjc-framework-CoreServices; sys_platform == 'darwin'",
-]
-name = "selecta"
-version = "0.1.0"
-description = "A unified music library manager for Rekordbox, Spotify, and Discogs"
-readme = "README.md"
-requires-python = ">=3.11"
-license = { text = "MIT" }
-authors = [{ name = "Lorenz Häusler", email = "Haeusler.Lorenz@gmail.com" }]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
-    "Intended Audience :: End Users/Desktop",
-    "Topic :: Multimedia :: Sound/Audio",
-    "Operating System :: MacOS :: MacOS X",
 ]
 
 [project.optional-dependencies]

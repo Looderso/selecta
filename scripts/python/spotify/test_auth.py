@@ -14,14 +14,14 @@ Run this after authenticating with 'selecta spotify auth'.
 import sys
 from pathlib import Path
 
-from selecta.platform.spotify.client import SpotifyClient
+from selecta.core.platform.spotify.client import SpotifyClient
 
 # Add the src directory to the Python path to allow imports
 src_path = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from selecta.data.init_db import initialize_database
-from selecta.platform.platform_factory import PlatformFactory
+from selecta.core.data.init_db import initialize_database
+from selecta.core.platform.platform_factory import PlatformFactory
 
 
 def demonstrate_spotify_features():
