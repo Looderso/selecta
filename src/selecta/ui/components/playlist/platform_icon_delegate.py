@@ -15,12 +15,12 @@ class PlatformIconDelegate(QStyledItemDelegate):
             parent: Parent widget
         """
         super().__init__(parent)
-        self.icon_size = 16
+        self.icon_size = 20
         self.spacing = 2
         # Cache platform icons
         self.platform_icons = {}
         for platform in ["spotify", "rekordbox", "discogs"]:
-            icon_path = get_resource_path(f"icons/{platform}.png")
+            icon_path = get_resource_path(f"icons/0.125x/{platform}@0.125x.png")
             if icon_path.exists():
                 self.platform_icons[platform] = QPixmap(str(icon_path)).scaled(
                     self.icon_size,
