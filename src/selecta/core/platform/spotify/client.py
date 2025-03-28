@@ -341,7 +341,7 @@ class SpotifyClient(AbstractPlatform):
 
         return features
 
-    def search_tracks(self, query: str, limit: int = 10) -> list[SpotifyTrack]:
+    def search_tracks(self, query: str, limit: int = 10) -> list[dict]:
         """Search for tracks on Spotify.
 
         Args:
@@ -349,7 +349,7 @@ class SpotifyClient(AbstractPlatform):
             limit: Maximum number of results to return
 
         Returns:
-            List of SpotifyTrack objects
+            List of track data dictionaries with full information including album art
 
         Raises:
             ValueError: If the client is not authenticated
@@ -364,6 +364,7 @@ class SpotifyClient(AbstractPlatform):
 
         tracks = []
         for item in results.get("tracks", {}).get("items", []):
-            tracks.append(SpotifyTrack.from_spotify_dict(item))
+            # Return the raw track data from Spotify API that includes album images
+            tracks.append(item)
 
         return tracks

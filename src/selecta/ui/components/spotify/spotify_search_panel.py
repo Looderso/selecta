@@ -105,8 +105,12 @@ class SpotifySearchPanel(QWidget):
 
         # Perform search using the Spotify client
         try:
-            assert isinstance(self.spotify_client, SpotifyClient)
-            if self.spotify_client and self.spotify_client.is_authenticated():
+            if (
+                self.spotify_client
+                and self.spotify_client.is_authenticated()
+                and isinstance(self.spotify_client, SpotifyClient)
+            ):
+                # Call the raw search_tracks method to get full track data with album images
                 results = self.spotify_client.search_tracks(query, limit=10)
                 self.display_results(results)
             else:
@@ -131,8 +135,27 @@ class SpotifySearchPanel(QWidget):
 
         # Add results to the layout
         for track in results:
-            # Convert to dict if it's a model object
-            track_data = track.__dict__ if hasattr(track, "__dict__") else track
+            # Convert SpotifyTrack to a properly formatted dict for our UI
+            if hasattr(track, "artist_names") and hasattr(track, "album_name"):
+                # Create a compatible dict from SpotifyTrack object
+                track_data = {
+                    "id": track.id,
+                    "name": track.name,
+                    "uri": track.uri,
+                    "artists": [{"name": artist} for artist in track.artist_names],
+                    "album": {
+                        "name": track.album_name,
+                        "id": track.album_id,
+                        # We don't have images in the SpotifyTrack object
+                        "images": [],
+                    },
+                    "duration_ms": track.duration_ms,
+                    "popularity": track.popularity,
+                    "explicit": track.explicit,
+                }
+            else:
+                # Use the track as is (assuming it's already a dict)
+                track_data = track
 
             track_widget = SpotifyTrackItem(track_data)
             track_widget.sync_clicked.connect(self._on_track_sync)

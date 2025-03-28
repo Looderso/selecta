@@ -11,12 +11,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.ui.components.spotify.image_loader import ImageLoader
+
 
 class SpotifyTrackItem(QWidget):
     """Widget to display a single Spotify track search result."""
 
     sync_clicked = pyqtSignal(dict)  # Emits track data on sync button click
     add_clicked = pyqtSignal(dict)  # Emits track data on add button click
+
+    # Shared image loader for all track items
+    _image_loader = None
 
     def __init__(self, track_data: dict, parent=None):
         """Initialize the Spotify track item.
@@ -31,6 +36,14 @@ class SpotifyTrackItem(QWidget):
         self.setMaximumHeight(70)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setObjectName("spotifyTrackItem")
+
+        # Initialize image loader if needed
+        if SpotifyTrackItem._image_loader is None:
+            SpotifyTrackItem._image_loader = ImageLoader()
+
+        # Always connect to the image loader signals
+        # This is important as each widget needs its own connection
+        SpotifyTrackItem._image_loader.image_loaded.connect(self._on_image_loaded)
 
         # Apply styling
         self.setStyleSheet("""
@@ -83,24 +96,30 @@ class SpotifyTrackItem(QWidget):
         self.cover_label.setStyleSheet("border-radius: 4px;")
 
         # Set album image if available
-        if (
-            "album" in self.track_data
-            and "images" in self.track_data["album"]
-            and self.track_data["album"]["images"]
-        ):
-            album_url = self.track_data["album"]["images"][0]["url"]
-            # In a real implementation, you would asynchronously load the image from the URL
-            # For now, we'll use a placeholder
-            placeholder = QPixmap(54, 54)
-            placeholder.fill(Qt.GlobalColor.darkGray)
-            self.cover_label.setPixmap(placeholder)
-            # Store the URL for future reference
-            self.cover_label.setProperty("imageUrl", album_url)
-        else:
-            # No image available, use a placeholder
-            placeholder = QPixmap(54, 54)
-            placeholder.fill(Qt.GlobalColor.darkGray)
-            self.cover_label.setPixmap(placeholder)
+        album_image_url = None
+        if "album" in self.track_data and "images" in self.track_data["album"]:
+            images = self.track_data["album"]["images"]
+            if images:
+                # Find smallest image that's at least 60x60
+                for image in sorted(images, key=lambda x: x.get("width", 0)):
+                    if image.get("width", 0) >= 60:
+                        album_image_url = image.get("url")
+                        break
+                # If no suitable image found, use the first one
+                if not album_image_url and images:
+                    album_image_url = images[0].get("url")
+
+        # Set a placeholder initially
+        placeholder = QPixmap(54, 54)
+        placeholder.fill(Qt.GlobalColor.darkGray)
+        self.cover_label.setPixmap(placeholder)
+
+        # Store the URL for loading
+        if album_image_url:
+            self.cover_label.setProperty("imageUrl", album_image_url)
+            # Start loading the image
+            if SpotifyTrackItem._image_loader:
+                SpotifyTrackItem._image_loader.load_image(album_image_url, 60)
 
         layout.addWidget(self.cover_label)
 
@@ -117,7 +136,9 @@ class SpotifyTrackItem(QWidget):
         info_layout.addWidget(self.title_label)
 
         # Artist name
-        artist_names = [artist["name"] for artist in self.track_data.get("artists", [])]
+        artist_names = []
+        if "artists" in self.track_data:
+            artist_names = [artist.get("name", "") for artist in self.track_data["artists"]]
         artist_text = ", ".join(artist_names) if artist_names else "Unknown Artist"
         self.artist_label = QLabel(artist_text)
         self.artist_label.setObjectName("artistName")
@@ -145,6 +166,17 @@ class SpotifyTrackItem(QWidget):
         buttons_layout.addWidget(self.add_button)
 
         layout.addLayout(buttons_layout)
+
+    def _on_image_loaded(self, url: str, pixmap: QPixmap):
+        """Handle loaded image.
+
+        Args:
+            url: The URL of the loaded image
+            pixmap: The loaded image pixmap
+        """
+        # Check if this image belongs to this widget
+        if self.cover_label.property("imageUrl") == url:
+            self.cover_label.setPixmap(pixmap)
 
     def _on_sync_clicked(self):
         """Handle sync button click."""
