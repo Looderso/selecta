@@ -1,6 +1,14 @@
 import sys
 
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QMainWindow,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
@@ -31,11 +39,57 @@ class SelectaMainWindow(QMainWindow):
         self.nav_bar = NavigationBar(self)
         self.main_layout.addWidget(self.nav_bar)
 
-        # Create the content area
-        self.content_area = QWidget()
-        self.content_layout = QVBoxLayout(self.content_area)
-        self.content_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.addWidget(self.content_area, 1)  # 1 = stretch factor
+        # Create the content layout (below navigation bar)
+        self.content_widget = QWidget()
+        self.content_layout = QHBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(10, 10, 10, 10)
+        self.content_layout.setSpacing(10)
+        self.main_layout.addWidget(self.content_widget, 1)  # 1 = stretch factor
+
+        # Create the main splitter for left and right sides
+        self.horizontal_splitter = QSplitter()
+        self.horizontal_splitter.setHandleWidth(2)
+        self.content_layout.addWidget(self.horizontal_splitter)
+
+        # Left side - Contains playlist on top and empty space at bottom
+        self.left_widget = QWidget()
+        self.left_layout = QVBoxLayout(self.left_widget)
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_layout.setSpacing(10)
+
+        # Create vertical splitter for playlist and bottom component
+        self.vertical_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.vertical_splitter.setHandleWidth(2)
+        self.left_layout.addWidget(self.vertical_splitter)
+
+        # Top component for playlist
+        self.playlist_container = QWidget()
+        self.playlist_layout = QVBoxLayout(self.playlist_container)
+        self.playlist_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Bottom component (empty for now)
+        self.bottom_container = QWidget()
+        self.bottom_layout = QVBoxLayout(self.bottom_container)
+        self.bottom_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Add both to vertical splitter
+        self.vertical_splitter.addWidget(self.playlist_container)
+        self.vertical_splitter.addWidget(self.bottom_container)
+
+        # Set initial sizes for vertical splitter (2/3 for playlist, 1/3 for bottom)
+        self.vertical_splitter.setSizes([200, 100])  # Proportional values (2:1 ratio)
+
+        # Right side - For adaptive content
+        self.right_container = QWidget()
+        self.right_layout = QVBoxLayout(self.right_container)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Add left and right to horizontal splitter
+        self.horizontal_splitter.addWidget(self.left_widget)
+        self.horizontal_splitter.addWidget(self.right_container)
+
+        # Set initial sizes for horizontal splitter (3/4 for left, 1/4 for right)
+        self.horizontal_splitter.setSizes([750, 250])  # Proportional values (3:1 ratio)
 
         # Create the side drawer
         self.side_drawer = SideDrawer(self)
@@ -58,6 +112,24 @@ class SelectaMainWindow(QMainWindow):
             # Set the window size to match the available screen space
             self.setGeometry(available_geometry)
 
+    def resizeEvent(self, event):
+        """Handle resize events to maintain splitter proportions."""
+        super().resizeEvent(event)
+
+        # Update splitter sizes when the window is resized
+        if hasattr(self, "horizontal_splitter") and hasattr(self, "vertical_splitter"):
+            # Maintain the 3:1 horizontal ratio
+            total_width = self.horizontal_splitter.width()
+            left_width = int(total_width * 0.75)  # 75% for left side
+            right_width = total_width - left_width  # 25% for right side
+            self.horizontal_splitter.setSizes([left_width, right_width])
+
+            # Maintain the 2:1 vertical ratio
+            total_height = self.vertical_splitter.height()
+            top_height = int(total_height * 0.67)  # ~67% for top section
+            bottom_height = total_height - top_height  # ~33% for bottom section
+            self.vertical_splitter.setSizes([top_height, bottom_height])
+
     def toggle_side_drawer(self):
         """Toggle the visibility of the side drawer."""
         if self.side_drawer.isVisible():
@@ -65,39 +137,94 @@ class SelectaMainWindow(QMainWindow):
         else:
             self.side_drawer.show_drawer()
 
-    def set_content(self, widget):
-        """Set the content widget in the main area."""
+    def set_playlist_content(self, widget):
+        """Set the content widget in the playlist area."""
         # Clear the current content
-        for i in reversed(range(self.content_layout.count())):
-            item = self.content_layout.itemAt(i)
-
-            if item:
-                widget_item = item.widget()
-                if widget_item:
-                    widget_item.deleteLater()
+        self._clear_layout(self.playlist_layout)
 
         # Add the new content
-        self.content_layout.addWidget(widget)
+        self.playlist_layout.addWidget(widget)
+
+    def set_bottom_content(self, widget):
+        """Set the content widget in the bottom area."""
+        # Clear the current content
+        self._clear_layout(self.bottom_layout)
+
+        # Add the new content
+        self.bottom_layout.addWidget(widget)
+
+    def set_right_content(self, widget):
+        """Set the content widget in the right area."""
+        # Clear the current content
+        self._clear_layout(self.right_layout)
+
+        # Add the new content
+        self.right_layout.addWidget(widget)
+
+    def _clear_layout(self, layout):
+        """Clear all widgets from a layout."""
+        if layout is None:
+            return
+
+        # Remove all widgets from the layout
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
     def show_playlists(self):
         """Show playlists content."""
+        from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.playlist_content import PlaylistContent
 
-        self.set_content(PlaylistContent())
+        # Create playlist content
+        playlist_content = PlaylistContent()
+        self.set_playlist_content(playlist_content)
+
+        # Create bottom content
+        bottom_content = BottomContent()
+        self.set_bottom_content(bottom_content)
+
+        # Move track details to right panel
+        if hasattr(playlist_content, "playlist_component") and hasattr(
+            playlist_content.playlist_component, "details_panel"
+        ):
+            details_panel = playlist_content.playlist_component.details_panel
+            # Add to right container
+            self.set_right_content(details_panel)
 
     def show_tracks(self):
         """Show tracks content."""
-        # For now, just show the main content
+        from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.main_content import MainContent
 
-        self.set_content(MainContent())
+        # Add main content to playlist area for now
+        self.set_playlist_content(MainContent())
+
+        # Add bottom content
+        bottom_content = BottomContent()
+        self.set_bottom_content(bottom_content)
+
+        # Clear right side
+        empty_widget = QWidget()
+        self.set_right_content(empty_widget)
 
     def show_vinyl(self):
         """Show vinyl content."""
-        # For now, just show the main content
+        from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.main_content import MainContent
 
-        self.set_content(MainContent())
+        # Add main content to playlist area for now
+        self.set_playlist_content(MainContent())
+
+        # Add bottom content
+        bottom_content = BottomContent()
+        self.set_bottom_content(bottom_content)
+
+        # Clear right side
+        empty_widget = QWidget()
+        self.set_right_content(empty_widget)
 
 
 def run_app():
@@ -114,10 +241,8 @@ def run_app():
     # Create and show the main window
     window = SelectaMainWindow()
 
-    # Add main content initially
-    from selecta.ui.components.main_content import MainContent
-
-    window.set_content(MainContent())
+    # Initial setup - Load playlist view
+    window.show_playlists()
 
     window.show()
 
