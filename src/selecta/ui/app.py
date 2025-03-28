@@ -209,13 +209,22 @@ class SelectaMainWindow(QMainWindow):
         bottom_content = BottomContent()
         self.set_bottom_content(bottom_content)
 
-        # Move track details to right panel
+        # Store a reference to the details panel for switching later
         if hasattr(playlist_content, "playlist_component") and hasattr(
             playlist_content.playlist_component, "details_panel"
         ):
-            details_panel = playlist_content.playlist_component.details_panel
-            # Add to right container
-            self.set_right_content(details_panel)
+            self.track_details_panel = playlist_content.playlist_component.details_panel
+
+        # Show Spotify search panel by default
+        self.show_spotify_search()
+
+    def show_spotify_search(self):
+        """Show Spotify search panel in the right area."""
+        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
+
+        # Create a new Spotify search panel
+        spotify_search_panel = SpotifySearchPanel()
+        self.set_right_content(spotify_search_panel)
 
     def show_tracks(self):
         """Show tracks content."""
