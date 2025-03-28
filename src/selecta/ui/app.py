@@ -218,12 +218,25 @@ class SelectaMainWindow(QMainWindow):
         # Show Spotify search panel by default
         self.show_spotify_search()
 
-    def show_spotify_search(self):
-        """Show Spotify search panel in the right area."""
+    def show_spotify_search(self, initial_search=None):
+        """Show Spotify search panel in the right area.
+
+        Args:
+            initial_search: Optional initial search query
+        """
         from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
 
         # Create a new Spotify search panel
         spotify_search_panel = SpotifySearchPanel()
+        spotify_search_panel.setObjectName(
+            "spotifySearchPanel"
+        )  # Add this to make it easier to find
+
+        # Set the initial search if provided
+        if initial_search:
+            spotify_search_panel.search_bar.set_search_text(initial_search)
+            spotify_search_panel._on_search(initial_search)
+
         self.set_right_content(spotify_search_panel)
 
     def show_tracks(self):

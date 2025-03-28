@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QSizePolicy,
     QSplitter,
     QTableView,
@@ -123,6 +124,8 @@ class PlaylistComponent(QWidget):
 
         self.middle_layout.addWidget(self.tracks_table, 1)  # Add with stretch factor of 1
 
+        self.tracks_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tracks_table.customContextMenuRequested.connect(self._show_track_context_menu)
         # Add widgets to splitter
         self.splitter.addWidget(self.playlist_tree)
         self.splitter.addWidget(self.middle_container)
@@ -367,3 +370,65 @@ class PlaylistComponent(QWidget):
 
             # Clear track details
             self.details_panel.set_track(None)
+
+    def _show_track_context_menu(self, position):
+        """Show context menu for tracks table.
+
+        Args:
+            position: Position where the context menu should be shown
+        """
+        index = self.tracks_table.indexAt(position)
+        if not index.isValid():
+            return
+
+        # Get the track at this position
+        row = index.row()
+        track = self.tracks_model.get_track(row)
+        if not track:
+            return
+
+        # Create context menu
+        menu = QMenu(self.tracks_table)
+
+        # Add search on Spotify action
+        search_action = menu.addAction("Search on Spotify")
+
+        search_action.triggered.connect(lambda: self._search_on_spotify(track))  # type: ignore
+
+        # Show the menu at the cursor position
+        menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
+
+    def _search_on_spotify(self, track):
+        """Search for a track on Spotify.
+
+        Args:
+            track: The track to search for
+        """
+        if not track:
+            return
+
+        # Create a search query using artist and title
+        search_query = f"{track.artist} {track.title}"
+
+        # Access the main window to switch to the Spotify search panel
+        main_window = self.window()
+
+        # Call the show_spotify_search method on the main window
+        # This should switch to the Spotify search panel
+        if hasattr(main_window, "show_spotify_search"):
+            main_window.show_spotify_search()  # type: ignore
+
+            # Find the Spotify search panel in the right container
+            if hasattr(main_window, "right_container"):
+                for i in range(main_window.right_layout.count()):  # type: ignore
+                    widget = main_window.right_layout.itemAt(i).widget()  # type: ignore
+                    if (
+                        widget
+                        and isinstance(widget, QWidget)
+                        and widget.objectName() == "spotifySearchPanel"
+                    ):
+                        # Set the search query and perform search
+                        if hasattr(widget, "search_bar"):
+                            widget.search_bar.set_search_text(search_query)  # type: ignore
+                            widget._on_search(search_query)  # type: ignore
+                        break
