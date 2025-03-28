@@ -16,6 +16,7 @@ class PlaylistContent(QWidget):
     def __init__(self, parent=None) -> None:
         """Initialize the playlist content area."""
         super().__init__(parent)
+        self.parent_window = self.window()
 
         # Set size policy to expand in both directions
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -47,6 +48,10 @@ class PlaylistContent(QWidget):
         self.playlist_component.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+
+        # Connect track selection signal
+        self.playlist_component.track_selected.connect(self._on_track_selected)
+
         layout.addWidget(self.playlist_component, 1)  # Add with stretch factor of 1
 
         # If no playlists, show a message
@@ -58,3 +63,15 @@ class PlaylistContent(QWidget):
             message.setAlignment(Qt.AlignmentFlag.AlignCenter)
             message.setStyleSheet("color: #888; margin-top: 20px;")
             layout.addWidget(message)
+
+    def _on_track_selected(self, track):
+        """Handle track selection to show details panel.
+
+        Args:
+            track: The selected track
+        """
+        # We need to access the details panel directly since the window() method
+        # isn't returning the SelectaMainWindow instance correctly
+        if hasattr(self.playlist_component, "details_panel"):
+            details_panel = self.playlist_component.details_panel
+            details_panel.set_track(track)
