@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QMainWindow,
+    QSizePolicy,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -30,6 +31,9 @@ class SelectaMainWindow(QMainWindow):
 
         # Setup central widget and main layout
         self.central_widget = QWidget()
+        self.central_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -41,18 +45,25 @@ class SelectaMainWindow(QMainWindow):
 
         # Create the content layout (below navigation bar)
         self.content_widget = QWidget()
+        self.content_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.content_layout = QHBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(10, 10, 10, 10)
         self.content_layout.setSpacing(10)
         self.main_layout.addWidget(self.content_widget, 1)  # 1 = stretch factor
 
         # Create the main splitter for left and right sides
-        self.horizontal_splitter = QSplitter()
+        self.horizontal_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.horizontal_splitter.setHandleWidth(2)
+        self.horizontal_splitter.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.content_layout.addWidget(self.horizontal_splitter)
 
         # Left side - Contains playlist on top and empty space at bottom
         self.left_widget = QWidget()
+        self.left_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.left_layout = QVBoxLayout(self.left_widget)
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(10)
@@ -60,15 +71,24 @@ class SelectaMainWindow(QMainWindow):
         # Create vertical splitter for playlist and bottom component
         self.vertical_splitter = QSplitter(Qt.Orientation.Vertical)
         self.vertical_splitter.setHandleWidth(2)
+        self.vertical_splitter.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.left_layout.addWidget(self.vertical_splitter)
 
         # Top component for playlist
         self.playlist_container = QWidget()
+        self.playlist_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.playlist_layout = QVBoxLayout(self.playlist_container)
         self.playlist_layout.setContentsMargins(0, 0, 0, 0)
 
         # Bottom component (empty for now)
         self.bottom_container = QWidget()
+        self.bottom_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.bottom_layout = QVBoxLayout(self.bottom_container)
         self.bottom_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -76,11 +96,14 @@ class SelectaMainWindow(QMainWindow):
         self.vertical_splitter.addWidget(self.playlist_container)
         self.vertical_splitter.addWidget(self.bottom_container)
 
-        # Set initial sizes for vertical splitter (2/3 for playlist, 1/3 for bottom)
-        self.vertical_splitter.setSizes([200, 100])  # Proportional values (2:1 ratio)
+        # Set initial sizes for vertical splitter (90% for playlist, 10% for bottom)
+        self.vertical_splitter.setSizes([900, 100])  # Proportional values (9:1 ratio)
 
         # Right side - For adaptive content
         self.right_container = QWidget()
+        self.right_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.right_layout = QVBoxLayout(self.right_container)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -124,10 +147,10 @@ class SelectaMainWindow(QMainWindow):
             right_width = total_width - left_width  # 25% for right side
             self.horizontal_splitter.setSizes([left_width, right_width])
 
-            # Maintain the 2:1 vertical ratio
+            # For vertical splitter, prioritize the playlist section by giving it more space
             total_height = self.vertical_splitter.height()
-            top_height = int(total_height * 0.67)  # ~67% for top section
-            bottom_height = total_height - top_height  # ~33% for bottom section
+            top_height = int(total_height * 0.9)  # 90% for top section
+            bottom_height = total_height - top_height  # 10% for bottom section
             self.vertical_splitter.setSizes([top_height, bottom_height])
 
     def toggle_side_drawer(self):
