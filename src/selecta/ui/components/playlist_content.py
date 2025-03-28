@@ -1,6 +1,6 @@
 from loguru import logger
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from selecta.core.data.init_db import initialize_database
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
@@ -17,6 +17,9 @@ class PlaylistContent(QWidget):
         """Initialize the playlist content area."""
         super().__init__(parent)
 
+        # Set size policy to expand in both directions
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
         # Initialize database using the configured path
         initialize_database()
 
@@ -27,6 +30,7 @@ class PlaylistContent(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Create a title
         title = QLabel("Playlists")
@@ -39,7 +43,11 @@ class PlaylistContent(QWidget):
 
         # Create playlist component
         self.playlist_component = PlaylistComponent(data_provider)
-        layout.addWidget(self.playlist_component)
+        # Set size policy to expand
+        self.playlist_component.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        layout.addWidget(self.playlist_component, 1)  # Add with stretch factor of 1
 
         # If no playlists, show a message
         if not playlists:

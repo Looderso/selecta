@@ -1,10 +1,10 @@
-# src/selecta/ui/components/playlist/playlist_component.py
 from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QSizePolicy,
     QSplitter,
     QTableView,
     QTreeView,
@@ -38,6 +38,11 @@ class PlaylistComponent(QWidget):
         self.current_playlist_id = None
         self.current_tracks = []  # Store current tracks for search suggestions
 
+        # Create the details panel but don't add it to our layout
+        # It will be managed by the main window
+        self.details_panel = TrackDetailsPanel()
+        self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
+
         self._setup_ui()
         self._connect_signals()
         self._load_playlists()
@@ -46,9 +51,15 @@ class PlaylistComponent(QWidget):
         """Set up the UI components."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Set our widget to expand both horizontally and vertically
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Create a splitter to allow resizing
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setHandleWidth(2)
+        self.splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Left side - Playlist tree
         self.playlist_tree = QTreeView()
@@ -56,6 +67,7 @@ class PlaylistComponent(QWidget):
         self.playlist_tree.setExpandsOnDoubleClick(True)
         self.playlist_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.playlist_tree.setMinimumWidth(200)  # Ensure playlist tree has a reasonable width
+        self.playlist_tree.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         # Create model for the playlist tree
         self.playlist_model = PlaylistTreeModel()
@@ -63,8 +75,12 @@ class PlaylistComponent(QWidget):
 
         # Middle - Container for track list and header
         self.middle_container = QWidget()
+        self.middle_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.middle_layout = QVBoxLayout(self.middle_container)
         self.middle_layout.setContentsMargins(0, 0, 0, 0)
+        self.middle_layout.setSpacing(0)
 
         # Header container with playlist info and search bar
         self.header_container = QWidget()
@@ -88,6 +104,7 @@ class PlaylistComponent(QWidget):
         self.tracks_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # type: ignore
         self.tracks_table.verticalHeader().setVisible(False)  # type: ignore
+        self.tracks_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Create model for the tracks table
         self.tracks_model = TracksTableModel()
@@ -104,22 +121,16 @@ class PlaylistComponent(QWidget):
                 platforms_column_index, PlatformIconDelegate(self.tracks_table)
             )
 
-        self.middle_layout.addWidget(self.tracks_table)
-
-        # Right side - Track details panel
-        self.details_panel = TrackDetailsPanel()
-        self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
+        self.middle_layout.addWidget(self.tracks_table, 1)  # Add with stretch factor of 1
 
         # Add widgets to splitter
         self.splitter.addWidget(self.playlist_tree)
         self.splitter.addWidget(self.middle_container)
-        self.splitter.addWidget(self.details_panel)
 
-        # Make the splitter handle our layout resizing properly
+        # Add the splitter to the main layout
         layout.addWidget(self.splitter)
 
-        # We'll set the desired proportions once the widget is shown
-        # Schedule this to happen after the widget is fully initialized
+        # Set the desired proportions once the widget is shown
         QTimer.singleShot(0, self._apply_splitter_ratio)
 
     def _apply_splitter_ratio(self):
@@ -127,13 +138,12 @@ class PlaylistComponent(QWidget):
         # Get the total width
         total_width = self.splitter.width()
 
-        # Calculate sizes based on desired ratio (1:3:1)
-        left_width = int(total_width * 0.2)  # 20% for playlist tree
-        right_width = int(total_width * 0.2)  # 20% for details panel
-        middle_width = total_width - left_width - right_width  # Remaining 60% for track list
+        # Calculate sizes based on desired ratio (1:3)
+        left_width = int(total_width * 0.25)  # 25% for playlist tree
+        middle_width = total_width - left_width  # Remaining 75% for track list
 
         # Apply the sizes
-        self.splitter.setSizes([left_width, middle_width, right_width])
+        self.splitter.setSizes([left_width, middle_width])
 
     def _connect_signals(self) -> None:
         """Connect signals to slots."""
