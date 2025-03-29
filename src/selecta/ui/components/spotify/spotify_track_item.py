@@ -36,6 +36,14 @@ class SpotifyTrackItem(QWidget):
         self.setMaximumHeight(70)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setObjectName("spotifyTrackItem")
+        self.setMouseTracking(True)  # Enable mouse tracking for hover events
+
+        # Track hover state
+        self.is_hovered = False
+
+        # Track button state
+        self._can_add = False
+        self._can_sync = False
 
         # Initialize image loader if needed
         if SpotifyTrackItem._image_loader is None:
@@ -78,6 +86,10 @@ class SpotifyTrackItem(QWidget):
             }
             QPushButton:pressed {
                 background-color: rgba(29, 185, 84, 0.2);
+            }
+            QPushButton:disabled {
+                border-color: #555;
+                color: #555;
             }
         """)
 
@@ -147,25 +159,52 @@ class SpotifyTrackItem(QWidget):
         layout.addLayout(info_layout, 1)  # 1 = stretch factor
 
         # Buttons layout
-        buttons_layout = QVBoxLayout()
-        buttons_layout.setSpacing(6)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.buttons_layout = QVBoxLayout()
+        self.buttons_layout.setSpacing(6)
+        self.buttons_layout.setContentsMargins(0, 0, 0, 0)
 
         # Sync button
         self.sync_button = QPushButton("Sync")
         self.sync_button.setFixedSize(60, 25)
         self.sync_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sync_button.clicked.connect(self._on_sync_clicked)
-        buttons_layout.addWidget(self.sync_button)
+        # Initially disabled until a track is selected
+        self.sync_button.setEnabled(False)
+        self.buttons_layout.addWidget(self.sync_button)
 
         # Add button
         self.add_button = QPushButton("Add")
         self.add_button.setFixedSize(60, 25)
         self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.clicked.connect(self._on_add_clicked)
-        buttons_layout.addWidget(self.add_button)
+        # Initially disabled until a playlist is selected
+        self.add_button.setEnabled(False)
+        self.buttons_layout.addWidget(self.add_button)
 
-        layout.addLayout(buttons_layout)
+        # Add the buttons layout to the main layout
+        layout.addLayout(self.buttons_layout)
+
+        # Hide buttons initially
+        self.sync_button.setVisible(False)
+        self.add_button.setVisible(False)
+
+    def update_button_state(self, can_add: bool = False, can_sync: bool = False) -> None:
+        """Update the state of the buttons based on current selection.
+
+        Args:
+            can_add: Whether the add button should be enabled
+            can_sync: Whether the sync button should be enabled
+        """
+        # Store the button states
+        self._can_add = can_add
+        self._can_sync = can_sync
+
+        # Update button states
+        self.add_button.setEnabled(can_add)
+        self.sync_button.setEnabled(can_sync)
+
+        # Only show buttons if we're hovered and set appropriate state
+        self._update_button_visibility()
 
     def _on_image_loaded(self, url: str, pixmap: QPixmap):
         """Handle loaded image.
@@ -185,3 +224,38 @@ class SpotifyTrackItem(QWidget):
     def _on_add_clicked(self):
         """Handle add button click."""
         self.add_clicked.emit(self.track_data)
+
+    def enterEvent(self, event):
+        """Handle mouse enter events to show buttons.
+
+        Args:
+            event: The enter event
+        """
+        self.is_hovered = True
+        self._update_button_visibility()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Handle mouse leave events to hide buttons.
+
+        Args:
+            event: The leave event
+        """
+        self.is_hovered = False
+        self._update_button_visibility()
+        super().leaveEvent(event)
+
+    def _update_button_visibility(self):
+        """Update the visibility of the buttons based on hover state."""
+        if self.is_hovered:
+            # When hovering, show both buttons
+            self.sync_button.setVisible(True)
+            self.add_button.setVisible(True)
+
+            # Make sure the enabled state is correct
+            self.sync_button.setEnabled(self._can_sync)
+            self.add_button.setEnabled(self._can_add)
+        else:
+            # When not hovering, hide both buttons
+            self.sync_button.setVisible(False)
+            self.add_button.setVisible(False)

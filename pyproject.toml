@@ -111,11 +111,12 @@ select = [
     "PYI", # flake8-pyi (type checking)
 ]
 ignore = [
-    "D100", # Missing docstring in public module
-    "D104", # Missing docstring in public package
-    "E402", # Imports not first in code
-    "E722", # Allow bare excepts
-    "N802", # Allow uppercase method names
+    "D100",  # Missing docstring in public module
+    "D104",  # Missing docstring in public package
+    "E402",  # Imports not first in code
+    "E722",  # Allow bare excepts
+    "N802",  # Allow uppercase method names
+    "UP008", # allow user of super().__new__(cls)
 ]
 
 fixable = ["ALL"]
