@@ -1,17 +1,27 @@
 """Spotify search panel for searching and displaying Spotify tracks."""
 
-from PyQt6.QtCore import Qt, pyqtSignal
+import json
+from typing import Any
+
+from loguru import logger
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QLabel,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+from sqlalchemy import and_
 
+from selecta.core.data.models.db import Track
+from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
+from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.spotify.client import SpotifyClient
+from selecta.core.utils.type_helpers import column_to_int
 from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.components.spotify.spotify_track_item import SpotifyTrackItem
 
@@ -38,12 +48,26 @@ class SpotifySearchPanel(QWidget):
         self.message_label = None
         self.initial_message = None
 
+        # Initialize repositories for database operations
+        self.track_repo = TrackRepository()
+        self.playlist_repo = PlaylistRepository()
+
         # Initialize spotify client
         self.settings_repo = SettingsRepository()
         self.spotify_client = PlatformFactory.create("spotify", self.settings_repo)
 
         # Create layout
         self._setup_ui()
+
+        # Use the shared selection state - import here to avoid circular imports
+        from selecta.ui.components.selection_state import SelectionState
+
+        self.selection_state = SelectionState()
+
+        # Connect to selection state signals
+        self.selection_state.playlist_selected.connect(self._on_global_playlist_selected)
+        self.selection_state.track_selected.connect(self._on_global_track_selected)
+        self.selection_state.data_changed.connect(self._on_data_changed)
 
     def _setup_ui(self):
         """Set up the UI components."""
@@ -86,6 +110,46 @@ class SpotifySearchPanel(QWidget):
 
         # Initialize with an empty state
         self.show_message("Enter a search term to find Spotify tracks")
+
+    def _on_global_playlist_selected(self, playlist: Any) -> None:
+        """Handle playlist selection from the global state.
+
+        Args:
+            playlist: The selected playlist
+        """
+        # Update buttons based on the new selection
+        self._update_track_buttons()
+
+    def _on_global_track_selected(self, track: Any) -> None:
+        """Handle track selection from the global state.
+
+        Args:
+            track: The selected track
+        """
+        # Update buttons based on the new selection
+        self._update_track_buttons()
+
+    def _on_data_changed(self) -> None:
+        """Handle notification that the underlying data has changed."""
+        # Refresh the current search results if we have a search term
+        current_search = self.search_bar.get_search_text()
+        if current_search:
+            # Re-run the search to refresh results
+            self._on_search(current_search)
+
+    def _update_track_buttons(self) -> None:
+        """Update all track item buttons based on current selection."""
+        # Get button states from the selection state
+        can_add = self.selection_state.is_playlist_selected()
+        can_sync = self.selection_state.is_track_selected()
+
+        # Log for debugging
+        logger.debug(f"Button state update: can_add={can_add}, can_sync={can_sync}")
+
+        # Update all result widgets
+        for widget in self.result_widgets:
+            if isinstance(widget, SpotifyTrackItem):
+                widget.update_button_state(can_add=can_add, can_sync=can_sync)
 
     def _on_search(self, query: str):
         """Handle search query submission.
@@ -163,6 +227,9 @@ class SpotifySearchPanel(QWidget):
             self.results_layout.addWidget(track_widget)
             self.result_widgets.append(track_widget)
 
+        # Update button states based on current selection
+        self._update_track_buttons()
+
         # Add a spacer at the end for better layout
         self.results_layout.addStretch(1)
 
@@ -212,8 +279,56 @@ class SpotifySearchPanel(QWidget):
         Args:
             track_data: Dictionary with track data
         """
-        # Emit signal with track data
-        self.track_synced.emit(track_data)
+        selected_track = self.selection_state.get_selected_track()
+
+        if not selected_track:
+            QMessageBox.warning(
+                self, "Sync Error", "No track selected. Please select a track to sync with."
+            )
+            return
+
+        try:
+            # Get track ID from selected track
+            track_id = selected_track.track_id
+
+            # Extract Spotify data from track_data
+            spotify_id = track_data.get("id")
+            spotify_uri = track_data.get("uri")
+
+            if not spotify_id or not spotify_uri:
+                QMessageBox.warning(self, "Sync Error", "Invalid Spotify track data")
+                return
+
+            # Create platform data dictionary
+            platform_data = {
+                "popularity": track_data.get("popularity", 0),
+                "explicit": track_data.get("explicit", False),
+                "preview_url": track_data.get("preview_url", ""),
+            }
+
+            # Convert to JSON
+            platform_data_json = json.dumps(platform_data)
+
+            # Add platform info to the track
+            self.track_repo.add_platform_info(
+                track_id, "spotify", spotify_id, spotify_uri, platform_data_json
+            )
+
+            # Emit signal with the synchronized track
+            self.track_synced.emit(track_data)
+
+            # Notify that data has changed
+            self.selection_state.notify_data_changed()
+
+            # Show success message
+            self.show_message(f"Track synchronized: {track_data.get('name')}")
+
+            # Wait a moment, then restore the search results
+            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+        except Exception as e:
+            logger.exception(f"Error syncing track: {e}")
+            QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
 
     def _on_track_add(self, track_data: dict):
         """Handle track add button click.
@@ -221,5 +336,85 @@ class SpotifySearchPanel(QWidget):
         Args:
             track_data: Dictionary with track data
         """
-        # Emit signal with track data
-        self.track_added.emit(track_data)
+        playlist_id = self.selection_state.get_selected_playlist_id()
+
+        if not playlist_id:
+            QMessageBox.warning(
+                self, "Add Error", "No playlist selected. Please select a playlist first."
+            )
+            return
+
+        try:
+            # Extract track info
+            title = track_data.get("name", "")
+            artists = track_data.get("artists", [])
+            artist = ", ".join([a.get("name", "") for a in artists])
+
+            if not title or not artist:
+                QMessageBox.warning(
+                    self, "Add Error", "Missing track information (title or artist)"
+                )
+                return
+
+            # Check if a track with the same title and artist already exists
+            existing_track = (
+                self.track_repo.session.query(Track)
+                .filter(and_(Track.title == title, Track.artist == artist))
+                .first()
+            )
+
+            if existing_track:
+                QMessageBox.warning(self, "Add Error", f"Track already exists: {artist} - {title}")
+                return
+
+            # Get duration
+            duration_ms = track_data.get("duration_ms")
+
+            # Create a new track
+            new_track_data = {
+                "title": title,
+                "artist": artist,
+                "duration_ms": duration_ms,
+            }
+
+            # Create the track
+            track = self.track_repo.create(new_track_data)
+
+            # Add Spotify platform info
+            spotify_id = track_data.get("id")
+            spotify_uri = track_data.get("uri")
+
+            if spotify_id and spotify_uri:
+                # Create platform data dictionary
+                platform_data = {
+                    "popularity": track_data.get("popularity", 0),
+                    "explicit": track_data.get("explicit", False),
+                    "preview_url": track_data.get("preview_url", ""),
+                }
+
+                # Convert to JSON
+                platform_data_json = json.dumps(platform_data)
+
+                # Add platform info to the track
+                self.track_repo.add_platform_info(
+                    column_to_int(track.id), "spotify", spotify_id, spotify_uri, platform_data_json
+                )
+
+            # Add track to the playlist
+            self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
+
+            # Emit signal with the added track
+            self.track_added.emit(track_data)
+
+            # Notify that data has changed
+            self.selection_state.notify_data_changed()
+
+            # Show success message
+            self.show_message(f"Track added: {artist} - {title}")
+
+            # Wait a moment, then restore the search results
+            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+        except Exception as e:
+            logger.exception(f"Error adding track: {e}")
+            QMessageBox.critical(self, "Add Error", f"Error adding track: {str(e)}")

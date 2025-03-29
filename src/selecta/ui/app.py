@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
+from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
@@ -209,14 +210,14 @@ class SelectaMainWindow(QMainWindow):
         bottom_content = BottomContent()
         self.set_bottom_content(bottom_content)
 
+        # Show Spotify search panel by default
+        self.show_spotify_search()
+
         # Store a reference to the details panel for switching later
         if hasattr(playlist_content, "playlist_component") and hasattr(
             playlist_content.playlist_component, "details_panel"
         ):
             self.track_details_panel = playlist_content.playlist_component.details_panel
-
-        # Show Spotify search panel by default
-        self.show_spotify_search()
 
     def show_spotify_search(self, initial_search=None):
         """Show Spotify search panel in the right area.
@@ -224,13 +225,9 @@ class SelectaMainWindow(QMainWindow):
         Args:
             initial_search: Optional initial search query
         """
-        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
-
         # Create a new Spotify search panel
         spotify_search_panel = SpotifySearchPanel()
-        spotify_search_panel.setObjectName(
-            "spotifySearchPanel"
-        )  # Add this to make it easier to find
+        spotify_search_panel.setObjectName("spotifySearchPanel")
 
         # Set the initial search if provided
         if initial_search:
@@ -238,6 +235,8 @@ class SelectaMainWindow(QMainWindow):
             spotify_search_panel._on_search(initial_search)
 
         self.set_right_content(spotify_search_panel)
+
+        # No need to transfer the selection - SelectionState handles this automatically
 
     def show_tracks(self):
         """Show tracks content."""

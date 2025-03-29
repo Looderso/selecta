@@ -18,7 +18,10 @@ from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataPr
 from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
 from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
 from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
-from selecta.ui.components.search_bar import SearchBar  # Import the search bar
+from selecta.ui.components.search_bar import SearchBar
+from selecta.ui.components.spotify.spotify_search_panel import (
+    SpotifySearchPanel,  # Import the search bar
+)
 
 
 class PlaylistComponent(QWidget):
@@ -43,6 +46,12 @@ class PlaylistComponent(QWidget):
         # It will be managed by the main window
         self.details_panel = TrackDetailsPanel()
         self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
+
+        # Use the shared selection state - import here to avoid circular imports
+        from selecta.ui.components.selection_state import SelectionState
+
+        self.selection_state = SelectionState()
+        self.selection_state.data_changed.connect(self._on_data_changed)
 
         self._setup_ui()
         self._connect_signals()
@@ -232,6 +241,9 @@ class PlaylistComponent(QWidget):
         index = indexes[0]
         item = index.internalPointer()
 
+        # Update the global selection state
+        self.selection_state.set_selected_playlist(item)
+
         # If it's a folder, don't load tracks
         if item.is_folder():
             self.playlist_header.setText(f"Folder: {item.name}")
@@ -275,6 +287,8 @@ class PlaylistComponent(QWidget):
         if not indexes:
             # Clear track details if no track is selected
             self.details_panel.set_track(None)
+            # Update the global selection state
+            self.selection_state.set_selected_track(None)
             return
 
         # Get the row of the first selected index
@@ -284,6 +298,9 @@ class PlaylistComponent(QWidget):
         if track:
             # Update track details panel
             self.details_panel.set_track(track)
+
+            # Update the global selection state
+            self.selection_state.set_selected_track(track)
 
             # Emit signal with the selected track
             self.track_selected.emit(track)
@@ -429,6 +446,45 @@ class PlaylistComponent(QWidget):
                     ):
                         # Set the search query and perform search
                         if hasattr(widget, "search_bar"):
-                            widget.search_bar.set_search_text(search_query)  # type: ignore
-                            widget._on_search(search_query)  # type: ignore
+                            assert isinstance(widget, SpotifySearchPanel)
+                            search_bar = widget.search_bar
+                            assert isinstance(search_bar, SearchBar)
+                            widget.search_bar.set_search_text(search_query)
+                            widget._on_search(search_query)
+                        break
+
+    def _on_data_changed(self) -> None:
+        """Handle notification that data has changed."""
+        # Remember the current playlist and selection
+        current_playlist_id = self.current_playlist_id
+        selected_track = None
+
+        # Get the currently selected track if any
+        indexes = self.tracks_table.selectionModel().selectedIndexes()  # type: ignore
+        if indexes:
+            row = indexes[0].row()
+            selected_track = self.tracks_model.get_track(row)
+
+        # If we have a current playlist, refresh its contents
+        if current_playlist_id is not None:
+            # Reload the tracks for this playlist
+            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)
+            self.tracks_model.set_tracks(self.current_tracks)
+
+            # Update search suggestions
+            self._update_search_suggestions()
+
+            # If we had a selected track, try to reselect it
+            if selected_track:
+                for row in range(self.tracks_model.rowCount()):
+                    track = self.tracks_model.get_track(row)
+                    if track and track.track_id == selected_track.track_id:
+                        # Reselect this track
+                        index = self.tracks_model.index(row, 0)
+                        self.tracks_table.selectionModel().select(  # type: ignore
+                            index,
+                            QItemSelectionModel.SelectionFlag.ClearAndSelect
+                            | QItemSelectionModel.SelectionFlag.Rows,
+                        )
+                        self.tracks_table.scrollTo(index)
                         break
