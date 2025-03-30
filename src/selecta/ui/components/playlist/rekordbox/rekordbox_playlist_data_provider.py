@@ -1,4 +1,6 @@
 # src/selecta/ui/components/playlist/rekordbox/rekordbox_playlist_data_provider.py
+"""Rekordbox playlist data provider implementation."""
+
 from typing import Any
 
 from loguru import logger
@@ -6,43 +8,48 @@ from loguru import logger
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.client import RekordboxClient
-from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
+from selecta.ui.components.playlist.abstract_playlist_data_provider import (
+    AbstractPlaylistDataProvider,
+)
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_item import RekordboxPlaylistItem
 from selecta.ui.components.playlist.rekordbox.rekordbox_track_item import RekordboxTrackItem
 from selecta.ui.components.playlist.track_item import TrackItem
 
 
-class RekordboxPlaylistDataProvider(PlaylistDataProvider):
+class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
     """Data provider for Rekordbox playlists."""
 
-    def __init__(self, client: RekordboxClient | None = None):
+    def __init__(self, client: RekordboxClient | None = None, cache_timeout: float = 300.0):
         """Initialize the Rekordbox playlist data provider.
 
         Args:
             client: Optional RekordboxClient instance
+            cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
         # Create or use the provided Rekordbox client
         if client is None:
             settings_repo = SettingsRepository()
-            self.client = PlatformFactory.create("rekordbox", settings_repo)
-            if not isinstance(self.client, RekordboxClient):
+            client_instance = PlatformFactory.create("rekordbox", settings_repo)
+            if not isinstance(client_instance, RekordboxClient):
                 raise ValueError("Could not create Rekordbox client")
+            self.client = client_instance
         else:
             self.client = client
 
-        # Check authentication
-        if not self.client.is_authenticated():
-            logger.warning("Rekordbox client is not authenticated")
+        # Initialize the abstract provider
+        super().__init__(self.client, cache_timeout)
 
-    def get_all_playlists(self) -> list[PlaylistItem]:
-        """Get all playlists from Rekordbox.
+        # Additional cache keys specific to Rekordbox
+        self._all_playlists_cache_key = "rekordbox_all_playlists"
+
+    def _fetch_playlists(self) -> list[PlaylistItem]:
+        """Fetch playlists from Rekordbox.
 
         Returns:
             List of playlist items
         """
-        if not self.client.is_authenticated():
-            logger.error("Rekordbox client is not authenticated")
+        if not self._ensure_authenticated():
             return []
 
         try:
@@ -70,8 +77,8 @@ class RekordboxPlaylistDataProvider(PlaylistDataProvider):
             logger.exception(f"Error getting Rekordbox playlists: {e}")
             return []
 
-    def get_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
-        """Get all tracks in a playlist.
+    def _fetch_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
+        """Fetch tracks for a playlist from Rekordbox.
 
         Args:
             playlist_id: ID of the playlist
@@ -79,8 +86,7 @@ class RekordboxPlaylistDataProvider(PlaylistDataProvider):
         Returns:
             List of track items
         """
-        if not self.client.is_authenticated():
-            logger.error("Rekordbox client is not authenticated")
+        if not self._ensure_authenticated():
             return []
 
         try:

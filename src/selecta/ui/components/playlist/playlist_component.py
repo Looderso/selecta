@@ -37,6 +37,8 @@ class PlaylistComponent(QWidget):
         """
         super().__init__(parent)
         self.data_provider = data_provider
+        self.data_provider.register_refresh_callback(self.refresh)
+
         self.current_playlist_id = None
         self.current_tracks = []  # Store current tracks for search suggestions
 
@@ -374,7 +376,8 @@ class PlaylistComponent(QWidget):
 
         # Reload playlists
         self.playlist_model.clear()
-        self._load_playlists()
+        playlists = self.data_provider.get_all_playlists()
+        self.playlist_model.add_items(playlists)
 
         # Reload tracks if a playlist was selected
         if current_playlist_id is not None:

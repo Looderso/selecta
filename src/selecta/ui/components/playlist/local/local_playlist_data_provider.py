@@ -1,3 +1,6 @@
+# src/selecta/ui/components/playlist/local/local_playlist_data_provider.py
+"""Local database playlist data provider implementation."""
+
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -6,28 +9,34 @@ from selecta.core.data.database import get_session
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.type_helpers import column_to_bool, column_to_int, column_to_str
+from selecta.ui.components.playlist.abstract_playlist_data_provider import (
+    AbstractPlaylistDataProvider,
+)
 from selecta.ui.components.playlist.local.local_playlist_item import LocalPlaylistItem
 from selecta.ui.components.playlist.local.local_track_item import LocalTrackItem
-from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
 
 
-class LocalPlaylistDataProvider(PlaylistDataProvider):
+class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
     """Data provider for local database playlists."""
 
-    def __init__(self, session: Session | None = None):
+    def __init__(self, session: Session | None = None, cache_timeout: float = 300.0):
         """Initialize the local playlist data provider.
 
         Args:
             session: Database session (optional)
+            cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
         self.session = session or get_session()
         self.playlist_repo = PlaylistRepository(self.session)
         self.track_repo = TrackRepository(self.session)
 
-    def get_all_playlists(self) -> list[PlaylistItem]:
-        """Get all playlists from the local database.
+        # Initialize the abstract provider with None as client (not needed for local)
+        super().__init__(None, cache_timeout)
+
+    def _fetch_playlists(self) -> list[PlaylistItem]:
+        """Fetch playlists from the local database.
 
         Returns:
             List of playlist items
@@ -52,8 +61,8 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
 
         return playlist_items
 
-    def get_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
-        """Get all tracks in a playlist.
+    def _fetch_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
+        """Fetch tracks for a playlist from the local database.
 
         Args:
             playlist_id: ID of the playlist
@@ -140,3 +149,11 @@ class LocalPlaylistDataProvider(PlaylistDataProvider):
             Platform name
         """
         return "Local Database"
+
+    def _ensure_authenticated(self) -> bool:
+        """For local database, authentication is not needed.
+
+        Returns:
+            Always True since we don't need authentication for local database
+        """
+        return True
