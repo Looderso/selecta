@@ -2,11 +2,11 @@
 
 from typing import Any
 
-import discogs_client
 from loguru import logger
 
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.abstract_platform import AbstractPlatform
+from selecta.core.platform.discogs.api_client import DiscogsApiClient
 from selecta.core.platform.discogs.auth import DiscogsAuthManager
 from selecta.core.platform.discogs.models import DiscogsRelease, DiscogsVinyl
 
@@ -22,7 +22,7 @@ class DiscogsClient(AbstractPlatform):
         """
         super().__init__(settings_repo)
         self.auth_manager = DiscogsAuthManager(settings_repo=self.settings_repo)
-        self.client: discogs_client.Client | None = None
+        self.client: DiscogsApiClient | None = None
 
         # Try to initialize the client if we have valid credentials
         self._initialize_client()
@@ -32,8 +32,6 @@ class DiscogsClient(AbstractPlatform):
         try:
             self.client = self.auth_manager.get_discogs_client()
             if self.client:
-                # Test the client with a simple request
-                self.client.identity()
                 logger.info("Discogs client initialized successfully")
             else:
                 logger.warning("No valid Discogs credentials found")
@@ -50,12 +48,7 @@ class DiscogsClient(AbstractPlatform):
         if not self.client:
             return False
 
-        try:
-            # Try to make an API call that requires authentication
-            self.client.identity()
-            return True
-        except:
-            return False
+        return self.client.is_authenticated()
 
     def authenticate(self) -> bool:
         """Perform the Discogs OAuth flow to authenticate the user.
@@ -88,17 +81,17 @@ class DiscogsClient(AbstractPlatform):
         if not self.client:
             raise ValueError("Discogs client not authenticated")
 
-        identity = self.client.identity()
-        if not identity:
+        success, identity = self.client.get_identity()
+        if not success:
             raise ValueError("Discogs: current user not available")
 
         # Get user data as dictionary
         user_data = {
-            "id": identity.id,
-            "username": identity.username,
-            "name": getattr(identity, "name", ""),
-            "email": getattr(identity, "email", ""),
-            "url": identity.url,
+            "id": identity.get("id"),
+            "username": identity.get("username", ""),
+            "name": identity.get("name", ""),
+            "email": identity.get("email", ""),
+            "url": identity.get("resource_url", ""),
         }
 
         return user_data
@@ -118,31 +111,45 @@ class DiscogsClient(AbstractPlatform):
         if not self.client:
             raise ValueError("Discogs client not authenticated")
 
-        # If no username is provided, use the authenticated user
+        # If no username is provided, get the authenticated user's username
         if not username:
-            # Convert the SimpleField to a string explicitly
-            identity = self.client.identity()
-            username = str(identity.username) if identity and hasattr(identity, "username") else ""
+            success, identity = self.client.get_identity()
+            if not success:
+                raise ValueError("Could not get user identity")
+            username = identity.get("username", "")
 
         # Get the user's collection
-        collection_items = []
-        try:
-            user = self.client.user(username)
-            collection = user.collection_folders[0].releases  # Folder 0 is "All"
+        success, collection_items = self.client.get_all_collection_items()
+        if not success:
+            raise ValueError("Failed to fetch Discogs collection")
 
-            # Convert collection to list if needed
-            items = list(collection) if hasattr(collection, "__iter__") else []
+        # Convert to our model
+        vinyl_records = []
+        for item in collection_items:
+            # Extract basic release info
+            basic_info = item.get("basic_information", {})
 
-            # Convert to our model
-            for item in items:
-                release = item.release
-                vinyl = DiscogsVinyl.from_discogs_object(release, is_owned=True)
-                collection_items.append(vinyl)
+            # Combine with additional fields from the collection item
+            release_data = {
+                "id": basic_info.get("id", 0),
+                "title": basic_info.get("title", ""),
+                "year": basic_info.get("year"),
+                "thumb": basic_info.get("thumb", ""),
+                "cover_image": basic_info.get("cover_image", ""),
+                "resource_url": basic_info.get("resource_url", ""),
+                "artists": basic_info.get("artists", []),
+                "labels": basic_info.get("labels", []),
+                "formats": basic_info.get("formats", []),
+                "date_added": item.get("date_added"),
+                "rating": item.get("rating"),
+                "notes": item.get("notes", ""),
+            }
 
-            return collection_items
-        except Exception as e:
-            logger.exception(f"Error fetching Discogs collection: {e}")
-            raise ValueError(f"Failed to fetch Discogs collection: {e}") from e
+            # Create vinyl object
+            vinyl = DiscogsVinyl.from_discogs_dict(release_data, is_owned=True)
+            vinyl_records.append(vinyl)
+
+        return vinyl_records
 
     def get_wantlist(self, username: str | None = None) -> list[DiscogsVinyl]:
         """Get user's wantlist from Discogs.
@@ -159,27 +166,44 @@ class DiscogsClient(AbstractPlatform):
         if not self.client:
             raise ValueError("Discogs client not authenticated")
 
-        # If no username is provided, use the authenticated user
+        # If no username is provided, get the authenticated user's username
         if not username:
-            identity = self.client.identity()
-            username = str(identity.username) if identity and hasattr(identity, "username") else ""
+            success, identity = self.client.get_identity()
+            if not success:
+                raise ValueError("Could not get user identity")
+            username = identity.get("username", "")
 
         # Get the user's wantlist
-        wantlist_items = []
-        try:
-            user = self.client.user(username)
-            wantlist = user.wantlist
+        success, wantlist_items = self.client.get_all_wantlist_items()
+        if not success:
+            raise ValueError("Failed to fetch Discogs wantlist")
 
-            # Convert to our model
-            for item in wantlist:  # type: ignore
-                release = item.release
-                vinyl = DiscogsVinyl.from_discogs_object(release, is_wanted=True)
-                wantlist_items.append(vinyl)
+        # Convert to our model
+        vinyl_records = []
+        for item in wantlist_items:
+            # Extract basic release info
+            basic_info = item.get("basic_information", {})
 
-            return wantlist_items
-        except Exception as e:
-            logger.exception(f"Error fetching Discogs wantlist: {e}")
-            raise ValueError(f"Failed to fetch Discogs wantlist: {e}") from e
+            # Combine with additional fields from the wantlist item
+            release_data = {
+                "id": basic_info.get("id", 0),
+                "title": basic_info.get("title", ""),
+                "year": basic_info.get("year"),
+                "thumb": basic_info.get("thumb", ""),
+                "cover_image": basic_info.get("cover_image", ""),
+                "resource_url": basic_info.get("resource_url", ""),
+                "artists": basic_info.get("artists", []),
+                "labels": basic_info.get("labels", []),
+                "formats": basic_info.get("formats", []),
+                "date_added": item.get("date_added"),
+                "notes": item.get("notes", ""),
+            }
+
+            # Create vinyl object
+            vinyl = DiscogsVinyl.from_discogs_dict(release_data, is_wanted=True)
+            vinyl_records.append(vinyl)
+
+        return vinyl_records
 
     def search_release(
         self, query: str, artist: str | None = None, limit: int = 10
@@ -198,21 +222,46 @@ class DiscogsClient(AbstractPlatform):
             raise ValueError("Discogs client not authenticated")
 
         try:
-            search_params = {"type": "release", "per_page": limit}
+            # If both query and artist are provided, use them separately
+            if query and artist:
+                success, results = self.client.search_releases(
+                    query=query, artist=artist, limit=limit
+                )
+            else:
+                # Otherwise, use the query parameter alone
+                success, results = self.client.search_releases(query=query, limit=limit)
 
-            if artist:
-                search_params["artist"] = artist
-
-            results = self.client.search(query, **search_params)
+            if not success:
+                raise ValueError(f"Failed to search Discogs: {results.get('error')}")
 
             # Convert to our model
             releases = []
-            for result in results:
-                if hasattr(result, "id"):  # Only process valid results
-                    release = DiscogsRelease.from_discogs_object(result)
-                    releases.append(release)
+            for result in results.get("results", []):
+                release = DiscogsRelease.from_discogs_dict(result)
+                releases.append(release)
 
             return releases
         except Exception as e:
             logger.exception(f"Error searching Discogs: {e}")
             raise ValueError(f"Failed to search Discogs: {e}") from e
+
+    def get_release_by_id(self, release_id: int) -> DiscogsRelease:
+        """Get detailed information about a release by ID.
+
+        Args:
+            release_id: Discogs release ID
+
+        Returns:
+            DiscogsRelease object
+
+        Raises:
+            ValueError: If the client is not authenticated or release not found
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        success, release_data = self.client.get_release(release_id)
+        if not success:
+            raise ValueError(f"Failed to get release {release_id}")
+
+        return DiscogsRelease.from_discogs_dict(release_data)

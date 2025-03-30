@@ -87,6 +87,84 @@ class DiscogsRelease:
     uri: str | None = None  # Discogs URL
 
     @classmethod
+    def from_discogs_dict(cls, release_dict: dict[str, Any]) -> "DiscogsRelease":
+        """Create a DiscogsRelease from a Discogs API response dictionary.
+
+        Args:
+            release_dict: Dictionary with release data from the Discogs API
+
+        Returns:
+            DiscogsRelease instance
+        """
+        # Extract ID
+        release_id = release_dict.get("id")
+        if not release_id:
+            raise ValueError("No release_id in data")
+
+        # Extract title
+        title = release_dict.get("title", "")
+
+        # Extract artist
+        artist = "Unknown Artist"
+        artist_data = release_dict.get("artists", [])
+        if artist_data:
+            artist_names = [a.get("name", "") for a in artist_data]
+            artist = ", ".join(filter(None, artist_names))
+
+        # Extract year
+        year = release_dict.get("year")
+
+        # Extract formats
+        formats = []
+        format_data = release_dict.get("formats", [])
+        if format_data:
+            for fmt in format_data:
+                if isinstance(fmt, dict) and "name" in fmt:
+                    formats.append(fmt["name"])
+
+        # Extract genres
+        genres = release_dict.get("genres", [])
+        if not genres:
+            genres = release_dict.get("genre", [])
+
+        # Extract label and catalog number
+        label = None
+        catno = None
+        label_data = release_dict.get("labels", [])
+        if label_data and isinstance(label_data, list) and label_data:
+            first_label = label_data[0]
+            if isinstance(first_label, dict):
+                label = first_label.get("name")
+                catno = first_label.get("catno")
+
+        # Extract country
+        country = release_dict.get("country")
+
+        # Extract images
+        thumb_url = release_dict.get("thumb")
+        cover_url = release_dict.get("cover_image")
+
+        # Extract URI
+        uri = release_dict.get("resource_url")
+        if not uri and release_id:
+            uri = f"https://www.discogs.com/release/{release_id}"
+
+        return cls(
+            id=release_id,
+            title=title,
+            artist=artist,
+            year=year,
+            genre=genres,
+            format=formats,
+            label=label,
+            catno=catno,
+            country=country,
+            thumb_url=thumb_url,
+            cover_url=cover_url,
+            uri=uri,
+        )
+
+    @classmethod
     def from_discogs_object(cls, release_obj: Any) -> "DiscogsRelease":
         """Create a DiscogsRelease from a Discogs API release object.
 
@@ -192,6 +270,48 @@ class DiscogsVinyl:
         # Get rating and notes
         rating = safe_get_attr(release_obj, "rating")
         notes = safe_get_attr(release_obj, "notes")
+
+        return cls(
+            release=release,
+            is_owned=is_owned,
+            is_wanted=is_wanted,
+            date_added=date_added,
+            rating=rating,
+            notes=notes,
+        )
+
+    @classmethod
+    def from_discogs_dict(
+        cls, release_dict: dict[str, Any], is_owned: bool = False, is_wanted: bool = False
+    ) -> "DiscogsVinyl":
+        """Create a DiscogsVinyl from a Discogs API response dictionary.
+
+        Args:
+            release_dict: Dictionary with release data from the Discogs API
+            is_owned: Whether this vinyl is in the user's collection
+            is_wanted: Whether this vinyl is in the user's wantlist
+
+        Returns:
+            DiscogsVinyl instance
+        """
+        # Convert the release dictionary to our release model
+        release = DiscogsRelease.from_discogs_dict(release_dict)
+
+        # Extract collection/wantlist specific metadata
+        date_added = None
+        if "date_added" in release_dict:
+            try:
+                from datetime import datetime
+
+                date_added = datetime.fromisoformat(
+                    release_dict["date_added"].replace("Z", "+00:00")
+                )
+            except (ValueError, AttributeError):
+                pass
+
+        # Get rating and notes
+        rating = release_dict.get("rating")
+        notes = release_dict.get("notes")
 
         return cls(
             release=release,

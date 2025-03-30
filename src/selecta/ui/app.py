@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QSizePolicy,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -210,8 +211,32 @@ class SelectaMainWindow(QMainWindow):
         bottom_content = BottomContent()
         self.set_bottom_content(bottom_content)
 
-        # Show Spotify search panel by default
-        self.show_spotify_search()
+        # Create a tab widget for the right panel
+        search_tabs = QTabWidget()
+        search_tabs.setObjectName("searchTabs")
+        search_tabs.setTabPosition(QTabWidget.TabPosition.North)
+
+        # Create Spotify search panel
+
+        spotify_panel = SpotifySearchPanel()
+        spotify_panel.setObjectName("spotifySearchPanel")
+
+        # Create Discogs search panel
+        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
+
+        discogs_panel = DiscogsSearchPanel()
+        discogs_panel.setObjectName("discogsSearchPanel")
+
+        # Add tabs
+        search_tabs.addTab(spotify_panel, "Spotify")
+        search_tabs.addTab(discogs_panel, "Discogs")
+
+        # Set the tab widget as right content
+        self.set_right_content(search_tabs)
+
+        # Store references to the panels for direct access
+        self.spotify_panel = spotify_panel
+        self.discogs_panel = discogs_panel
 
         # Store a reference to the details panel for switching later
         if hasattr(playlist_content, "playlist_component") and hasattr(
@@ -225,18 +250,39 @@ class SelectaMainWindow(QMainWindow):
         Args:
             initial_search: Optional initial search query
         """
-        # Create a new Spotify search panel
-        spotify_search_panel = SpotifySearchPanel()
-        spotify_search_panel.setObjectName("spotifySearchPanel")
+        # Find the tab widget containing the search panels
+        for i in range(self.right_layout.count()):
+            widget = self.right_layout.itemAt(i).widget()  # type: ignore
+            if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
+                # Switch to the Spotify tab (index 0)
+                widget.setCurrentIndex(0)
 
-        # Set the initial search if provided
-        if initial_search:
-            spotify_search_panel.search_bar.set_search_text(initial_search)
-            spotify_search_panel._on_search(initial_search)
+                # Set the initial search if provided
+                if initial_search and hasattr(self, "spotify_panel"):
+                    self.spotify_panel.search_bar.set_search_text(initial_search)
+                    self.spotify_panel._on_search(initial_search)
 
-        self.set_right_content(spotify_search_panel)
+                break
 
-        # No need to transfer the selection - SelectionState handles this automatically
+    def show_discogs_search(self, initial_search=None):
+        """Show Discogs search panel in the right area.
+
+        Args:
+            initial_search: Optional initial search query
+        """
+        # Find the tab widget containing the search panels
+        for i in range(self.right_layout.count()):
+            widget = self.right_layout.itemAt(i).widget()  # type: ignore
+            if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
+                # Switch to the Discogs tab (index 1)
+                widget.setCurrentIndex(1)
+
+                # Set the initial search if provided
+                if initial_search and hasattr(self, "discogs_panel"):
+                    self.discogs_panel.search_bar.set_search_text(initial_search)
+                    self.discogs_panel._on_search(initial_search)
+
+                break
 
     def show_tracks(self):
         """Show tracks content."""

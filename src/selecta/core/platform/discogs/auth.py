@@ -5,16 +5,23 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-import discogs_client
+import requests
 from loguru import logger
+from requests_oauthlib import OAuth1
 
 from selecta.config.config_manager import load_platform_credentials
 from selecta.core.data.repositories.settings_repository import SettingsRepository
-from selecta.core.utils.type_helpers import is_column_truthy
+from selecta.core.platform.discogs.api_client import DiscogsApiClient
+from selecta.core.utils.type_helpers import column_to_str, is_column_truthy
 
 
 class DiscogsAuthManager:
     """Handles Discogs authentication and token management."""
+
+    # Discogs API endpoints for OAuth
+    REQUEST_TOKEN_URL = "https://api.discogs.com/oauth/request_token"
+    AUTHORIZE_URL = "https://www.discogs.com/oauth/authorize"
+    ACCESS_TOKEN_URL = "https://api.discogs.com/oauth/access_token"
 
     def __init__(
         self,
@@ -40,16 +47,15 @@ class DiscogsAuthManager:
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
 
-        # Create the Discogs client if we have credentials
-        self.client = None
-        if self.consumer_key and self.consumer_secret:
-            self.client = discogs_client.Client(
-                "Selecta/0.1",
-                consumer_key=self.consumer_key,
-                consumer_secret=self.consumer_secret,
-            )
+        # Initialize the API client with just the consumer credentials
+        self.api_client = DiscogsApiClient(
+            consumer_key=self.consumer_key,
+            consumer_secret=self.consumer_secret,
+        )
 
-    def get_authorize_url(self, callback_url: str = "http://localhost:8080") -> tuple | None:
+    def get_authorize_url(
+        self, callback_url: str = "http://localhost:8080"
+    ) -> tuple[str, str, str] | None:
         """Get the Discogs authorization URL for the user to visit.
 
         Args:
@@ -58,17 +64,37 @@ class DiscogsAuthManager:
         Returns:
             A tuple of (token, secret, url) or None if client is not configured
         """
-        if not self.client:
+        if not self.consumer_key or not self.consumer_secret:
             logger.error("Discogs client not configured. Missing consumer key or secret.")
             return None
 
         try:
-            return self.client.get_authorize_url(callback_url)
+            # Create OAuth1 for getting request token (no token/secret yet)
+            oauth = OAuth1(
+                self.consumer_key,
+                client_secret=self.consumer_secret,
+                callback_uri=callback_url,
+            )
+
+            # Get request token
+            response = requests.post(self.REQUEST_TOKEN_URL, auth=oauth)
+            response.raise_for_status()
+
+            # Parse response
+            credentials = parse_qs(response.text)
+            resource_owner_key = credentials.get("oauth_token")[0]
+            resource_owner_secret = credentials.get("oauth_token_secret")[0]
+
+            # Generate authorization URL
+            authorize_url = f"{self.AUTHORIZE_URL}?oauth_token={resource_owner_key}"
+
+            return resource_owner_key, resource_owner_secret, authorize_url
+
         except Exception as e:
             logger.exception(f"Error getting Discogs authorization URL: {e}")
             return None
 
-    def start_auth_flow(self) -> dict | None:
+    def start_auth_flow(self) -> dict[str, str] | None:
         """Start the Discogs OAuth flow and open the browser for authorization.
 
         This method will:
@@ -156,7 +182,6 @@ class DiscogsAuthManager:
         server_closed["closed"] = True
 
         # Get the verifier from the callback
-        # After getting the verifier
         verifier = verifier_received["verifier"]
         if not verifier:
             logger.error("No authorization verifier received from Discogs.")
@@ -168,12 +193,23 @@ class DiscogsAuthManager:
         try:
             logger.debug("Exchanging verifier for access token...")
 
-            # Add null check for client
-            if not self.client:
-                logger.error("Discogs client is not initialized")
-                return None
+            # Create OAuth1 with the request token and secret
+            oauth = OAuth1(
+                self.consumer_key,
+                client_secret=self.consumer_secret,
+                resource_owner_key=token,
+                resource_owner_secret=secret,
+                verifier=verifier,
+            )
 
-            access_token, access_secret = self.client.get_access_token(verifier)
+            # Exchange for access token
+            response = requests.post(self.ACCESS_TOKEN_URL, auth=oauth)
+            response.raise_for_status()
+
+            # Parse the response
+            credentials = parse_qs(response.text)
+            access_token = credentials.get("oauth_token")[0]
+            access_secret = credentials.get("oauth_token_secret")[0]
 
             logger.debug("Access token received successfully")
 
@@ -185,47 +221,39 @@ class DiscogsAuthManager:
             logger.exception(f"Error exchanging Discogs verifier for tokens: {e}")
             return None
 
-    def get_discogs_client(self) -> discogs_client.Client | None:
-        """Get an authenticated Discogs client.
+    def get_discogs_client(self) -> DiscogsApiClient | None:
+        """Get an authenticated Discogs API client.
 
         Returns:
-            An authenticated Discogs client or None if authentication fails
+            An authenticated DiscogsApiClient or None if authentication fails
         """
         try:
-            # Recreate the client to ensure we have a fresh instance
-            if self.consumer_key and self.consumer_secret:
-                self.client = discogs_client.Client(
-                    "Selecta/0.1",
-                    consumer_key=self.consumer_key,
-                    consumer_secret=self.consumer_secret,
-                )
-            else:
-                logger.warning("Missing Discogs consumer key or secret")
-                return None
-
             # Check if we have stored tokens
             stored_tokens = self._load_tokens()
-            if stored_tokens and stored_tokens.get("token") and stored_tokens.get("secret"):
-                logger.debug("Setting stored tokens on Discogs client")
-
-                # Set the stored tokens on the client
-                try:
-                    self.client.set_token(stored_tokens["token"], stored_tokens["secret"])
-
-                    # Test the client with a simple request
-                    try:
-                        self.client.identity()
-                        logger.debug("Discogs client authenticated successfully")
-                        return self.client
-                    except Exception as e:
-                        logger.error(f"Authentication test failed: {e}")
-                        return None
-                except Exception as e:
-                    logger.exception(f"Error setting stored tokens on Discogs client: {e}")
-                    return None
-            else:
+            if (
+                not stored_tokens
+                or not stored_tokens.get("token")
+                or not stored_tokens.get("secret")
+            ):
                 logger.warning("No stored Discogs tokens found or tokens incomplete")
                 return None
+
+            # Create a new client with the stored tokens
+            client = DiscogsApiClient(
+                consumer_key=self.consumer_key,
+                consumer_secret=self.consumer_secret,
+                access_token=stored_tokens["token"],
+                access_secret=stored_tokens["secret"],
+            )
+
+            # Test the client with a simple request
+            if client.is_authenticated():
+                logger.debug("Discogs client authenticated successfully")
+                return client
+            else:
+                logger.error("Authentication test failed")
+                return None
+
         except Exception as e:
             logger.exception(f"Error creating Discogs client: {e}")
             return None
@@ -250,7 +278,7 @@ class DiscogsAuthManager:
 
         logger.info("Discogs tokens saved.")
 
-    def _load_tokens(self) -> dict | None:
+    def _load_tokens(self) -> dict[str, str] | None:
         """Load Discogs tokens from the application settings.
 
         Returns:
@@ -265,8 +293,8 @@ class DiscogsAuthManager:
             return None
 
         return {
-            "token": creds.access_token,
-            "secret": creds.refresh_token,  # Using refresh_token field as the secret
+            "token": column_to_str(creds.access_token),
+            "secret": column_to_str(creds.refresh_token),  # Using refresh_token field as the secret
         }
 
 
@@ -284,16 +312,15 @@ def validate_discogs_credentials(consumer_key: str, consumer_secret: str) -> boo
         return False
 
     try:
-        # Create a client with the credentials
-        client = discogs_client.Client(
-            "Selecta/0.1",
+        # Create a client with just the consumer credentials (no user auth needed for this test)
+        client = DiscogsApiClient(
             consumer_key=consumer_key,
             consumer_secret=consumer_secret,
         )
 
-        # Try to make a simple request that doesn't require authentication
-        client.search("Test")
-        return True
+        # Try to make a simple search request that doesn't require authentication
+        success, _ = client.search_releases(query="test")
+        return success
     except Exception as e:
         logger.error(f"Error validating Discogs credentials: {e}")
         return False
