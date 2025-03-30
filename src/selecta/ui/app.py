@@ -221,51 +221,104 @@ class SelectaMainWindow(QMainWindow):
         # Update the navigation bar
         self.nav_bar.set_active_platform(platform)
 
-        # Create the appropriate data provider
-        if platform == "local":
-            from selecta.ui.components.playlist.local.local_playlist_data_provider import (
-                LocalPlaylistDataProvider,
-            )
+        # Store persistent client references to avoid recreating them
+        if not hasattr(self, "_platform_clients"):
+            self._platform_clients = {}
 
-            data_provider = LocalPlaylistDataProvider()
-        elif platform == "spotify":
-            from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
-                SpotifyPlaylistDataProvider,
-            )
+        # Create the appropriate data provider using cached clients
+        try:
+            if platform == "local":
+                from selecta.ui.components.playlist.local.local_playlist_data_provider import (
+                    LocalPlaylistDataProvider,
+                )
 
-            data_provider = SpotifyPlaylistDataProvider()
-        elif platform == "rekordbox":
-            from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (
-                RekordboxPlaylistDataProvider,
-            )
+                data_provider = LocalPlaylistDataProvider()
+            elif platform == "spotify":
+                from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
+                    SpotifyPlaylistDataProvider,
+                )
 
-            data_provider = RekordboxPlaylistDataProvider()
-        elif platform == "discogs":
-            from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
-                DiscogsPlaylistDataProvider,
-            )
+                # Use cached client if available
+                if "spotify" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
 
-            data_provider = DiscogsPlaylistDataProvider()
-        else:
-            return  # Invalid platform
+                    self._platform_clients["spotify"] = PlatformFactory.create(
+                        "spotify", SettingsRepository()
+                    )
 
-        # Check if the data provider is authenticated
-        authenticated = True
-        if platform != "local":
-            try:
-                if not data_provider.client.is_authenticated():
+                data_provider = SpotifyPlaylistDataProvider(
+                    client=self._platform_clients["spotify"]
+                )
+            elif platform == "rekordbox":
+                from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (  # noqa: E501
+                    RekordboxPlaylistDataProvider,
+                )
+
+                # Use cached client
+                if "rekordbox" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
+
+                    self._platform_clients["rekordbox"] = PlatformFactory.create(
+                        "rekordbox", SettingsRepository()
+                    )
+
+                data_provider = RekordboxPlaylistDataProvider(
+                    client=self._platform_clients["rekordbox"]
+                )
+            elif platform == "discogs":
+                from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
+                    DiscogsPlaylistDataProvider,
+                )
+
+                # Use cached client
+                if "discogs" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
+
+                    self._platform_clients["discogs"] = PlatformFactory.create(
+                        "discogs", SettingsRepository()
+                    )
+
+                data_provider = DiscogsPlaylistDataProvider(
+                    client=self._platform_clients["discogs"]
+                )
+            else:
+                return  # Invalid platform
+
+            # Check if the data provider is authenticated
+            authenticated = True
+            if platform != "local":
+                try:
+                    if not data_provider.client.is_authenticated():
+                        authenticated = False
+                        # Show authentication message
+                        self._show_auth_required_message(platform)
+                except Exception as e:
+                    from loguru import logger
+
+                    logger.exception(f"Error checking authentication for {platform}: {e}")
                     authenticated = False
-                    # Show authentication message
                     self._show_auth_required_message(platform)
-            except Exception as e:
-                from loguru import logger
 
-                logger.exception(f"Error checking authentication for {platform}: {e}")
-                authenticated = False
-                self._show_auth_required_message(platform)
+            # Only create the playlist view if authenticated
+            if authenticated:
+                self._create_playlist_view(data_provider)
 
-        # Create the playlist component with the new data provider
-        self._create_playlist_view(data_provider, authenticated)
+        except Exception as e:
+            from loguru import logger
+
+            logger.exception(f"Error creating data provider for {platform}: {e}")
+
+            # Show error message
+            self._show_platform_error_message(platform, str(e))
 
     def _create_playlist_view(self, data_provider, is_authenticated=True):
         """Create and display the playlist view with the given data provider.
