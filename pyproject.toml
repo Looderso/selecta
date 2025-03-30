@@ -30,9 +30,8 @@ dependencies = [
     "pyqtdarktheme", # Dark theme support
     # Garden packages will be added later once the core setup is working
     # API clients
-    "spotipy",                # Spotify API client
-    "python3-discogs-client", # Discogs API client
-    "pyrekordbox",            # Rekordbox API client
+    "spotipy",     # Spotify API client
+    "pyrekordbox", # Rekordbox API client
     # Database and data handling
     "sqlalchemy",   # ORM for database access
     "alembic",      # Database migrations
@@ -41,14 +40,15 @@ dependencies = [
     "mutagen", # Audio metadata handling
     "tinytag", # Audio tag reading
     # Utilities
-    "pydantic",         # Data validation
-    "python-dotenv",    # Environment management
-    "loguru",           # Better logging
-    "httpx",            # Modern HTTP client
-    "rich",             # Rich text and formatting
-    "click",            # Command-line interface
+    "pydantic",          # Data validation
+    "python-dotenv",     # Environment management
+    "loguru",            # Better logging
+    "httpx",             # Modern HTTP client
+    "requests_oauthlib", # O-auth for testing
+    "rich",              # Rich text and formatting
+    "click",             # Command-line interface
     "click-completion",
-    "appdirs",          # App directories management
+    "appdirs",           # App directories management
     # Mac-specific dependencies
     "pyobjc-core; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
