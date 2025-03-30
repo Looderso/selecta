@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
 
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
-from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
@@ -122,9 +121,15 @@ class SelectaMainWindow(QMainWindow):
 
         # Connect signals
         self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
-        self.nav_bar.playlists_button_clicked.connect(self.show_playlists)
-        self.nav_bar.tracks_button_clicked.connect(self.show_tracks)
-        self.nav_bar.vinyl_button_clicked.connect(self.show_vinyl)
+
+        # Connect the new platform signals
+        self.nav_bar.local_button_clicked.connect(lambda: self.switch_platform("local"))
+        self.nav_bar.spotify_button_clicked.connect(lambda: self.switch_platform("spotify"))
+        self.nav_bar.rekordbox_button_clicked.connect(lambda: self.switch_platform("rekordbox"))
+        self.nav_bar.discogs_button_clicked.connect(lambda: self.switch_platform("discogs"))
+
+        # Track the current platform
+        self.current_platform = "local"
 
     def resize_to_available_screen(self):
         """Resize the window to fill the available screen space."""
@@ -198,10 +203,145 @@ class SelectaMainWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
 
+    def switch_platform(self, platform: str):
+        """Switch to the specified platform.
+
+        Args:
+            platform: Platform name ('local', 'spotify', 'rekordbox', 'discogs')
+        """
+        if platform == self.current_platform:
+            return  # Already on this platform
+
+        self.current_platform = platform
+
+        # Update the navigation bar
+        self.nav_bar.set_active_platform(platform)
+
+        # Create the appropriate data provider
+        if platform == "local":
+            from selecta.ui.components.playlist.local.local_playlist_data_provider import (
+                LocalPlaylistDataProvider,
+            )
+
+            data_provider = LocalPlaylistDataProvider()
+        elif platform == "spotify":
+            from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
+                SpotifyPlaylistDataProvider,
+            )
+
+            data_provider = SpotifyPlaylistDataProvider()
+        elif platform == "rekordbox":
+            from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (
+                RekordboxPlaylistDataProvider,
+            )
+
+            data_provider = RekordboxPlaylistDataProvider()
+        elif platform == "discogs":
+            from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
+                DiscogsPlaylistDataProvider,
+            )
+
+            data_provider = DiscogsPlaylistDataProvider()
+        else:
+            return  # Invalid platform
+
+        # Check if the data provider is authenticated
+        authenticated = True
+        if platform != "local":
+            try:
+                if not data_provider.client.is_authenticated():
+                    authenticated = False
+                    # Show authentication message
+                    self._show_auth_required_message(platform)
+            except Exception as e:
+                from loguru import logger
+
+                logger.exception(f"Error checking authentication for {platform}: {e}")
+                authenticated = False
+                self._show_auth_required_message(platform)
+
+        # Create the playlist component with the new data provider
+        self._create_playlist_view(data_provider, authenticated)
+
+    def _create_playlist_view(self, data_provider, is_authenticated=True):
+        """Create and display the playlist view with the given data provider.
+
+        Args:
+            data_provider: The playlist data provider
+            is_authenticated: Whether the platform is authenticated
+        """
+        from selecta.ui.components.playlist.playlist_component import PlaylistComponent
+
+        # Create a new playlist component
+        playlist_component = PlaylistComponent(data_provider)
+
+        # Clear current content in playlist area
+        self.set_playlist_content(playlist_component)
+
+        # Store a reference to the details panel
+        self.track_details_panel = playlist_component.details_panel
+
+    def _show_auth_required_message(self, platform: str):
+        """Show a message when authentication is required.
+
+        Args:
+            platform: Platform name
+        """
+        from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+
+        # Create a widget for the message
+        auth_widget = QWidget()
+        layout = QVBoxLayout(auth_widget)
+
+        # Add message
+        message = QLabel(f"Authentication required for {platform.capitalize()}.")
+        message.setStyleSheet("font-size: 16px; margin-bottom: 20px;")
+        layout.addWidget(message)
+
+        # Add explanation
+        explanation = QLabel(
+            f"You need to authenticate with {platform.capitalize()} to view your playlists. "
+            "Click the button below to authenticate."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Add authenticate button
+        auth_button = QPushButton(f"Authenticate with {platform.capitalize()}")
+        auth_button.clicked.connect(lambda: self._authenticate_platform(platform))
+        layout.addWidget(auth_button)
+
+        # Add spacer
+        layout.addStretch(1)
+
+        # Set the widget as the playlist content
+        self.set_playlist_content(auth_widget)
+
+    def _authenticate_platform(self, platform: str):
+        """Authenticate with the specified platform.
+
+        Args:
+            platform: Platform name
+        """
+        # Show the settings drawer
+        self.toggle_side_drawer()
+
+        # Find the platform auth widget in the side drawer
+        if hasattr(self.side_drawer, "auth_panel"):
+            # Call the appropriate authentication method
+            if platform == "spotify":
+                self.side_drawer.auth_panel._authenticate_spotify()
+            elif platform == "rekordbox":
+                self.side_drawer.auth_panel._authenticate_rekordbox()
+            elif platform == "discogs":
+                self.side_drawer.auth_panel._authenticate_discogs()
+
     def show_playlists(self):
-        """Show playlists content."""
+        """Show playlists content for the current platform."""
         from selecta.ui.components.bottom_content import BottomContent
+        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
         from selecta.ui.components.playlist_content import PlaylistContent
+        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
 
         # Create playlist content
         playlist_content = PlaylistContent()
@@ -217,32 +357,28 @@ class SelectaMainWindow(QMainWindow):
         search_tabs.setTabPosition(QTabWidget.TabPosition.North)
 
         # Create Spotify search panel
-
-        spotify_panel = SpotifySearchPanel()
-        spotify_panel.setObjectName("spotifySearchPanel")
+        self.spotify_panel = SpotifySearchPanel()
+        self.spotify_panel.setObjectName("spotifySearchPanel")
 
         # Create Discogs search panel
-        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
-
-        discogs_panel = DiscogsSearchPanel()
-        discogs_panel.setObjectName("discogsSearchPanel")
+        self.discogs_panel = DiscogsSearchPanel()
+        self.discogs_panel.setObjectName("discogsSearchPanel")
 
         # Add tabs
-        search_tabs.addTab(spotify_panel, "Spotify")
-        search_tabs.addTab(discogs_panel, "Discogs")
+        search_tabs.addTab(self.spotify_panel, "Spotify")
+        search_tabs.addTab(self.discogs_panel, "Discogs")
 
         # Set the tab widget as right content
         self.set_right_content(search_tabs)
-
-        # Store references to the panels for direct access
-        self.spotify_panel = spotify_panel
-        self.discogs_panel = discogs_panel
 
         # Store a reference to the details panel for switching later
         if hasattr(playlist_content, "playlist_component") and hasattr(
             playlist_content.playlist_component, "details_panel"
         ):
             self.track_details_panel = playlist_content.playlist_component.details_panel
+
+        # Switch to the current platform
+        self.switch_platform(getattr(self, "current_platform", "local"))
 
     def show_spotify_search(self, initial_search=None):
         """Show Spotify search panel in the right area.
@@ -331,8 +467,8 @@ def run_app():
     # Create and show the main window
     window = SelectaMainWindow()
 
-    # Initial setup - Load playlist view
-    window.show_playlists()
+    # Set up the initial view with local playlists
+    window.switch_platform("local")
 
     window.show()
 
