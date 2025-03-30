@@ -1,5 +1,5 @@
-# src/selecta/ui/components/playlist/discogs/discogs_playlist_data_provider.py
-import time
+"""Discogs playlist data provider implementation."""
+
 from typing import Any
 
 from loguru import logger
@@ -7,61 +7,44 @@ from loguru import logger
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.platform_factory import PlatformFactory
+from selecta.ui.components.playlist.abstract_playlist_data_provider import (
+    AbstractPlaylistDataProvider,
+)
 from selecta.ui.components.playlist.discogs.discogs_playlist_item import DiscogsPlaylistItem
 from selecta.ui.components.playlist.discogs.discogs_track_item import DiscogsTrackItem
-from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
 
 
-class DiscogsPlaylistDataProvider(PlaylistDataProvider):
+class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):
     """Data provider for Discogs collection and wantlist."""
 
-    # Add class-level cache for playlist data
-    _cached_collection = None
-    _collection_timestamp = 0
-    _cached_wantlist = None
-    _wantlist_timestamp = 0
-    _cached_tracks = {}
-    _cache_timestamp = 0
-    _cache_timeout = 300  # 5 minutes
-
-    def __init__(self, client: DiscogsClient | None = None):
+    def __init__(self, client: DiscogsClient | None = None, cache_timeout: float = 300.0):
         """Initialize the Discogs playlist data provider.
 
         Args:
             client: Optional DiscogsClient instance
+            cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
-        # Initialize cache variables if they don't exist yet
-        if not hasattr(self.__class__, "_cache_timeout"):
-            self.__class__._cache_timeout = 300  # 5 minutes
-
-        if not hasattr(self.__class__, "_cached_collection"):
-            self.__class__._cached_collection = None
-            self.__class__._collection_timestamp = 0
-
-        if not hasattr(self.__class__, "_cached_wantlist"):
-            self.__class__._cached_wantlist = None
-            self.__class__._wantlist_timestamp = 0
-
-        if not hasattr(self.__class__, "_cached_tracks"):
-            self.__class__._cached_tracks = {}
-
         # Create or use the provided Discogs client
         if client is None:
             settings_repo = SettingsRepository()
-            self.client = PlatformFactory.create("discogs", settings_repo)
-            if not isinstance(self.client, DiscogsClient):
+            client_instance = PlatformFactory.create("discogs", settings_repo)
+            if not isinstance(client_instance, DiscogsClient):
                 raise ValueError("Could not create Discogs client")
+            self.client = client_instance
         else:
             self.client = client
 
-        # Check authentication
-        if not self.client.is_authenticated():
-            logger.warning("Discogs client is not authenticated")
+        # Initialize the abstract provider
+        super().__init__(self.client, cache_timeout)
 
-    def get_all_playlists(self) -> list[PlaylistItem]:
-        """Get all 'playlists' from Discogs (collection and wantlist).
+        # Additional cache keys specific to Discogs
+        self._collection_cache_key = "discogs_collection"
+        self._wantlist_cache_key = "discogs_wantlist"
+
+    def _fetch_playlists(self) -> list[PlaylistItem]:
+        """Fetch 'playlists' from Discogs (collection and wantlist).
 
         Returns:
             List of playlist items
@@ -78,113 +61,38 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
         )
         playlist_items.append(root_folder)
 
-        # Use cached data for playlist contents, but not for playlist structure
-        current_time = time.time()
-
         # Check authentication only once
-        is_authenticated = False
-        try:
-            is_authenticated = self.client and self.client.is_authenticated()
-        except Exception as e:
-            logger.error(f"Error checking Discogs authentication: {e}")
-
-        if not is_authenticated:
-            logger.warning("Discogs client is not authenticated")
+        if not self._ensure_authenticated():
             # Still return the root folder even when not authenticated
             return playlist_items
 
-        # Get user identity and fetch collection/wantlist
+        # Get collection count from cache or API
+        collection_count = 0
         try:
-            # user_profile = self.client.get_user_profile()
+            if self.cache.has_valid(self._collection_cache_key):
+                collection = self.cache.get(self._collection_cache_key, [])
+                collection_count = len(collection)
+            else:
+                collection = self.client.get_collection()
+                collection_count = len(collection)
+                # Cache the collection data
+                self.cache.set(self._collection_cache_key, collection)
 
-            # Add Collection as a "playlist"
-            collection_count = 0
-            try:
-                # Use cached collection if available
-                if (
-                    hasattr(self.__class__, "_cached_collection")
-                    and self.__class__._cached_collection is not None
-                    and (current_time - self.__class__._collection_timestamp)
-                    < self.__class__._cache_timeout
-                ):
-                    collection_count = len(self.__class__._cached_collection)
-                else:
-                    collection = self.client.get_collection()
-                    collection_count = len(collection)
-                    # Cache the collection data
-                    self.__class__._cached_collection = collection
-                    self.__class__._collection_timestamp = current_time
-
-                collection_item = DiscogsPlaylistItem(
-                    name=f"Collection ({collection_count} items)",
-                    item_id="collection",
-                    parent_id="discogs_root",
-                    is_folder_flag=False,
-                    track_count=collection_count,
-                    list_type="collection",
-                )
-                playlist_items.append(collection_item)
-            except Exception as e:
-                logger.error(f"Error getting Discogs collection: {e}")
-                # Add an empty collection placeholder
-                playlist_items.append(
-                    DiscogsPlaylistItem(
-                        name="Collection (error)",
-                        item_id="collection",
-                        parent_id="discogs_root",
-                        is_folder_flag=False,
-                        track_count=0,
-                        list_type="collection",
-                    )
-                )
-
-            # Add Wantlist as a "playlist"
-            wantlist_count = 0
-            try:
-                # Use cached wantlist if available
-                if (
-                    hasattr(self.__class__, "_cached_wantlist")
-                    and self.__class__._cached_wantlist is not None
-                    and (current_time - self.__class__._wantlist_timestamp)
-                    < self.__class__._cache_timeout
-                ):
-                    wantlist_count = len(self.__class__._cached_wantlist)
-                else:
-                    wantlist = self.client.get_wantlist()
-                    wantlist_count = len(wantlist)
-                    # Cache the wantlist data
-                    self.__class__._cached_wantlist = wantlist
-                    self.__class__._wantlist_timestamp = current_time
-
-                wantlist_item = DiscogsPlaylistItem(
-                    name=f"Wantlist ({wantlist_count} items)",
-                    item_id="wantlist",
-                    parent_id="discogs_root",
-                    is_folder_flag=False,
-                    track_count=wantlist_count,
-                    list_type="wantlist",
-                )
-                playlist_items.append(wantlist_item)
-            except Exception as e:
-                logger.error(f"Error getting Discogs wantlist: {e}")
-                # Add an empty wantlist placeholder
-                playlist_items.append(
-                    DiscogsPlaylistItem(
-                        name="Wantlist (error)",
-                        item_id="wantlist",
-                        parent_id="discogs_root",
-                        is_folder_flag=False,
-                        track_count=0,
-                        list_type="wantlist",
-                    )
-                )
-
+            collection_item = DiscogsPlaylistItem(
+                name=f"Collection ({collection_count} items)",
+                item_id="collection",
+                parent_id="discogs_root",
+                is_folder_flag=False,
+                track_count=collection_count,
+                list_type="collection",
+            )
+            playlist_items.append(collection_item)
         except Exception as e:
-            logger.exception(f"Error getting Discogs user profile: {e}")
-            # Add placeholders if we can't get user profile
+            logger.error(f"Error getting Discogs collection: {e}")
+            # Add an empty collection placeholder
             playlist_items.append(
                 DiscogsPlaylistItem(
-                    name="Collection (not available)",
+                    name="Collection (error)",
                     item_id="collection",
                     parent_id="discogs_root",
                     is_folder_flag=False,
@@ -192,9 +100,34 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
                     list_type="collection",
                 )
             )
+
+        # Get wantlist count from cache or API
+        wantlist_count = 0
+        try:
+            if self.cache.has_valid(self._wantlist_cache_key):
+                wantlist = self.cache.get(self._wantlist_cache_key, [])
+                wantlist_count = len(wantlist)
+            else:
+                wantlist = self.client.get_wantlist()
+                wantlist_count = len(wantlist)
+                # Cache the wantlist data
+                self.cache.set(self._wantlist_cache_key, wantlist)
+
+            wantlist_item = DiscogsPlaylistItem(
+                name=f"Wantlist ({wantlist_count} items)",
+                item_id="wantlist",
+                parent_id="discogs_root",
+                is_folder_flag=False,
+                track_count=wantlist_count,
+                list_type="wantlist",
+            )
+            playlist_items.append(wantlist_item)
+        except Exception as e:
+            logger.error(f"Error getting Discogs wantlist: {e}")
+            # Add an empty wantlist placeholder
             playlist_items.append(
                 DiscogsPlaylistItem(
-                    name="Wantlist (not available)",
+                    name="Wantlist (error)",
                     item_id="wantlist",
                     parent_id="discogs_root",
                     is_folder_flag=False,
@@ -205,8 +138,8 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
 
         return playlist_items
 
-    def get_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
-        """Get all tracks in a 'playlist' (collection or wantlist).
+    def _fetch_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
+        """Fetch tracks for a 'playlist' (collection or wantlist).
 
         Args:
             playlist_id: ID of the 'playlist' ('collection' or 'wantlist')
@@ -214,37 +147,12 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
         Returns:
             List of track items
         """
-        # Check if cache is initialized
-        if not hasattr(self.__class__, "_cached_tracks"):
-            self.__class__._cached_tracks = {}
-
-        # Check cache first
-        current_time = time.time()
-        if (
-            playlist_id in self.__class__._cached_tracks
-            and (current_time - self.__class__._cached_tracks[playlist_id]["timestamp"])
-            < self.__class__._cache_timeout
-        ):
-            logger.debug(f"Using cached tracks for playlist {playlist_id}")
-            return self.__class__._cached_tracks[playlist_id]["tracks"]
-
         # Root folder has no tracks
         if playlist_id == "discogs_root":
-            empty_tracks = []
-            self.__class__._cached_tracks[playlist_id] = {
-                "tracks": empty_tracks,
-                "timestamp": current_time,
-            }
-            return empty_tracks
+            return []
 
-        if not self.client or not self.client.is_authenticated():
-            logger.error("Discogs client is not authenticated")
-            empty_tracks = []
-            self.__class__._cached_tracks[playlist_id] = {
-                "tracks": empty_tracks,
-                "timestamp": current_time,
-            }
-            return empty_tracks
+        if not self._ensure_authenticated():
+            return []
 
         track_items = []
 
@@ -252,16 +160,9 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
             # Get tracks based on playlist type
             if playlist_id == "collection":
                 # Get collection items from cache or API
-                collection = None
-                if (
-                    hasattr(self.__class__, "_cached_collection")
-                    and self.__class__._cached_collection is not None
-                ):
-                    collection = self.__class__._cached_collection
-                else:
-                    collection = self.client.get_collection()
-                    self.__class__._cached_collection = collection
-                    self.__class__._collection_timestamp = current_time
+                collection = self.cache.get_or_set(
+                    self._collection_cache_key, lambda: self.client.get_collection()
+                )
 
                 for i, vinyl in enumerate(collection):
                     release = vinyl.release
@@ -288,16 +189,9 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
                     )
             elif playlist_id == "wantlist":
                 # Get wantlist items from cache or API
-                wantlist = None
-                if (
-                    hasattr(self.__class__, "_cached_wantlist")
-                    and self.__class__._cached_wantlist is not None
-                ):
-                    wantlist = self.__class__._cached_wantlist
-                else:
-                    wantlist = self.client.get_wantlist()
-                    self.__class__._cached_wantlist = wantlist
-                    self.__class__._wantlist_timestamp = current_time
+                wantlist = self.cache.get_or_set(
+                    self._wantlist_cache_key, lambda: self.client.get_wantlist()
+                )
 
                 for i, vinyl in enumerate(wantlist):
                     release = vinyl.release
@@ -324,12 +218,6 @@ class DiscogsPlaylistDataProvider(PlaylistDataProvider):
                     )
         except Exception as e:
             logger.exception(f"Error getting tracks for playlist {playlist_id}: {e}")
-
-        # Cache tracks before returning
-        self.__class__._cached_tracks[playlist_id] = {
-            "tracks": track_items,
-            "timestamp": current_time,
-        }
 
         return track_items
 

@@ -250,7 +250,7 @@ class SelectaMainWindow(QMainWindow):
                     )
 
                 data_provider = SpotifyPlaylistDataProvider(
-                    client=self._platform_clients["spotify"]
+                    client=self._platform_clients["spotify"]  # type: ignore
                 )
             elif platform == "rekordbox":
                 from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (  # noqa: E501
@@ -269,7 +269,7 @@ class SelectaMainWindow(QMainWindow):
                     )
 
                 data_provider = RekordboxPlaylistDataProvider(
-                    client=self._platform_clients["rekordbox"]
+                    client=self._platform_clients["rekordbox"]  # type: ignore
                 )
             elif platform == "discogs":
                 from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
@@ -288,7 +288,7 @@ class SelectaMainWindow(QMainWindow):
                     )
 
                 data_provider = DiscogsPlaylistDataProvider(
-                    client=self._platform_clients["discogs"]
+                    client=self._platform_clients["discogs"]  # type: ignore
                 )
             else:
                 return  # Invalid platform
@@ -297,7 +297,7 @@ class SelectaMainWindow(QMainWindow):
             authenticated = True
             if platform != "local":
                 try:
-                    if not data_provider.client.is_authenticated():
+                    if not data_provider.client.is_authenticated():  # type: ignore
                         authenticated = False
                         # Show authentication message
                         self._show_auth_required_message(platform)
@@ -452,16 +452,18 @@ class SelectaMainWindow(QMainWindow):
 
         # Find the tab widget and switch to Spotify tab
         for i in range(self.right_layout.count()):
-            widget = self.right_layout.itemAt(i).widget()
-            if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
-                # Switch to the Spotify tab (index 0)
-                widget.setCurrentIndex(0)
+            item = self.right_layout.itemAt(i)
+            if item:
+                widget = item.widget()
+                if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
+                    # Switch to the Spotify tab (index 0)
+                    widget.setCurrentIndex(0)
 
-                # Set the initial search if provided
-                if initial_search and self.spotify_panel:
-                    self.spotify_panel.search_bar.set_search_text(initial_search)
-                    self.spotify_panel._on_search(initial_search)
-                break
+                    # Set the initial search if provided
+                    if initial_search and self.spotify_panel:
+                        self.spotify_panel.search_bar.set_search_text(initial_search)
+                        self.spotify_panel._on_search(initial_search)
+                    break
 
     def show_discogs_search(self, initial_search=None):
         """Show Discogs search panel in the right area."""
@@ -470,16 +472,18 @@ class SelectaMainWindow(QMainWindow):
 
         # Find the tab widget and switch to Discogs tab
         for i in range(self.right_layout.count()):
-            widget = self.right_layout.itemAt(i).widget()
-            if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
-                # Switch to the Discogs tab (index 1)
-                widget.setCurrentIndex(1)
+            item = self.right_layout.itemAt(i)
+            if item:
+                widget = item.widget()
+                if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
+                    # Switch to the Discogs tab (index 1)
+                    widget.setCurrentIndex(1)
 
-                # Set the initial search if provided
-                if initial_search and self.discogs_panel:
-                    self.discogs_panel.search_bar.set_search_text(initial_search)
-                    self.discogs_panel._on_search(initial_search)
-                break
+                    # Set the initial search if provided
+                    if initial_search and self.discogs_panel:
+                        self.discogs_panel.search_bar.set_search_text(initial_search)
+                        self.discogs_panel._on_search(initial_search)
+                    break
 
     def show_tracks(self):
         """Show tracks content."""
@@ -512,6 +516,42 @@ class SelectaMainWindow(QMainWindow):
         # Clear right side
         empty_widget = QWidget()
         self.set_right_content(empty_widget)
+
+    def _show_platform_error_message(self, platform: str, error_message: str):
+        """Show an error message when there's a problem with a platform.
+
+        Args:
+            platform: Platform name
+            error_message: Error message
+        """
+        from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+
+        # Create a widget for the message
+        error_widget = QWidget()
+        layout = QVBoxLayout(error_widget)
+
+        # Add message
+        message = QLabel(f"Error with {platform.capitalize()} platform")
+        message.setStyleSheet("font-size: 16px; margin-bottom: 20px;")
+        layout.addWidget(message)
+
+        # Add explanation
+        explanation = QLabel(
+            f"There was an error connecting to {platform.capitalize()}. Error: {error_message}"
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Add try again button
+        retry_button = QPushButton("Try Again")
+        retry_button.clicked.connect(lambda: self.switch_platform(platform))
+        layout.addWidget(retry_button)
+
+        # Add spacer
+        layout.addStretch(1)
+
+        # Set the widget as the playlist content
+        self.set_playlist_content(error_widget)
 
 
 def run_app():
