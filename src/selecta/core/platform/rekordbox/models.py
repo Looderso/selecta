@@ -119,7 +119,11 @@ class RekordboxPlaylist:
         """
         playlist_id = getattr(playlist, "ID", "")
         name = getattr(playlist, "Name", "")
-        is_folder = bool(getattr(playlist, "Attribute", 0) == 1)
+        # Check if attribute is a bool or needs conversion
+        # Some versions return an integer for is_folder where 1 means folder
+        attribute = getattr(playlist, "Attribute", 0)
+        is_folder = bool(attribute == 1)
+
         parent_id = getattr(playlist, "ParentID", "root")
         position = getattr(playlist, "Seq", 0)
 

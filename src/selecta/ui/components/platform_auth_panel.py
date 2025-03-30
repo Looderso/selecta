@@ -1,3 +1,5 @@
+"""Platform authentication panel for all platforms."""
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -81,9 +83,26 @@ class PlatformAuthPanel(QWidget):
         widget = PlatformAuthWidget("Rekordbox")
 
         # Check authentication status
-        rekordbox_client = PlatformFactory.create("rekordbox", self.settings_repo)
-        is_authenticated = rekordbox_client.is_authenticated() if rekordbox_client else False
-        widget.set_authenticated(is_authenticated)
+        try:
+            rekordbox_client = PlatformFactory.create("rekordbox", self.settings_repo)
+            if rekordbox_client:
+                # Try to authenticate first if we have a key
+                auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)
+                if auth_manager.get_stored_key():
+                    # Force authentication check with stored key
+                    is_authenticated = rekordbox_client.is_authenticated()
+                else:
+                    # No key yet, need to authenticate
+                    is_authenticated = False
+            else:
+                is_authenticated = False
+
+            widget.set_authenticated(is_authenticated)
+        except Exception as e:
+            from loguru import logger
+
+            logger.exception(f"Error checking Rekordbox authentication: {e}")
+            widget.set_authenticated(False)
 
         # Connect authentication handler
         widget.auth_button_clicked.connect(lambda: self._authenticate_platform("rekordbox"))
@@ -132,31 +151,112 @@ class PlatformAuthPanel(QWidget):
     def _authenticate_rekordbox(self) -> None:
         """Authenticate with Rekordbox."""
         widget = self.rekordbox_auth
+        from loguru import logger
+        from PyQt6.QtWidgets import QMessageBox
+
+        # Check if Rekordbox is running
+        try:
+            import psutil
+
+            rekordbox_running = any(
+                "rekordbox" in p.name().lower() for p in psutil.process_iter(["name"])
+            )
+            if rekordbox_running:
+                # Show warning about Rekordbox running
+                response = QMessageBox.warning(
+                    self,
+                    "Rekordbox is Running",
+                    "Rekordbox is currently running which may block database access.\n\n"
+                    "For best results, please close Rekordbox before continuing.\n\n"
+                    "Do you want to continue anyway?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if response == QMessageBox.StandardButton.No:
+                    return
+
+        except ImportError:
+            pass  # psutil not available, skip this check
 
         if widget.is_authenticated():
             # Disconnect
             self.settings_repo.delete_credentials("rekordbox")
             widget.set_authenticated(False)
-        else:
-            # Connect - Try to download key
-            auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)
-            key = auth_manager.download_key()
 
-            if key:
-                # Re-check authentication
+            # Update main window to reflect disconnection
+            main_window = self.window()
+            if hasattr(main_window, "switch_platform"):
+                main_window.switch_platform("rekordbox")  # type: ignore
+        else:
+            # Show progress message
+            progress_msg = QMessageBox(self)
+            progress_msg.setWindowTitle("Rekordbox Authentication")
+            progress_msg.setText("Attempting to authenticate with Rekordbox...")
+            progress_msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            progress_msg.show()
+
+            # Force processing of events so message shows up
+            from PyQt6.QtCore import QCoreApplication
+
+            QCoreApplication.processEvents()
+
+            try:
+                # Try to authenticate through the client directly
+                # (which will try multiple methods)
                 rekordbox_client = PlatformFactory.create("rekordbox", self.settings_repo)
                 if rekordbox_client:
-                    widget.set_authenticated(rekordbox_client.is_authenticated())
-            else:
-                from PyQt6.QtWidgets import QMessageBox
+                    authenticated = rekordbox_client.authenticate()
 
-                # Show error message
-                QMessageBox.warning(
+                    # Close progress message
+                    progress_msg.close()
+
+                    if authenticated:
+                        logger.info("Rekordbox authentication successful")
+                        widget.set_authenticated(True)
+
+                        # Update the main window
+                        main_window = self.window()
+                        if hasattr(main_window, "switch_platform"):
+                            main_window.switch_platform("rekordbox")  # type: ignore
+
+                        # Show success message
+                        QMessageBox.information(
+                            self,
+                            "Rekordbox Authentication Successful",
+                            "Successfully connected to Rekordbox database.",
+                        )
+                    else:
+                        logger.warning("Rekordbox authentication failed")
+                        widget.set_authenticated(False)
+
+                        # Show error message
+                        QMessageBox.warning(
+                            self,
+                            "Rekordbox Authentication Failed",
+                            "Could not authenticate with Rekordbox database.\n\n"
+                            "Please try again later or check that:\n"
+                            "1. Rekordbox is installed correctly\n"
+                            "2. Rekordbox is not currently running\n"
+                            "3. You have a valid Rekordbox database",
+                        )
+                else:
+                    # Close progress message
+                    progress_msg.close()
+
+                    logger.error("Failed to create Rekordbox client")
+                    QMessageBox.critical(
+                        self,
+                        "Rekordbox Client Error",
+                        "Failed to create Rekordbox client.\n\n"
+                        "Please check that Rekordbox is installed correctly.",
+                    )
+            except Exception as e:
+                # Close progress message
+                progress_msg.close()
+
+                logger.exception(f"Error during Rekordbox authentication: {e}")
+                QMessageBox.critical(
                     self,
-                    "Rekordbox Authentication Failed",
-                    "Could not automatically download Rekordbox key.\n\n"
-                    "Please download manually using:\n"
-                    "python -m pyrekordbox download-key\n\n"
-                    "Then run:\n"
-                    "selecta rekordbox setup",
+                    "Rekordbox Authentication Error",
+                    f"An error occurred during Rekordbox authentication:\n\n{str(e)}",
                 )

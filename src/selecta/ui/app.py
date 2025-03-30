@@ -213,10 +213,15 @@ class SelectaMainWindow(QMainWindow):
         Args:
             platform: Platform name ('local', 'spotify', 'rekordbox', 'discogs')
         """
-        if platform == self.current_platform:
-            return  # Already on this platform
+        from loguru import logger
 
-        self.current_platform = platform
+        if platform == self.current_platform:
+            # Even if it's the same platform, force a refresh to ensure
+            # up-to-date authentication status
+            logger.debug(f"Refreshing current platform: {platform}")
+        else:
+            logger.debug(f"Switching platform from {self.current_platform} to {platform}")
+            self.current_platform = platform
 
         # Update the navigation bar
         self.nav_bar.set_active_platform(platform)
@@ -227,89 +232,78 @@ class SelectaMainWindow(QMainWindow):
 
         # Create the appropriate data provider using cached clients
         try:
+            # Always recreate the client to ensure fresh authentication status
+            from selecta.core.data.repositories.settings_repository import SettingsRepository
+
+            settings_repo = SettingsRepository()
+
             if platform == "local":
                 from selecta.ui.components.playlist.local.local_playlist_data_provider import (
                     LocalPlaylistDataProvider,
                 )
 
                 data_provider = LocalPlaylistDataProvider()
+                authenticated = True  # Local is always authenticated
+
             elif platform == "spotify":
+                from selecta.core.platform.platform_factory import PlatformFactory
                 from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
                     SpotifyPlaylistDataProvider,
                 )
 
-                # Use cached client if available
-                if "spotify" not in self._platform_clients:
-                    from selecta.core.data.repositories.settings_repository import (
-                        SettingsRepository,
-                    )
-                    from selecta.core.platform.platform_factory import PlatformFactory
-
-                    self._platform_clients["spotify"] = PlatformFactory.create(
-                        "spotify", SettingsRepository()
-                    )
+                # Recreate client to get fresh auth status
+                self._platform_clients["spotify"] = PlatformFactory.create("spotify", settings_repo)
 
                 data_provider = SpotifyPlaylistDataProvider(
                     client=self._platform_clients["spotify"]  # type: ignore
                 )
+                authenticated = data_provider.client.is_authenticated()
+
             elif platform == "rekordbox":
+                from selecta.core.platform.platform_factory import PlatformFactory
                 from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (  # noqa: E501
                     RekordboxPlaylistDataProvider,
                 )
 
-                # Use cached client
-                if "rekordbox" not in self._platform_clients:
-                    from selecta.core.data.repositories.settings_repository import (
-                        SettingsRepository,
-                    )
-                    from selecta.core.platform.platform_factory import PlatformFactory
-
-                    self._platform_clients["rekordbox"] = PlatformFactory.create(
-                        "rekordbox", SettingsRepository()
-                    )
+                # Recreate client to get fresh auth status
+                self._platform_clients["rekordbox"] = PlatformFactory.create(
+                    "rekordbox", settings_repo
+                )
 
                 data_provider = RekordboxPlaylistDataProvider(
                     client=self._platform_clients["rekordbox"]  # type: ignore
                 )
+
+                # Double-check authentication status
+                authenticated = False
+                if self._platform_clients["rekordbox"]:
+                    authenticated = self._platform_clients["rekordbox"].is_authenticated()
+
+                logger.debug(f"Rekordbox authenticated: {authenticated}")
+
             elif platform == "discogs":
+                from selecta.core.platform.platform_factory import PlatformFactory
                 from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
                     DiscogsPlaylistDataProvider,
                 )
 
-                # Use cached client
-                if "discogs" not in self._platform_clients:
-                    from selecta.core.data.repositories.settings_repository import (
-                        SettingsRepository,
-                    )
-                    from selecta.core.platform.platform_factory import PlatformFactory
-
-                    self._platform_clients["discogs"] = PlatformFactory.create(
-                        "discogs", SettingsRepository()
-                    )
+                # Recreate client to get fresh auth status
+                self._platform_clients["discogs"] = PlatformFactory.create("discogs", settings_repo)
 
                 data_provider = DiscogsPlaylistDataProvider(
                     client=self._platform_clients["discogs"]  # type: ignore
                 )
+                authenticated = data_provider.client.is_authenticated()
+
             else:
                 return  # Invalid platform
 
             # Check if the data provider is authenticated
-            authenticated = True
-            if platform != "local":
-                try:
-                    if not data_provider.client.is_authenticated():  # type: ignore
-                        authenticated = False
-                        # Show authentication message
-                        self._show_auth_required_message(platform)
-                except Exception as e:
-                    from loguru import logger
-
-                    logger.exception(f"Error checking authentication for {platform}: {e}")
-                    authenticated = False
-                    self._show_auth_required_message(platform)
-
-            # Only create the playlist view if authenticated
-            if authenticated:
+            if not authenticated:
+                # Show authentication message
+                self._show_auth_required_message(platform)
+            else:
+                # Only create the playlist view if authenticated
                 self._create_playlist_view(data_provider)
 
         except Exception as e:
@@ -388,10 +382,16 @@ class SelectaMainWindow(QMainWindow):
             # Call the appropriate authentication method
             if platform == "spotify":
                 self.side_drawer.auth_panel._authenticate_spotify()
+                # Refresh the UI after authentication
+                self.switch_platform("spotify")
             elif platform == "rekordbox":
                 self.side_drawer.auth_panel._authenticate_rekordbox()
+                # Refresh the UI after authentication
+                self.switch_platform("rekordbox")
             elif platform == "discogs":
                 self.side_drawer.auth_panel._authenticate_discogs()
+                # Refresh the UI after authentication
+                self.switch_platform("discogs")
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
