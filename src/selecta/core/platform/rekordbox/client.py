@@ -25,23 +25,21 @@ class RekordboxClient(AbstractPlatform):
         # Try to initialize the client if we have valid credentials
         self._initialize_client()
 
+    # src/selecta/core/platform/rekordbox/client.py
     def _initialize_client(self) -> None:
-        """Initialize the Rekordbox client with stored credentials."""
+        """Initialize the Rekordbox client with fixed key."""
         try:
+            # Always use the fixed key from the auth manager
             db_key = self.auth_manager.get_stored_key()
 
-            if db_key:
-                # Initialize with explicit key
+            # Try to initialize with the key and let pyrekordbox find the database
+            try:
                 self.db = Rekordbox6Database(key=db_key)
-                logger.info("Rekordbox client initialized successfully with explicit key")
-            else:
-                # Try to initialize with cached key
-                try:
-                    self.db = Rekordbox6Database()
-                    logger.info("Rekordbox client initialized successfully with cached key")
-                except Exception as e:
-                    logger.warning(f"Could not initialize with cached key: {e}")
-                    self.db = None
+                logger.info("Rekordbox client initialized successfully")
+            except Exception as e:
+                logger.warning(f"Could not initialize Rekordbox client: {e}")
+                self.db = None
+
         except Exception as e:
             logger.exception(f"Failed to initialize Rekordbox client: {e}")
             self.db = None
@@ -56,15 +54,21 @@ class RekordboxClient(AbstractPlatform):
             return False
 
         try:
-            # Test connection by making a simple query
+            # Try a simple query to check connection
             query = self.db.get_content()
             if query is None:
                 return False
 
-            # Access first item to test if query works
-            _ = query.first()
-            return True
-        except:
+            # Just check if we can execute a query
+            try:
+                count = query.count()
+                logger.debug(f"Rekordbox authentication successful - found {count} tracks")
+                return True
+            except Exception as e:
+                logger.debug(f"Rekordbox query failed: {e}")
+                return False
+        except Exception as e:
+            logger.debug(f"Rekordbox authentication check failed: {e}")
             return False
 
     def authenticate(self) -> bool:
@@ -74,19 +78,41 @@ class RekordboxClient(AbstractPlatform):
             True if authentication was successful, False otherwise
         """
         try:
-            # Download key if needed
-            if not self.auth_manager.get_stored_key():
-                key = self.auth_manager.download_key()
-                if not key:
-                    return False
+            # First check if we're already authenticated
+            if self.is_authenticated():
+                logger.info("Already authenticated with Rekordbox")
+                return True
 
-            # Try to initialize client
+            # Clear any existing database connection and reinitialize
+            self.db = None
             self._initialize_client()
 
-            # Test if we can connect
+            # Check if initialization worked
             return self.is_authenticated()
         except Exception as e:
             logger.exception(f"Rekordbox authentication failed: {e}")
+            return False
+
+    def _test_connection(self) -> bool:
+        """Test if the database connection is working.
+
+        Returns:
+            True if connection is working, False otherwise
+        """
+        if not self.db:
+            return False
+
+        try:
+            # Test connection by making a simple query
+            query = self.db.get_content()
+            if query is None:
+                return False
+
+            # Try to access first item to test if query works
+            first_item = query.first()
+            return first_item is not None or query.count() == 0  # Empty DB is still valid
+        except Exception as e:
+            logger.debug(f"Rekordbox connection test failed: {e}")
             return False
 
     def get_all_tracks(self) -> list[RekordboxTrack]:
@@ -209,8 +235,8 @@ class RekordboxClient(AbstractPlatform):
 
         # Get tracks if it's not a folder
         tracks = []
-        assert isinstance(playlist_obj, RekordboxPlaylist), "something went wrong here."
-        if not playlist_obj.is_folder:
+
+        if hasattr(playlist_obj, "is_folder") and not playlist_obj.is_folder:  # type:ignore
             try:
                 for content in self.db.get_playlist_contents(playlist_obj):
                     track = RekordboxTrack.from_rekordbox_content(content)
@@ -218,6 +244,7 @@ class RekordboxClient(AbstractPlatform):
             except Exception as e:
                 logger.warning(f"Error getting tracks for playlist {playlist_id}: {e}")
 
+        # Convert the DjmdPlaylist to our RekordboxPlaylist model
         return RekordboxPlaylist.from_rekordbox_playlist(playlist_obj, tracks)
 
     def create_playlist(self, name: str, parent_id: str | None = None) -> RekordboxPlaylist:
