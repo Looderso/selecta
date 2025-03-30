@@ -1,6 +1,7 @@
 """Cache management utilities for platform data."""
 
 import time
+from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
@@ -98,7 +99,7 @@ class CacheManager:
         """Clear all cached data."""
         self._cache.clear()
 
-    def get_or_set(self, key: str, data_getter: callable, timeout: float | None = None) -> Any:
+    def get_or_set(self, key: str, data_getter: Callable, timeout: float | None = None) -> Any:
         """Get cached data or set it if not available.
 
         Args:
