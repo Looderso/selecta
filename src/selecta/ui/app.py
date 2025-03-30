@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
 
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
-from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
@@ -122,9 +121,19 @@ class SelectaMainWindow(QMainWindow):
 
         # Connect signals
         self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
-        self.nav_bar.playlists_button_clicked.connect(self.show_playlists)
-        self.nav_bar.tracks_button_clicked.connect(self.show_tracks)
-        self.nav_bar.vinyl_button_clicked.connect(self.show_vinyl)
+
+        # Connect the new platform signals
+        self.nav_bar.local_button_clicked.connect(lambda: self.switch_platform("local"))
+        self.nav_bar.spotify_button_clicked.connect(lambda: self.switch_platform("spotify"))
+        self.nav_bar.rekordbox_button_clicked.connect(lambda: self.switch_platform("rekordbox"))
+        self.nav_bar.discogs_button_clicked.connect(lambda: self.switch_platform("discogs"))
+
+        # Track the current platform
+        self.current_platform = "local"
+
+        self.spotify_panel = None
+        self.discogs_panel = None
+        self.track_details_panel = None
 
     def resize_to_available_screen(self):
         """Resize the window to fill the available screen space."""
@@ -198,8 +207,194 @@ class SelectaMainWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
 
+    def switch_platform(self, platform: str):
+        """Switch to the specified platform.
+
+        Args:
+            platform: Platform name ('local', 'spotify', 'rekordbox', 'discogs')
+        """
+        if platform == self.current_platform:
+            return  # Already on this platform
+
+        self.current_platform = platform
+
+        # Update the navigation bar
+        self.nav_bar.set_active_platform(platform)
+
+        # Store persistent client references to avoid recreating them
+        if not hasattr(self, "_platform_clients"):
+            self._platform_clients = {}
+
+        # Create the appropriate data provider using cached clients
+        try:
+            if platform == "local":
+                from selecta.ui.components.playlist.local.local_playlist_data_provider import (
+                    LocalPlaylistDataProvider,
+                )
+
+                data_provider = LocalPlaylistDataProvider()
+            elif platform == "spotify":
+                from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
+                    SpotifyPlaylistDataProvider,
+                )
+
+                # Use cached client if available
+                if "spotify" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
+
+                    self._platform_clients["spotify"] = PlatformFactory.create(
+                        "spotify", SettingsRepository()
+                    )
+
+                data_provider = SpotifyPlaylistDataProvider(
+                    client=self._platform_clients["spotify"]
+                )
+            elif platform == "rekordbox":
+                from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (  # noqa: E501
+                    RekordboxPlaylistDataProvider,
+                )
+
+                # Use cached client
+                if "rekordbox" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
+
+                    self._platform_clients["rekordbox"] = PlatformFactory.create(
+                        "rekordbox", SettingsRepository()
+                    )
+
+                data_provider = RekordboxPlaylistDataProvider(
+                    client=self._platform_clients["rekordbox"]
+                )
+            elif platform == "discogs":
+                from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
+                    DiscogsPlaylistDataProvider,
+                )
+
+                # Use cached client
+                if "discogs" not in self._platform_clients:
+                    from selecta.core.data.repositories.settings_repository import (
+                        SettingsRepository,
+                    )
+                    from selecta.core.platform.platform_factory import PlatformFactory
+
+                    self._platform_clients["discogs"] = PlatformFactory.create(
+                        "discogs", SettingsRepository()
+                    )
+
+                data_provider = DiscogsPlaylistDataProvider(
+                    client=self._platform_clients["discogs"]
+                )
+            else:
+                return  # Invalid platform
+
+            # Check if the data provider is authenticated
+            authenticated = True
+            if platform != "local":
+                try:
+                    if not data_provider.client.is_authenticated():
+                        authenticated = False
+                        # Show authentication message
+                        self._show_auth_required_message(platform)
+                except Exception as e:
+                    from loguru import logger
+
+                    logger.exception(f"Error checking authentication for {platform}: {e}")
+                    authenticated = False
+                    self._show_auth_required_message(platform)
+
+            # Only create the playlist view if authenticated
+            if authenticated:
+                self._create_playlist_view(data_provider)
+
+        except Exception as e:
+            from loguru import logger
+
+            logger.exception(f"Error creating data provider for {platform}: {e}")
+
+            # Show error message
+            self._show_platform_error_message(platform, str(e))
+
+    def _create_playlist_view(self, data_provider, is_authenticated=True):
+        """Create and display the playlist view with the given data provider.
+
+        Args:
+            data_provider: The playlist data provider
+            is_authenticated: Whether the platform is authenticated
+        """
+        from selecta.ui.components.playlist.playlist_component import PlaylistComponent
+
+        # Create a new playlist component
+        playlist_component = PlaylistComponent(data_provider)
+
+        # Clear current content in playlist area
+        self.set_playlist_content(playlist_component)
+
+        # Store a reference to the details panel
+        self.track_details_panel = playlist_component.details_panel
+
+    def _show_auth_required_message(self, platform: str):
+        """Show a message when authentication is required.
+
+        Args:
+            platform: Platform name
+        """
+        from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+
+        # Create a widget for the message
+        auth_widget = QWidget()
+        layout = QVBoxLayout(auth_widget)
+
+        # Add message
+        message = QLabel(f"Authentication required for {platform.capitalize()}.")
+        message.setStyleSheet("font-size: 16px; margin-bottom: 20px;")
+        layout.addWidget(message)
+
+        # Add explanation
+        explanation = QLabel(
+            f"You need to authenticate with {platform.capitalize()} to view your playlists. "
+            "Click the button below to authenticate."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Add authenticate button
+        auth_button = QPushButton(f"Authenticate with {platform.capitalize()}")
+        auth_button.clicked.connect(lambda: self._authenticate_platform(platform))
+        layout.addWidget(auth_button)
+
+        # Add spacer
+        layout.addStretch(1)
+
+        # Set the widget as the playlist content
+        self.set_playlist_content(auth_widget)
+
+    def _authenticate_platform(self, platform: str):
+        """Authenticate with the specified platform.
+
+        Args:
+            platform: Platform name
+        """
+        # Show the settings drawer
+        self.toggle_side_drawer()
+
+        # Find the platform auth widget in the side drawer
+        if hasattr(self.side_drawer, "auth_panel"):
+            # Call the appropriate authentication method
+            if platform == "spotify":
+                self.side_drawer.auth_panel._authenticate_spotify()
+            elif platform == "rekordbox":
+                self.side_drawer.auth_panel._authenticate_rekordbox()
+            elif platform == "discogs":
+                self.side_drawer.auth_panel._authenticate_discogs()
+
     def show_playlists(self):
-        """Show playlists content."""
+        """Show playlists content for the current platform."""
         from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.playlist_content import PlaylistContent
 
@@ -211,32 +406,8 @@ class SelectaMainWindow(QMainWindow):
         bottom_content = BottomContent()
         self.set_bottom_content(bottom_content)
 
-        # Create a tab widget for the right panel
-        search_tabs = QTabWidget()
-        search_tabs.setObjectName("searchTabs")
-        search_tabs.setTabPosition(QTabWidget.TabPosition.North)
-
-        # Create Spotify search panel
-
-        spotify_panel = SpotifySearchPanel()
-        spotify_panel.setObjectName("spotifySearchPanel")
-
-        # Create Discogs search panel
-        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
-
-        discogs_panel = DiscogsSearchPanel()
-        discogs_panel.setObjectName("discogsSearchPanel")
-
-        # Add tabs
-        search_tabs.addTab(spotify_panel, "Spotify")
-        search_tabs.addTab(discogs_panel, "Discogs")
-
-        # Set the tab widget as right content
-        self.set_right_content(search_tabs)
-
-        # Store references to the panels for direct access
-        self.spotify_panel = spotify_panel
-        self.discogs_panel = discogs_panel
+        # Set up the search panels if they don't exist yet
+        self._setup_search_panels()
 
         # Store a reference to the details panel for switching later
         if hasattr(playlist_content, "playlist_component") and hasattr(
@@ -244,44 +415,70 @@ class SelectaMainWindow(QMainWindow):
         ):
             self.track_details_panel = playlist_content.playlist_component.details_panel
 
-    def show_spotify_search(self, initial_search=None):
-        """Show Spotify search panel in the right area.
+        # Switch to the current platform
+        self.switch_platform(getattr(self, "current_platform", "local"))
 
-        Args:
-            initial_search: Optional initial search query
-        """
-        # Find the tab widget containing the search panels
+    def _setup_search_panels(self):
+        """Set up the search panels in the right sidebar."""
+        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
+        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
+
+        # Create a tab widget for the right panel
+        search_tabs = QTabWidget()
+        search_tabs.setObjectName("searchTabs")
+        search_tabs.setTabPosition(QTabWidget.TabPosition.North)
+
+        # Create Spotify search panel if not already created
+        if self.spotify_panel is None:
+            self.spotify_panel = SpotifySearchPanel()
+            self.spotify_panel.setObjectName("spotifySearchPanel")
+
+        # Create Discogs search panel if not already created
+        if self.discogs_panel is None:
+            self.discogs_panel = DiscogsSearchPanel()
+            self.discogs_panel.setObjectName("discogsSearchPanel")
+
+        # Add tabs
+        search_tabs.addTab(self.spotify_panel, "Spotify")
+        search_tabs.addTab(self.discogs_panel, "Discogs")
+
+        # Set the tab widget as right content
+        self.set_right_content(search_tabs)
+
+    def show_spotify_search(self, initial_search=None):
+        """Show Spotify search panel in the right area."""
+        # Make sure search panels are set up
+        self._setup_search_panels()
+
+        # Find the tab widget and switch to Spotify tab
         for i in range(self.right_layout.count()):
-            widget = self.right_layout.itemAt(i).widget()  # type: ignore
+            widget = self.right_layout.itemAt(i).widget()
             if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
                 # Switch to the Spotify tab (index 0)
                 widget.setCurrentIndex(0)
 
                 # Set the initial search if provided
-                if initial_search and hasattr(self, "spotify_panel"):
+                if initial_search and self.spotify_panel:
                     self.spotify_panel.search_bar.set_search_text(initial_search)
                     self.spotify_panel._on_search(initial_search)
-
                 break
 
     def show_discogs_search(self, initial_search=None):
-        """Show Discogs search panel in the right area.
+        """Show Discogs search panel in the right area."""
+        # Make sure search panels are set up
+        self._setup_search_panels()
 
-        Args:
-            initial_search: Optional initial search query
-        """
-        # Find the tab widget containing the search panels
+        # Find the tab widget and switch to Discogs tab
         for i in range(self.right_layout.count()):
-            widget = self.right_layout.itemAt(i).widget()  # type: ignore
+            widget = self.right_layout.itemAt(i).widget()
             if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
                 # Switch to the Discogs tab (index 1)
                 widget.setCurrentIndex(1)
 
                 # Set the initial search if provided
-                if initial_search and hasattr(self, "discogs_panel"):
+                if initial_search and self.discogs_panel:
                     self.discogs_panel.search_bar.set_search_text(initial_search)
                     self.discogs_panel._on_search(initial_search)
-
                 break
 
     def show_tracks(self):
@@ -331,8 +528,8 @@ def run_app():
     # Create and show the main window
     window = SelectaMainWindow()
 
-    # Initial setup - Load playlist view
-    window.show_playlists()
+    # Set up the initial view with local playlists
+    window.switch_platform("local")
 
     window.show()
 

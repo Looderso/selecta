@@ -5,7 +5,6 @@ from typing import Any
 
 import requests
 from loguru import logger
-from requests.exceptions import RequestException
 from requests_oauthlib import OAuth1
 
 
@@ -20,6 +19,13 @@ class DiscogsApiClient:
 
     # Rate limiting settings
     MIN_REQUEST_INTERVAL = 1.0  # Minimum seconds between requests to avoid rate limiting
+
+    _cache = {
+        "identity": {"data": None, "timestamp": 0, "valid": False},
+        "collection": {"data": None, "timestamp": 0},
+        "wantlist": {"data": None, "timestamp": 0},
+    }
+    _cache_timeout = 300  # 5 minutes
 
     def __init__(
         self,
@@ -43,6 +49,12 @@ class DiscogsApiClient:
 
         # For rate limiting
         self._last_request_time: float = 0.0
+
+        # Add a caching mechanism
+        self._identity_cache = None
+        self._last_identity_check = 0
+        self._identity_cache_timeout = 300  # 5 minutes
+        self._request_in_progress = {}
 
     def _get_auth(self) -> OAuth1 | None:
         """Get OAuth1 authentication object if credentials are available.
@@ -91,7 +103,7 @@ class DiscogsApiClient:
     def _request(
         self, method: str, endpoint: str, params: dict | None = None, data: dict | None = None
     ) -> tuple[bool, Any]:
-        """Make a request to the Discogs API.
+        """Make a request to the Discogs API with caching and request deduplication.
 
         Args:
             method: HTTP method (GET, POST, etc.)
@@ -102,62 +114,142 @@ class DiscogsApiClient:
         Returns:
             Tuple of (success, response_data)
         """
-        # Respect rate limiting
-        self._respect_rate_limit()
+        # Create a cache key for this request
+        cache_key = f"{method}:{endpoint}:{str(params)}"
 
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
-        headers = self._get_headers()
-        auth = self._get_auth()
+        # If we're already making this exact request, wait for it to finish
+        if hasattr(self, "_request_in_progress") and cache_key in self._request_in_progress:
+            logger.debug(f"Request already in progress: {cache_key}")
+            # Return a cached result if available
+            if endpoint == "/oauth/identity" and self._cache["identity"]["data"]:
+                return self._cache["identity"]["valid"], self._cache["identity"]["data"]
+            return False, {"error": "Request in progress"}
+
+        # Initialize request tracking dict if it doesn't exist
+        if not hasattr(self, "_request_in_progress"):
+            self._request_in_progress = {}
+
+        # Mark this request as in progress
+        self._request_in_progress[cache_key] = True
 
         try:
-            logger.debug(f"Making {method} request to {url}")
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=params,
-                json=data if method.upper() != "GET" else None,
-                auth=auth,
-            )
+            # Check cache for common endpoints
+            current_time = time.time()
 
-            # Log rate limit information if provided
-            if "X-Discogs-Ratelimit" in response.headers:
-                limit = response.headers.get("X-Discogs-Ratelimit")
-                remaining = response.headers.get("X-Discogs-Ratelimit-Remaining")
-                logger.debug(f"Rate limit: {remaining}/{limit}")
+            # Handle identity endpoint caching
+            if endpoint == "/oauth/identity":
+                cache = self._cache["identity"]
+                if cache["data"] and (current_time - cache["timestamp"]) < self._cache_timeout:
+                    logger.debug("Using cached identity data")
+                    self._request_in_progress.pop(cache_key, None)
+                    return cache["valid"], cache["data"]
 
-            # Handle rate limiting
-            if response.status_code == 429:
-                retry_after = int(response.headers.get("Retry-After", 60))
-                logger.warning(f"Rate limited. Waiting {retry_after} seconds")
-                time.sleep(retry_after)
-                return self._request(method, endpoint, params, data)
+            # Handle collection endpoint caching
+            elif "collection/folders" in endpoint and method == "GET":
+                cache = self._cache["collection"]
+                if cache["data"] and (current_time - cache["timestamp"]) < self._cache_timeout:
+                    logger.debug("Using cached collection data")
+                    self._request_in_progress.pop(cache_key, None)
+                    return True, cache["data"]
 
-            # Raise exception for other errors
-            response.raise_for_status()
+            # Handle wantlist endpoint caching
+            elif "/wants" in endpoint and method == "GET":
+                cache = self._cache["wantlist"]
+                if cache["data"] and (current_time - cache["timestamp"]) < self._cache_timeout:
+                    logger.debug("Using cached wantlist data")
+                    self._request_in_progress.pop(cache_key, None)
+                    return True, cache["data"]
 
-            if response.status_code == 204:
-                return True, None
+            # Respect rate limiting
+            self._respect_rate_limit()
 
-            return True, response.json()
+            url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
+            headers = self._get_headers()
+            auth = self._get_auth()
 
-        except RequestException as e:
-            logger.error(f"API request error: {e}")
+            try:
+                logger.debug(f"Making {method} request to {url}")
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    json=data if method.upper() != "GET" else None,
+                    auth=auth,
+                )
+
+                # Log rate limit information if provided
+                if "X-Discogs-Ratelimit" in response.headers:
+                    limit = response.headers.get("X-Discogs-Ratelimit")
+                    remaining = response.headers.get("X-Discogs-Ratelimit-Remaining")
+                    logger.debug(f"Rate limit: {remaining}/{limit}")
+
+                # Handle rate limiting
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get("Retry-After", 60))
+                    logger.warning(f"Rate limited. Waiting {retry_after} seconds")
+                    time.sleep(retry_after)
+                    # Clear in-progress marker for retry
+                    self._request_in_progress.pop(cache_key, None)
+                    return self._request(method, endpoint, params, data)
+
+                # Raise exception for other errors
+                response.raise_for_status()
+
+                # Cache the results for common endpoints
+                if endpoint == "/oauth/identity":
+                    self._cache["identity"] = {
+                        "data": response.json() if response.status_code == 200 else None,
+                        "timestamp": time.time(),
+                        "valid": response.status_code == 200,
+                    }
+                elif (
+                    "collection/folders" in endpoint
+                    and method == "GET"
+                    and response.status_code == 200
+                ):
+                    self._cache["collection"] = {"data": response.json(), "timestamp": time.time()}
+                elif "/wants" in endpoint and method == "GET" and response.status_code == 200:
+                    self._cache["wantlist"] = {"data": response.json(), "timestamp": time.time()}
+
+                if response.status_code == 204:
+                    # Clear the in-progress flag
+                    self._request_in_progress.pop(cache_key, None)
+                    return True, None
+
+                # Clear the in-progress flag
+                self._request_in_progress.pop(cache_key, None)
+                return True, response.json()
+
+            except requests.RequestException as e:
+                logger.error(f"API request error: {e}")
+                # Clear the in-progress flag in case of error
+                self._request_in_progress.pop(cache_key, None)
+                return False, {"error": str(e)}
+
+        except Exception as e:
+            # Clear the in-progress flag in case of error
+            self._request_in_progress.pop(cache_key, None)
+            logger.error(f"Unexpected error in API request: {e}")
             return False, {"error": str(e)}
 
     def is_authenticated(self) -> bool:
-        """Test if the client is authenticated.
-
-        Returns:
-            True if authenticated, False otherwise
-        """
+        """Test if the client is authenticated with caching."""
         # Check if we have the necessary credentials
         if not self.access_token:
             return False
 
-        # Test authentication by getting the identity
-        success, data = self.get_identity()
-        return success and "username" in data
+        # Check our identity cache first
+        current_time = time.time()
+        if (
+            self._cache["identity"]["data"] is not None
+            and (current_time - self._cache["identity"]["timestamp"]) < self._cache_timeout
+        ):
+            return self._cache["identity"]["valid"]
+
+        # Otherwise, make a real request
+        success, _ = self.get_identity()
+        return success
 
     def get_identity(self) -> tuple[bool, dict]:
         """Get the current user's identity.

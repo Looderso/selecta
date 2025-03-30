@@ -15,14 +15,16 @@ class DiscogsClient(AbstractPlatform):
     """Client for interacting with the Discogs API."""
 
     def __init__(self, settings_repo: SettingsRepository | None = None) -> None:
-        """Initialize the Discogs client.
+        """Initializes the Discogs Client.
 
         Args:
-            settings_repo: Repository for accessing settings (optional)
+            settings_repo (SettingsRepository | None, optional): Settings repository from the
+                database. Defaults to None.
         """
         super().__init__(settings_repo)
         self.auth_manager = DiscogsAuthManager(settings_repo=self.settings_repo)
         self.client: DiscogsApiClient | None = None
+        self._user_identity = None  # Cache for user identity
 
         # Try to initialize the client if we have valid credentials
         self._initialize_client()
@@ -40,14 +42,11 @@ class DiscogsClient(AbstractPlatform):
             self.client = None
 
     def is_authenticated(self) -> bool:
-        """Check if the client is authenticated with valid credentials.
-
-        Returns:
-            True if authenticated, False otherwise
-        """
+        """Check if the client is authenticated with valid credentials."""
         if not self.client:
             return False
 
+        # Use the API client's is_authenticated method which should be optimized
         return self.client.is_authenticated()
 
     def authenticate(self) -> bool:
@@ -70,23 +69,21 @@ class DiscogsClient(AbstractPlatform):
             return False
 
     def get_user_profile(self) -> dict[str, Any]:
-        """Get the current user's Discogs profile.
-
-        Returns:
-            Dictionary with user profile information
-
-        Raises:
-            ValueError: If the client is not authenticated
-        """
+        """Get the current user's Discogs profile."""
         if not self.client:
             raise ValueError("Discogs client not authenticated")
 
+        # If we've already fetched the identity, return the cached version
+        if self._user_identity:
+            return self._user_identity
+
+        # Otherwise, fetch and cache it
         success, identity = self.client.get_identity()
         if not success:
             raise ValueError("Discogs: current user not available")
 
-        # Get user data as dictionary
-        user_data = {
+        # Cache the result
+        self._user_identity = {
             "id": identity.get("id"),
             "username": identity.get("username", ""),
             "name": identity.get("name", ""),
@@ -94,7 +91,7 @@ class DiscogsClient(AbstractPlatform):
             "url": identity.get("resource_url", ""),
         }
 
-        return user_data
+        return self._user_identity
 
     def get_collection(self, username: str | None = None) -> list[DiscogsVinyl]:
         """Get user's collection from Discogs.
