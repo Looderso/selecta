@@ -137,6 +137,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     bpm=bpm,
                     tags=tags,
                     platform_info=platform_info,
+                    quality=column_to_int(track.quality),
                 )
             )
 

@@ -121,6 +121,62 @@ def dev_database():
     pass
 
 
+@dev_database.command(name="add-quality-column")
+@click.option(
+    "--path",
+    type=click.Path(),
+    help="Custom database path (default: app data directory)",
+)
+def add_quality_column(path: str | None) -> None:
+    """Add quality column to tracks table.
+
+    Args:
+        path: Optional custom database path
+    """
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from selecta.core.data.database import get_engine, get_session
+    from selecta.core.utils.path_helper import get_app_data_path
+
+    db_path = Path(path) if path else get_app_data_path() / "selecta.db"
+
+    if not db_path.exists():
+        click.echo(f"No database found at {db_path}")
+        return
+
+    click.echo(f"Adding quality column to tracks table in {db_path}")
+
+    try:
+        # Get engine and session
+        engine = get_engine(db_path)
+        session = get_session(engine)
+
+        # Check if quality column exists
+        try:
+            session.execute(text("SELECT quality FROM tracks LIMIT 1"))
+            click.echo("Quality column already exists in tracks table")
+            return
+        except Exception:
+            # Column doesn't exist, continue with adding it
+            pass
+
+        # Add quality column with default of -1 (NOT_RATED)
+        session.execute(text("ALTER TABLE tracks ADD COLUMN quality INTEGER NOT NULL DEFAULT -1"))
+
+        # Create index for faster filtering
+        session.execute(text("CREATE INDEX ix_tracks_quality ON tracks (quality)"))
+
+        # Commit changes
+        session.commit()
+        click.echo("Quality column added successfully!")
+
+    except Exception as e:
+        logger.exception(f"Error adding quality column: {e}")
+        click.echo(f"Error adding quality column: {e}")
+
+
 @dev_database.command(name="init", help="Initialize a development database with sample data")
 @click.option(
     "--db-path",
