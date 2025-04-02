@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.auth import RekordboxAuthManager
+from selecta.core.utils.type_helpers import has_switch_platform
 from selecta.ui.components.platform_auth_widget import PlatformAuthWidget
 
 
@@ -185,8 +186,8 @@ class PlatformAuthPanel(QWidget):
 
             # Update main window to reflect disconnection
             main_window = self.window()
-            if hasattr(main_window, "switch_platform"):
-                main_window.switch_platform("rekordbox")  # type: ignore
+            if has_switch_platform(main_window):
+                main_window.switch_platform("rekordbox")
         else:
             # Show progress message
             progress_msg = QMessageBox(self)
@@ -216,8 +217,8 @@ class PlatformAuthPanel(QWidget):
 
                         # Update the main window
                         main_window = self.window()
-                        if hasattr(main_window, "switch_platform"):
-                            main_window.switch_platform("rekordbox")  # type: ignore
+                        if has_switch_platform(main_window):
+                            main_window.switch_platform("rekordbox")
 
                         # Show success message
                         QMessageBox.information(

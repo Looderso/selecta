@@ -1,6 +1,7 @@
 """Core database models for Selecta."""
 
 from datetime import datetime
+from typing import Any, ClassVar, Optional, cast
 
 from sqlalchemy import (
     Boolean,
@@ -13,7 +14,7 @@ from sqlalchemy import (
     Table,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from selecta.core.data.database import Base
 from selecta.core.utils.type_helpers import is_column_truthy
@@ -40,36 +41,42 @@ class Track(Base):
 
     __tablename__ = "tracks"
 
-    id = Column(Integer, primary_key=True)
-    title = Column(String(255), nullable=False)
-    artist = Column(String(255), nullable=False)
-    duration_ms = Column(Integer, nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    artist: Mapped[str] = mapped_column(String(255), nullable=False)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Path to local file if available
-    local_path = Column(String(1024), nullable=True)
+    local_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Relationships
-    album_id = Column(Integer, ForeignKey("albums.id"), nullable=True)
-    album = relationship("Album", back_populates="tracks")
+    album_id: Mapped[int | None] = mapped_column(ForeignKey("albums.id"), nullable=True)
+    album: Mapped[Optional["Album"]] = relationship("Album", back_populates="tracks")
 
-    platform_info = relationship(
+    platform_info: Mapped[list["TrackPlatformInfo"]] = relationship(
         "TrackPlatformInfo", back_populates="track", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship with playlists through PlaylistTrack
-    playlists = relationship("PlaylistTrack", back_populates="track", cascade="all, delete-orphan")
+    playlists: Mapped[list["PlaylistTrack"]] = relationship(
+        "PlaylistTrack", back_populates="track", cascade="all, delete-orphan"
+    )
 
     # Many-to-many relationship with genres (through association)
-    genres = relationship("Genre", secondary="track_genres", back_populates="tracks")
+    genres: Mapped[list["Genre"]] = relationship(
+        "Genre", secondary="track_genres", back_populates="tracks"
+    )
 
     # Track attributes (dynamic properties like energy, danceability)
-    attributes = relationship(
+    attributes: Mapped[list["TrackAttribute"]] = relationship(
         "TrackAttribute", back_populates="track", cascade="all, delete-orphan"
     )
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     def __repr__(self) -> str:
         """String representation of Track.
@@ -85,18 +92,30 @@ class TrackPlatformInfo(Base):
 
     __tablename__ = "track_platform_info"
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    platform = Column(String(50), nullable=False)  # 'spotify', 'rekordbox', 'discogs'
-    platform_id = Column(String(255), nullable=False)  # ID in the platform's system
-    uri = Column(String(512), nullable=True)  # URI/URL to the track in the platform
+    id: Mapped[int] = mapped_column(primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"), nullable=False)
+    # 'spotify', 'rekordbox', 'discogs'
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ID in the platform's system
+    platform_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # URI/URL to the track in the platform
+    uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # Platform-specific metadata (JSON might be better, but using text for SQLite compatibility)
     # Renamed from 'metadata' to 'platform_data' to avoid conflicts with SQLAlchemy
-    platform_data = Column(Text, nullable=True)
+    platform_data: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
-    track = relationship("Track", back_populates="platform_info")
+    track: Mapped["Track"] = relationship("Track", back_populates="platform_info")
+
+    # For SQLAlchemy 2.0, help typechecking with __init__ key mapping for constructor
+    __init_key_mapping__: ClassVar[dict[str, str]] = {
+        "track_id": "track_id",
+        "platform": "platform",
+        "platform_id": "platform_id",
+        "uri": "uri",
+        "platform_data": "platform_data",
+    }
 
     # Ensure we don't have duplicates for the same track/platform combination
     __table_args__ = ({"sqlite_autoincrement": True},)
@@ -115,14 +134,23 @@ class TrackAttribute(Base):
 
     __tablename__ = "track_attributes"
 
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    name = Column(String(100), nullable=False)
-    value = Column(Float, nullable=False)
-    source = Column(String(50), nullable=True)  # e.g., 'spotify', 'user', 'analysis'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    # e.g., 'spotify', 'user', 'analysis'
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
-    track = relationship("Track", back_populates="attributes")
+    track: Mapped["Track"] = relationship("Track", back_populates="attributes")
+
+    # For SQLAlchemy 2.0, help typechecking with __init__ key mapping for constructor
+    __init_key_mapping__: ClassVar[dict[str, str]] = {
+        "track_id": "track_id",
+        "name": "name",
+        "value": "value",
+        "source": "source",
+    }
 
     def __repr__(self) -> str:
         """String representation of TrackAttribute.
@@ -138,24 +166,24 @@ class Album(Base):
 
     __tablename__ = "albums"
 
-    id = Column(Integer, primary_key=True)
-    title = Column(String(255), nullable=False)
-    artist = Column(String(255), nullable=False)
-    release_year = Column(Integer, nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    artist: Mapped[str] = mapped_column(String(255), nullable=False)
+    release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Album art URL or path
-    artwork_url = Column(String(1024), nullable=True)
+    artwork_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Additional album information
-    label = Column(String(255), nullable=True)
-    catalog_number = Column(String(100), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    catalog_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Related vinyl record (if any)
-    vinyl_id = Column(Integer, ForeignKey("vinyl_records.id"), nullable=True)
-    vinyl = relationship("Vinyl", back_populates="album")
+    vinyl_id: Mapped[int | None] = mapped_column(ForeignKey("vinyl_records.id"), nullable=True)
+    vinyl: Mapped[Optional["Vinyl"]] = relationship("Vinyl", back_populates="album")
 
     # Tracks in the album
-    tracks = relationship("Track", back_populates="album")
+    tracks: Mapped[list["Track"]] = relationship("Track", back_populates="album")
 
     def __repr__(self) -> str:
         """String representation of Album."""
@@ -167,32 +195,33 @@ class Vinyl(Base):
 
     __tablename__ = "vinyl_records"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
     # Discogs specific fields
-    discogs_id = Column(Integer, nullable=True)
-    discogs_release_id = Column(Integer, nullable=True)
+    discogs_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discogs_release_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Vinyl status
-    is_owned = Column(Boolean, default=False)
-    is_wanted = Column(Boolean, default=False)
-    for_sale = Column(Boolean, default=False)
+    is_owned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_wanted: Mapped[bool] = mapped_column(Boolean, default=False)
+    for_sale: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Purchase details
-    purchase_date = Column(DateTime, nullable=True)
-    purchase_price = Column(Float, nullable=True)
-    purchase_currency = Column(String(3), nullable=True)
-    purchase_notes = Column(Text, nullable=True)
+    purchase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    purchase_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    purchase_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    purchase_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Condition
-    media_condition = Column(String(50), nullable=True)  # e.g., 'Mint', 'Very Good Plus'
-    sleeve_condition = Column(String(50), nullable=True)
+    # e.g., 'Mint', 'Very Good Plus'
+    media_condition: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sleeve_condition: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Related album
-    album = relationship("Album", back_populates="vinyl", uselist=False)
+    album: Mapped[Optional["Album"]] = relationship("Album", back_populates="vinyl", uselist=False)
 
     # Notes
-    notes = Column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:
         """String representation of Vinyl."""
@@ -205,12 +234,15 @@ class Genre(Base):
 
     __tablename__ = "genres"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False, unique=True)
-    source = Column(String(50), nullable=True)  # e.g., 'spotify', 'discogs', 'user'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    # e.g., 'spotify', 'discogs', 'user'
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Tracks with this genre
-    tracks = relationship("Track", secondary=track_genres, back_populates="genres")
+    tracks: Mapped[list["Track"]] = relationship(
+        "Track", secondary=track_genres, back_populates="genres"
+    )
 
     def __repr__(self) -> str:
         """String representation of Genre."""
@@ -222,28 +254,30 @@ class Playlist(Base):
 
     __tablename__ = "playlists"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Whether this is a user-created playlist in Selecta or imported from a platform
-    is_local = Column(Boolean, default=False)
+    is_local: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # If not local, store platform information
-    source_platform = Column(String(50), nullable=True)  # 'spotify', 'rekordbox', null for local
-    platform_id = Column(String(255), nullable=True)  # ID in the platform's system
+    # 'spotify', 'rekordbox', null for local
+    source_platform: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # ID in the platform's system
+    platform_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # For folder structure support
-    parent_id = Column(Integer, ForeignKey("playlists.id"), nullable=True)
-    is_folder = Column(Boolean, default=False)
-    position = Column(Integer, default=0)  # Position within parent
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("playlists.id"), nullable=True)
+    is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)  # Position within parent
 
     # Synchronization settings
-    sync_enabled = Column(Boolean, default=True)
-    last_synced = Column(DateTime, nullable=True)
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_synced: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    children = relationship(
+    children: Mapped[list["Playlist"]] = relationship(
         "Playlist",
         backref="parent",
         remote_side=[id],
@@ -252,7 +286,7 @@ class Playlist(Base):
     )
 
     # Tracks in the playlist
-    tracks = relationship(
+    tracks: Mapped[list["PlaylistTrack"]] = relationship(
         "PlaylistTrack",
         back_populates="playlist",
         cascade="all, delete-orphan",
@@ -260,12 +294,14 @@ class Playlist(Base):
     )
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     def __repr__(self) -> str:
         """String representation of Playlist."""
-        folder_str = " (Folder)" if self.is_folder else ""  # type: ignore
+        folder_str = " (Folder)" if self.is_folder else ""
         return f"<Playlist {self.id}: {self.name}{folder_str}>"
 
 
@@ -274,17 +310,17 @@ class PlaylistTrack(Base):
 
     __tablename__ = "playlist_tracks"
 
-    id = Column(Integer, primary_key=True)
-    playlist_id = Column(Integer, ForeignKey("playlists.id"), nullable=False)
-    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False)
-    position = Column(Integer, nullable=False)  # Track position in playlist
+    id: Mapped[int] = mapped_column(primary_key=True)
+    playlist_id: Mapped[int] = mapped_column(ForeignKey("playlists.id"), nullable=False)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"), nullable=False)
+    position: Mapped[int] = mapped_column(nullable=False)  # Track position in playlist
 
     # When the track was added to the playlist
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    playlist = relationship("Playlist", back_populates="tracks")
-    track = relationship("Track", back_populates="playlists")
+    playlist: Mapped["Playlist"] = relationship("Playlist", back_populates="tracks")
+    track: Mapped["Track"] = relationship("Track", back_populates="playlists")
 
     def __repr__(self) -> str:
         """String representation of PlaylistTrack."""
@@ -296,23 +332,26 @@ class PlatformCredentials(Base):
 
     __tablename__ = "platform_credentials"
 
-    id = Column(Integer, primary_key=True)
-    platform = Column(String(50), nullable=False, unique=True)  # 'spotify', 'discogs', 'rekordbox'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # 'spotify', 'discogs', 'rekordbox'
+    platform: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
 
     # OAuth2 credentials
-    client_id = Column(String(255), nullable=True)
-    client_secret = Column(String(255), nullable=True)
-    access_token = Column(Text, nullable=True)
-    refresh_token = Column(Text, nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Rekordbox database path (for rekordbox platform)
-    db_path = Column(String(1024), nullable=True)
+    db_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Token expiration
-    token_expiry = Column(DateTime, nullable=True)
+    token_expiry: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # When credentials were last updated
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     def __repr__(self) -> str:
         """String representation of PlatformCredentials."""
@@ -328,7 +367,10 @@ class PlatformCredentials(Base):
         if not is_column_truthy(self.access_token) or not is_column_truthy(self.token_expiry):
             return True
 
-        return datetime.utcnow() > self.token_expiry  # type: ignore
+        if self.token_expiry is None:
+            return True
+
+        return datetime.utcnow() > self.token_expiry
 
 
 class UserSettings(Base):
@@ -336,18 +378,17 @@ class UserSettings(Base):
 
     __tablename__ = "user_settings"
 
-    id = Column(Integer, primary_key=True)
-    key = Column(String(100), nullable=False, unique=True)
-    value = Column(Text, nullable=True)
-    data_type = Column(
-        String(20), nullable=False, default="string"
-    )  # 'string', 'boolean', 'integer', 'json'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 'string', 'boolean', 'integer', 'json'
+    data_type: Mapped[str] = mapped_column(String(20), nullable=False, default="string")
 
     # Optional description of what this setting controls
-    description = Column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Whether this setting can be modified via the UI
-    user_editable = Column(Boolean, default=True)
+    user_editable: Mapped[bool] = mapped_column(Boolean, default=True)
 
     def __repr__(self) -> str:
         """String representation of UserSettings.
@@ -358,7 +399,7 @@ class UserSettings(Base):
         return f"<Setting {self.key}: {self.value}>"
 
     @property
-    def typed_value(self) -> bool | int | dict | str | None:
+    def typed_value(self) -> bool | int | dict[str, Any] | str | None:
         """Return the setting value converted to its appropriate type.
 
         Returns:
@@ -374,6 +415,7 @@ class UserSettings(Base):
         elif self.data_type == "json":
             import json
 
-            return json.loads(self.value)
+            # Cast the result to avoid the "Any" return type
+            return cast(dict[str, Any], json.loads(self.value))
         else:  # default to string
             return self.value

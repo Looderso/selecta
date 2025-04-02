@@ -122,15 +122,19 @@ class SideDrawer(QWidget):
         """
         # Notify the main window that the folder has changed
         # This could trigger a scan of the folder or update UI elements
+        from selecta.core.utils.type_helpers import has_local_db_folder_handler
+
         main_window = self.window()
-        if hasattr(main_window, "on_local_database_folder_changed"):
+        if has_local_db_folder_handler(main_window):
             main_window.on_local_database_folder_changed(folder_path)
 
     def _on_import_rekordbox(self):
         """Handle import from Rekordbox request."""
         # Forward the request to the main window
+        from selecta.core.utils.type_helpers import has_import_rekordbox_handler
+
         main_window = self.window()
-        if hasattr(main_window, "on_import_rekordbox"):
+        if has_import_rekordbox_handler(main_window):
             main_window.on_import_rekordbox()
 
     def show_drawer(self):

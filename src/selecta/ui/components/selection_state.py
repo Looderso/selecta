@@ -5,6 +5,8 @@ from typing import Any
 from loguru import logger
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from selecta.core.utils.type_helpers import has_is_folder
+
 
 class SelectionState(QObject):
     """Class to manage and share selection state between components.
@@ -126,9 +128,12 @@ class SelectionState(QObject):
         if item is None:
             return False
 
-        # Try to call is_folder method if it exists
-        if hasattr(item, "is_folder") and callable(item.is_folder):
-            return item.is_folder()
+        # Use the TypeGuard to check for is_folder method or _is_folder attribute
+        if has_is_folder(item):
+            # If it has is_folder method, call it
+            if hasattr(item, "is_folder") and callable(item.is_folder):
+                return item.is_folder()
+            # Otherwise use the _is_folder attribute
+            return bool(item._is_folder)
 
-        # Check for _is_folder attribute
-        return bool(getattr(item, "_is_folder", False))
+        return False

@@ -2,7 +2,112 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict, cast
+
+
+class SpotifyArtistDict(TypedDict, total=False):
+    """TypedDict for Spotify artist data."""
+
+    id: str
+    name: str
+    uri: str
+    type: str
+    href: str
+    external_urls: dict[str, str]
+
+
+class SpotifyAlbumDict(TypedDict, total=False):
+    """TypedDict for Spotify album data."""
+
+    id: str
+    name: str
+    uri: str
+    type: str
+    href: str
+    images: list[dict[str, Any]]
+    release_date: str
+    artists: list[SpotifyArtistDict]
+    external_urls: dict[str, str]
+
+
+class SpotifyTrackDict(TypedDict, total=False):
+    """TypedDict for Spotify track data."""
+
+    id: str
+    name: str
+    uri: str
+    href: str
+    type: str
+    duration_ms: int
+    popularity: int
+    explicit: bool
+    preview_url: str
+    artists: list[SpotifyArtistDict]
+    album: SpotifyAlbumDict
+    external_urls: dict[str, str]
+    track: "SpotifyTrackDict"  # For playlist items
+    added_at: str
+
+
+class SpotifyTracksDict(TypedDict, total=False):
+    """TypedDict for Spotify tracks container."""
+
+    href: str
+    total: int
+    limit: int
+    offset: int
+    items: list[SpotifyTrackDict | dict[str, Any]]
+
+
+class SpotifyUserDict(TypedDict, total=False):
+    """TypedDict for Spotify user data."""
+
+    id: str
+    display_name: str
+    uri: str
+    href: str
+    type: str
+    external_urls: dict[str, str]
+
+
+class SpotifyPlaylistDict(TypedDict, total=False):
+    """TypedDict for Spotify playlist data."""
+
+    id: str
+    name: str
+    description: str
+    uri: str
+    href: str
+    type: str
+    owner: SpotifyUserDict
+    tracks: SpotifyTracksDict
+    collaborative: bool
+    public: bool
+    snapshot_id: str
+    images: list[dict[str, Any]]
+    external_urls: dict[str, str]
+
+
+class SpotifyAudioFeaturesDict(TypedDict, total=False):
+    """TypedDict for Spotify audio features data."""
+
+    id: str
+    danceability: float
+    energy: float
+    key: int
+    loudness: float
+    mode: int
+    speechiness: float
+    acousticness: float
+    instrumentalness: float
+    liveness: float
+    valence: float
+    tempo: float
+    duration_ms: int
+    time_signature: int
+    track_href: str
+    analysis_url: str
+    type: str
 
 
 @dataclass
@@ -23,7 +128,7 @@ class SpotifyTrack:
 
     @classmethod
     def from_spotify_dict(
-        cls, track_dict: dict[str, Any], added_at: datetime | None = None
+        cls, track_dict: SpotifyTrackDict | dict[str, Any], added_at: datetime | None = None
     ) -> "SpotifyTrack":
         """Create a SpotifyTrack from a Spotify API response dictionary.
 
@@ -35,37 +140,39 @@ class SpotifyTrack:
             SpotifyTrack instance
         """
         # Handle both direct track objects and playlist track objects
-        track = track_dict.get("track", track_dict)
+        track_data: SpotifyTrackDict = cast(SpotifyTrackDict, track_dict.get("track", track_dict))
+
         # Get artist names
-        artist_names = [artist["name"] for artist in track.get("artists", [])]
+        artists: list[SpotifyArtistDict] = track_data.get("artists", [])
+        artist_names: list[str] = [artist.get("name", "Unknown") for artist in artists]
 
         # Get album info
-        album = track.get("album", {})
-        album_name = album.get("name", "")
-        album_id = album.get("id")
+        album: SpotifyAlbumDict = track_data.get("album", {})
+        album_name: str = album.get("name", "")
+        album_id: str | None = album.get("id")
 
         # Handle the added_at date
-        parsed_added_at = added_at
+        parsed_added_at: datetime | None = added_at
         if not parsed_added_at and "added_at" in track_dict:
             try:
                 # Parse ISO 8601 date string
-                parsed_added_at = datetime.fromisoformat(
-                    track_dict["added_at"].replace("Z", "+00:00")
-                )
+                added_at_str: str = cast(str, track_dict.get("added_at", ""))
+                if added_at_str:
+                    parsed_added_at = datetime.fromisoformat(added_at_str.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 parsed_added_at = None
 
         return cls(
-            id=track.get("id", ""),
-            name=track.get("name", ""),
-            uri=track.get("uri", ""),
+            id=track_data.get("id", ""),
+            name=track_data.get("name", ""),
+            uri=track_data.get("uri", ""),
             artist_names=artist_names,
             album_name=album_name,
             album_id=album_id,
-            duration_ms=track.get("duration_ms"),
-            popularity=track.get("popularity"),
-            explicit=track.get("explicit"),
-            preview_url=track.get("preview_url"),
+            duration_ms=track_data.get("duration_ms"),
+            popularity=track_data.get("popularity"),
+            explicit=track_data.get("explicit"),
+            preview_url=track_data.get("preview_url"),
             added_at=parsed_added_at,
         )
 
@@ -87,7 +194,9 @@ class SpotifyPlaylist:
     images: list[dict[str, Any]]
 
     @classmethod
-    def from_spotify_dict(cls, playlist_dict: dict[str, Any]) -> "SpotifyPlaylist":
+    def from_spotify_dict(
+        cls, playlist_dict: SpotifyPlaylistDict | dict[str, Any]
+    ) -> "SpotifyPlaylist":
         """Create a SpotifyPlaylist from a Spotify API response dictionary.
 
         Args:
@@ -97,13 +206,13 @@ class SpotifyPlaylist:
             SpotifyPlaylist instance
         """
         # Get owner info
-        owner = playlist_dict.get("owner", {})
-        owner_id = owner.get("id", "")
-        owner_name = owner.get("display_name", "")
+        owner: SpotifyUserDict = playlist_dict.get("owner", {})
+        owner_id: str = owner.get("id", "")
+        owner_name: str = owner.get("display_name", "")
 
         # Get tracks count
-        tracks = playlist_dict.get("tracks", {})
-        tracks_count = tracks.get("total", 0)
+        tracks: SpotifyTracksDict = playlist_dict.get("tracks", {})
+        tracks_count: int = tracks.get("total", 0)
 
         return cls(
             id=playlist_dict.get("id", ""),
@@ -140,7 +249,9 @@ class SpotifyAudioFeatures:
     time_signature: int
 
     @classmethod
-    def from_spotify_dict(cls, features_dict: dict[str, Any]) -> "SpotifyAudioFeatures":
+    def from_spotify_dict(
+        cls, features_dict: SpotifyAudioFeaturesDict | dict[str, Any]
+    ) -> "SpotifyAudioFeatures":
         """Create SpotifyAudioFeatures from a Spotify API response dictionary.
 
         Args:

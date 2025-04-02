@@ -45,19 +45,22 @@ class PlaylistTreeModel(QAbstractItemModel):
 
         return self.createIndex(row, column, parent_item.children[row])
 
-    def parent(self, index: QModelIndex) -> QModelIndex:
+    # The parent method has multiple overloads in PyQt6 which causes type checking issues
+    # One takes a QModelIndex and returns QModelIndex, the other takes no args and returns QObject
+    # We're implementing the first version only
+    def parent(self, child: QModelIndex) -> QModelIndex:  # type: ignore[override]
         """Get the parent of the item at the given index.
 
         Args:
-            index: Index of the item
+            child: Index of the item
 
         Returns:
             QModelIndex of the parent item
         """
-        if not index.isValid():
+        if not child.isValid():
             return QModelIndex()
 
-        item = index.internalPointer()
+        item = child.internalPointer()
         if not item or not item.parent_id:
             return QModelIndex()
 
@@ -130,7 +133,9 @@ class PlaylistTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.DecorationRole:
             return item.get_icon()
         elif role == Qt.ItemDataRole.ToolTipRole:
-            if hasattr(item, "description") and item.description:
+            from selecta.core.utils.type_helpers import has_description
+
+            if has_description(item):
                 return item.description
             return item.name
 

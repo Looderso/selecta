@@ -72,22 +72,30 @@ class TracksTableModel(QAbstractTableModel):
         column_key = self.column_keys[index.column()]
         display_data = track.to_display_data()
 
+        from selecta.core.utils.type_helpers import dict_str
+
+        # Use display_data directly with our typed helper functions
+        track_data = display_data
+
         if role == Qt.ItemDataRole.DisplayRole:
             # For platforms column, we'll handle this differently - we return
             # empty string here and use the custom delegate for icons
             if column_key == "platforms":
                 return ""
-            return display_data.get(column_key, "")
+            return dict_str(track_data, column_key)
         elif role == Qt.ItemDataRole.UserRole:
             # Return the list of platforms for the PlatformIconDelegate
             if column_key == "platforms":
-                return display_data.get("platforms", [])
+                # The default empty list makes sure we always return a list
+                return track_data.get("platforms", [])
         elif role == Qt.ItemDataRole.ToolTipRole:
             if column_key == "title":
-                return f"{display_data.get('title')} by {display_data.get('artist')}"
+                title = dict_str(track_data, "title")
+                artist = dict_str(track_data, "artist")
+                return f"{title} by {artist}"
             if column_key == "platforms":
-                return display_data.get("platforms_tooltip", "")
-            return display_data.get(column_key, "")
+                return dict_str(track_data, "platforms_tooltip")
+            return dict_str(track_data, column_key)
 
         return None
 

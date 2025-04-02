@@ -105,11 +105,21 @@ ignore = [
     "UP008", # allow user of super().__new__(cls)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"src/selecta/core/utils/type_helpers.py" = ["D102"]
+
 fixable = ["ALL"]
 
 [tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]       # Unused imports
+"__init__.py" = ["F401"] # Unused imports
 "tests/**/*.py" = ["D", "ANN"] # Docstring and annotation requirements in tests
+"src/selecta/core/data/models/*.py" = [
+    "ANN",
+] # Ignore annotation requirements in SQLAlchemy models
+"src/selecta/ui/**/*.py" = [
+    "ANN204",
+    "ANN202",
+] # Ignore return type annotations in UI code
 
 [tool.ruff.pydocstyle]
 convention = "google"

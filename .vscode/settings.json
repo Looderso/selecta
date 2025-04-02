@@ -1,61 +1,13 @@
 {
-    // Python settings
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.autoImportCompletions": true,
-    // Formatting settings
     "editor.formatOnSave": true,
-    // Ruff-specific settings
+    "editor.codeActionsOnSave": {
+        "source.fixAll.ruff": "explicit",
+        "source.organizeImports.ruff": "explicit"
+    },
     "ruff.organizeImports": true,
-    // Python-specific settings
     "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff",
-        "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-            "source.fixAll.ruff": "always",
-            "source.organizeImports.ruff": "explicit"
-        }
+        "editor.defaultFormatter": "charliermarsh.ruff"
     },
-    // Extension recommendations
-    "extensions.ignoreRecommendations": false,
-    // Testing
-    "python.testing.pytestEnabled": true,
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestArgs": [
-        "src/tests"
-    ],
-    // File associations
-    "files.associations": {
-        "*.kv": "kivy"
-    },
-    // Editor settings
-    "editor.rulers": [
-        100
-    ],
-    "editor.tabSize": 4,
-    "editor.insertSpaces": true,
-    "editor.indentSize": 4,
-    "files.trimTrailingWhitespace": true,
-    "files.insertFinalNewline": true,
-    "files.trimFinalNewlines": true,
-    // Exclude files from explorer
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/.pytest_cache": true,
-        "**/.ruff_cache": true,
-        "**/.mypy_cache": true,
-        "**/*.egg-info": true,
-        "**/*.pyc": true
-    },
-    // Terminal settings
-    "terminal.integrated.env.osx": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "kvlang.pythonPath": "/Users/lorenzhausler/Documents/repos/selecta/.venv/bin/python"
+    "ruff.importStrategy": "fromEnvironment",
+    "python.analysis.typeCheckingMode": "basic"
 }

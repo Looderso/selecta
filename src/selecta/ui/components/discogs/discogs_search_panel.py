@@ -200,7 +200,9 @@ class DiscogsSearchPanel(QWidget):
         # Add results to the layout
         for release in results:
             # Convert DiscogsRelease to a formatted dict for our UI
-            if hasattr(release, "artist") and hasattr(release, "title"):
+            from selecta.core.utils.type_helpers import has_artist_and_title
+
+            if has_artist_and_title(release):
                 # Create a compatible dict from DiscogsRelease object
                 release_data = {
                     "id": release.id,
@@ -234,12 +236,12 @@ class DiscogsSearchPanel(QWidget):
     def clear_results(self):
         """Clear all search results."""
         # Remove the initial message if it exists
-        if hasattr(self, "initial_message") and self.initial_message:
+        if hasattr(self, "initial_message") and self.initial_message is not None:
             self.initial_message.setParent(None)
             self.initial_message = None
 
         # Remove any message widget
-        if hasattr(self, "message_label") and self.message_label:
+        if hasattr(self, "message_label") and self.message_label is not None:
             self.message_label.setParent(None)
             self.message_label = None
 

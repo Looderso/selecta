@@ -154,6 +154,17 @@ ruff check src
 mypy src
 ```
 
+### Type Safety
+
+The project uses several approaches to ensure type safety:
+
+1. **Protocol classes** for structural typing
+2. **TypeGuard functions** for type narrowing with attribute checks
+3. **TypedDict** for dictionary-like objects
+4. **Type-safe dictionary access** utilities
+
+Type helper utilities are in `src/selecta/core/utils/type_helpers.py`. See `TYPING_PLAN.md` for more details on our typing strategy.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

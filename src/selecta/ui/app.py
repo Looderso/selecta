@@ -1,4 +1,5 @@
 import sys
+from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -12,6 +13,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.core.utils.type_helpers import (
+    has_auth_panel,
+    has_details_panel,
+    has_horizontal_splitter,
+    has_is_authenticated,
+    has_platform_clients,
+)
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
 from selecta.ui.import_rekordbox_dialog import ImportRekordboxDialog
@@ -152,7 +160,7 @@ class SelectaMainWindow(QMainWindow):
         super().resizeEvent(event)
 
         # Update splitter sizes when the window is resized
-        if hasattr(self, "horizontal_splitter") and hasattr(self, "vertical_splitter"):
+        if has_horizontal_splitter(self):
             # Maintain the 3:1 horizontal ratio
             total_width = self.horizontal_splitter.width()
             left_width = int(total_width * 0.75)  # 75% for left side
@@ -228,8 +236,8 @@ class SelectaMainWindow(QMainWindow):
         self.nav_bar.set_active_platform(platform)
 
         # Store persistent client references to avoid recreating them
-        if not hasattr(self, "_platform_clients"):
-            self._platform_clients = {}
+        if not has_platform_clients(self):
+            self._platform_clients: dict[str, Any] = {}
 
         # Create the appropriate data provider using cached clients
         try:
@@ -237,6 +245,10 @@ class SelectaMainWindow(QMainWindow):
             from selecta.core.data.repositories.settings_repository import SettingsRepository
 
             settings_repo = SettingsRepository()
+
+            authenticated = False
+            # Use Any for now to avoid Union complexity
+            data_provider: Any = None
 
             if platform == "local":
                 from selecta.ui.components.playlist.local.local_playlist_data_provider import (
@@ -254,11 +266,17 @@ class SelectaMainWindow(QMainWindow):
 
                 # Recreate client to get fresh auth status
                 self._platform_clients["spotify"] = PlatformFactory.create("spotify", settings_repo)
+                spotify_client = self._platform_clients["spotify"]
 
-                data_provider = SpotifyPlaylistDataProvider(
-                    client=self._platform_clients["spotify"]  # type: ignore
-                )
-                authenticated = data_provider.client.is_authenticated()
+                if spotify_client is None:
+                    authenticated = False
+                else:
+                    spotify_provider = SpotifyPlaylistDataProvider(client=spotify_client)
+                    data_provider = spotify_provider
+                    if has_is_authenticated(spotify_provider.client):
+                        authenticated = spotify_provider.client.is_authenticated()
+                    else:
+                        authenticated = False
 
             elif platform == "rekordbox":
                 from selecta.core.platform.platform_factory import PlatformFactory
@@ -270,15 +288,20 @@ class SelectaMainWindow(QMainWindow):
                 self._platform_clients["rekordbox"] = PlatformFactory.create(
                     "rekordbox", settings_repo
                 )
-
-                data_provider = RekordboxPlaylistDataProvider(
-                    client=self._platform_clients["rekordbox"]  # type: ignore
-                )
+                rekordbox_client = self._platform_clients["rekordbox"]
 
                 # Double-check authentication status
                 authenticated = False
-                if self._platform_clients["rekordbox"]:
-                    authenticated = self._platform_clients["rekordbox"].is_authenticated()
+
+                if rekordbox_client is None:
+                    authenticated = False
+                else:
+                    rekordbox_provider = RekordboxPlaylistDataProvider(client=rekordbox_client)
+                    data_provider = rekordbox_provider
+                    if has_is_authenticated(rekordbox_client):
+                        authenticated = rekordbox_client.is_authenticated()
+                    else:
+                        authenticated = False
 
                 logger.debug(f"Rekordbox authenticated: {authenticated}")
 
@@ -290,11 +313,17 @@ class SelectaMainWindow(QMainWindow):
 
                 # Recreate client to get fresh auth status
                 self._platform_clients["discogs"] = PlatformFactory.create("discogs", settings_repo)
+                discogs_client = self._platform_clients["discogs"]
 
-                data_provider = DiscogsPlaylistDataProvider(
-                    client=self._platform_clients["discogs"]  # type: ignore
-                )
-                authenticated = data_provider.client.is_authenticated()
+                if discogs_client is None:
+                    authenticated = False
+                else:
+                    discogs_provider = DiscogsPlaylistDataProvider(client=discogs_client)
+                    data_provider = discogs_provider
+                    if has_is_authenticated(discogs_provider.client):
+                        authenticated = discogs_provider.client.is_authenticated()
+                    else:
+                        authenticated = False
 
             else:
                 return  # Invalid platform
@@ -303,8 +332,8 @@ class SelectaMainWindow(QMainWindow):
             if not authenticated:
                 # Show authentication message
                 self._show_auth_required_message(platform)
-            else:
-                # Only create the playlist view if authenticated
+            elif data_provider is not None:
+                # Only create the playlist view if authenticated and data_provider exists
                 self._create_playlist_view(data_provider)
 
         except Exception as e:
@@ -379,7 +408,7 @@ class SelectaMainWindow(QMainWindow):
         self.toggle_side_drawer()
 
         # Find the platform auth widget in the side drawer
-        if hasattr(self.side_drawer, "auth_panel"):
+        if has_auth_panel(self.side_drawer):
             # Call the appropriate authentication method
             if platform == "spotify":
                 self.side_drawer.auth_panel._authenticate_spotify()
@@ -411,9 +440,7 @@ class SelectaMainWindow(QMainWindow):
         self._setup_search_panels()
 
         # Store a reference to the details panel for switching later
-        if hasattr(playlist_content, "playlist_component") and hasattr(
-            playlist_content.playlist_component, "details_panel"
-        ):
+        if has_details_panel(playlist_content):
             self.track_details_panel = playlist_content.playlist_component.details_panel
 
         # Switch to the current platform
