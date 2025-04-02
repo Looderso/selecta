@@ -24,6 +24,7 @@ class FolderSelectionWidget(QWidget):
 
     folder_changed = pyqtSignal(str)  # Signal emitted when folder is changed
     import_rekordbox_clicked = pyqtSignal()  # Signal emitted when import button is clicked
+    import_covers_clicked = pyqtSignal()  # Signal emitted when import covers button is clicked
 
     def __init__(self, parent=None):
         """Initialize the folder selection widget.
@@ -108,6 +109,12 @@ class FolderSelectionWidget(QWidget):
         # Initially disabled until we have a folder selected and Rekordbox is authenticated
         self.import_rekordbox_button.setEnabled(False)
         import_buttons_layout.addWidget(self.import_rekordbox_button)
+
+        self.import_covers_button = QPushButton("Import Covers from Audio Files")
+        self.import_covers_button.clicked.connect(self._on_import_covers)
+        # Initially disabled until we have a folder selected
+        self.import_covers_button.setEnabled(False)
+        import_buttons_layout.addWidget(self.import_covers_button)
 
         import_buttons_layout.addStretch(1)  # Push buttons to the left
         import_section_layout.addLayout(import_buttons_layout)
@@ -267,6 +274,11 @@ class FolderSelectionWidget(QWidget):
         # Emit the signal to trigger import process
         self.import_rekordbox_clicked.emit()
 
+    def _on_import_covers(self):
+        """Handle Import Covers button click."""
+        # Emit the signal to trigger import covers process
+        self.import_covers_clicked.emit()
+
     def _update_button_states(self):
         """Update the state of buttons based on current conditions."""
         # Check if a folder is selected
@@ -279,6 +291,7 @@ class FolderSelectionWidget(QWidget):
         assert rekordbox_authenticated is not None
         # Enable/disable buttons
         self.import_rekordbox_button.setEnabled(has_folder and rekordbox_authenticated)
+        self.import_covers_button.setEnabled(has_folder)
         self.scan_folder_button.setEnabled(has_folder)
 
         # Update status messages

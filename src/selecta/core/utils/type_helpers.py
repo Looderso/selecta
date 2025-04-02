@@ -215,6 +215,13 @@ class HasImportRekordboxHandler(Protocol):
 
 
 @runtime_checkable
+class HasImportCoversHandler(Protocol):
+    """Protocol for objects with a on_import_covers method."""
+
+    def on_import_covers(self) -> None: ...
+
+
+@runtime_checkable
 class HasShowSpotifySearch(Protocol):
     """Protocol for objects with a show_spotify_search method."""
 
@@ -434,6 +441,18 @@ def has_import_rekordbox_handler(obj: Any) -> TypeGuard[HasImportRekordboxHandle
         True if the object has an on_import_rekordbox method
     """
     return hasattr(obj, "on_import_rekordbox")
+
+
+def has_import_covers_handler(obj: Any) -> TypeGuard[HasImportCoversHandler]:
+    """Type guard to check if an object has an on_import_covers method.
+
+    Args:
+        obj: Object to check
+
+    Returns:
+        True if the object has an on_import_covers method
+    """
+    return hasattr(obj, "on_import_covers")
 
 
 def has_show_spotify_search(obj: Any) -> TypeGuard[HasShowSpotifySearch]:

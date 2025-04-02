@@ -188,7 +188,7 @@ class TrackDetailsPanel(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         layout.addWidget(self.scroll_area, 1)  # 1 = stretch factor
 
-    def set_track(self, track: TrackItem | None, platform_info: dict[str, Any] = None):
+    def set_track(self, track: TrackItem | None, platform_info: dict[str, Any] | None = None):
         """Set the track to display.
 
         Args:

@@ -124,6 +124,11 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
 
                 platform_info.append(platform_data)
 
+            # Check if track has images directly from the images relationship
+            has_image = False
+            if hasattr(track, "images") and track.images and len(track.images) > 0:
+                has_image = True
+
             track_items.append(
                 LocalTrackItem(
                     track_id=track.id,
@@ -138,6 +143,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     tags=tags,
                     platform_info=platform_info,
                     quality=column_to_int(track.quality),
+                    has_image=has_image,
                 )
             )
 

@@ -736,6 +736,43 @@ class SelectaMainWindow(QMainWindow):
             if self.current_platform == "local":
                 self.switch_platform("local")
 
+    def on_import_covers(self):
+        """Handle import covers from audio metadata request."""
+        from loguru import logger
+
+        logger.info("Import covers from audio files requested")
+
+        # Get the local database folder
+        from selecta.core.data.repositories.settings_repository import SettingsRepository
+
+        settings_repo = SettingsRepository()
+        folder_path = settings_repo.get_local_database_folder()
+
+        if not folder_path:
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "No Folder Selected",
+                "Please select a local database folder before importing covers.",
+            )
+            return
+
+        # Create and show the import dialog
+        from selecta.ui.import_covers_dialog import ImportCoversDialog
+
+        import_dialog = ImportCoversDialog(self)
+
+        # Show the dialog and wait for it to close
+        result = import_dialog.exec()
+
+        if result == 1:  # QDialog.Accepted
+            logger.info("Import covers completed")
+
+            # Refresh the UI if we're on the local platform
+            if self.current_platform == "local":
+                self.switch_platform("local")
+
 
 def run_app():
     """Run the PyQt application."""

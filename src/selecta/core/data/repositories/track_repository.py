@@ -738,3 +738,20 @@ class TrackRepository(BaseRepository[Track]):
         )
 
         return tracks, total
+
+    def get_all_with_local_path(self) -> list[Track]:
+        """Get all tracks that have a local file path.
+
+        Returns:
+            List of tracks with local paths
+        """
+        if self.session is None:
+            return []
+
+        return (
+            self.session.query(Track)
+            .filter(Track.local_path.isnot(None))
+            .filter(Track.local_path != "")
+            .order_by(Track.artist, Track.title)
+            .all()
+        )
