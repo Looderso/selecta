@@ -1,6 +1,8 @@
 """Core database models for Selecta."""
 
+import json
 from datetime import datetime
+from enum import Enum, auto
 from typing import Any, ClassVar, Optional, cast
 
 from sqlalchemy import (
@@ -10,14 +12,28 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Table,
     Text,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from selecta.core.data.database import Base
 from selecta.core.utils.type_helpers import is_column_truthy
+
+
+class ImageSize(Enum):
+    """Enum for image sizes."""
+
+    THUMBNAIL = auto()  # Typically 64x64 pixels
+    SMALL = auto()  # Typically 150x150 pixels
+    MEDIUM = auto()  # Typically 300x300 pixels
+    LARGE = auto()  # Typically 640x640 pixels
+
 
 # Association table for track-genre relationship
 track_genres = Table(
@@ -27,13 +43,15 @@ track_genres = Table(
     Column("genre_id", Integer, ForeignKey("genres.id"), primary_key=True),
 )
 
+# Association table for track-tag relationship
+track_tags = Table(
+    "track_tags",
+    Base.metadata,
+    Column("track_id", Integer, ForeignKey("tracks.id"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id"), primary_key=True),
+)
 
 """Track model definitions."""
-
-
-from sqlalchemy import Column, ForeignKey, Integer
-
-from selecta.core.data.database import Base
 
 
 class Track(Base):
@@ -45,9 +63,22 @@ class Track(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     artist: Mapped[str] = mapped_column(String(255), nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Path to local file if available
     local_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Cover art URL or path (kept for backward compatibility)
+    artwork_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Track images relationship
+    images: Mapped[list["Image"]] = relationship(
+        "Image",
+        back_populates="track",
+        cascade="all, delete-orphan",
+        primaryjoin="Track.id == Image.track_id",
+    )
 
     # Relationships
     album_id: Mapped[int | None] = mapped_column(ForeignKey("albums.id"), nullable=True)
@@ -64,8 +95,11 @@ class Track(Base):
 
     # Many-to-many relationship with genres (through association)
     genres: Mapped[list["Genre"]] = relationship(
-        "Genre", secondary="track_genres", back_populates="tracks"
+        "Genre", secondary=track_genres, back_populates="tracks"
     )
+
+    # Many-to-many relationship with tags (through association)
+    tags: Mapped[list["Tag"]] = relationship("Tag", secondary=track_tags, back_populates="tracks")
 
     # Track attributes (dynamic properties like energy, danceability)
     attributes: Mapped[list["TrackAttribute"]] = relationship(
@@ -78,6 +112,9 @@ class Track(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
+    # Track availability - if it's in the local_db_folder
+    is_available_locally: Mapped[bool] = mapped_column(Boolean, default=False)
+
     def __repr__(self) -> str:
         """String representation of Track.
 
@@ -85,6 +122,90 @@ class Track(Base):
             str: String representation
         """
         return f"<Track {self.id}: {self.artist} - {self.title}>"
+
+    def get_artwork(self, size: ImageSize = ImageSize.MEDIUM) -> "Image | None":
+        """Get track artwork of the requested size.
+
+        Args:
+            size: Desired image size
+
+        Returns:
+            Image object or None if not available
+        """
+        # First check track-specific images
+        for image in self.images:
+            if image.size == size:
+                return image
+
+        # If no track-specific image, check album
+        if self.album:
+            album_image = self.album.get_artwork(size)
+            if album_image:
+                return album_image
+
+        # Fallback to any track image
+        return self.images[0] if self.images else None
+
+    def get_platform_metadata(self, platform: str) -> dict[str, Any] | None:
+        """Get platform-specific metadata as a parsed JSON object.
+
+        Args:
+            platform: The platform to get metadata for ('spotify', 'discogs', 'rekordbox')
+
+        Returns:
+            Dictionary of metadata or None if not available
+        """
+        for info in self.platform_info:
+            if info.platform == platform and info.platform_data:
+                try:
+                    return json.loads(info.platform_data)
+                except json.JSONDecodeError:
+                    return None
+        return None
+
+    def update_from_platform(self, platform: str, update_fields: list[str]) -> bool:
+        """Update track fields from platform metadata.
+
+        Args:
+            platform: The platform to use as source ('spotify', 'discogs', 'rekordbox')
+            update_fields: List of fields to update
+
+        Returns:
+            True if any fields were updated, False otherwise
+        """
+        platform_data = self.get_platform_metadata(platform)
+        if not platform_data:
+            return False
+
+        updated = False
+
+        # Handle basic fields
+        if "title" in update_fields and platform_data.get("title"):
+            self.title = platform_data["title"]
+            updated = True
+
+        if "artist" in update_fields and platform_data.get("artist"):
+            self.artist = platform_data["artist"]
+            updated = True
+
+        if "year" in update_fields and platform_data.get("year"):
+            self.year = platform_data["year"]
+            updated = True
+
+        if "bpm" in update_fields and platform_data.get("bpm"):
+            self.bpm = platform_data["bpm"]
+            updated = True
+
+        if "artwork_url" in update_fields and platform_data.get("artwork_url"):
+            self.artwork_url = platform_data["artwork_url"]
+            updated = True
+
+        # Handle genres (more complex as they're in a separate table)
+        if "genres" in update_fields and platform_data.get("genres"):
+            # This would be handled in the repository layer
+            pass
+
+        return updated
 
 
 class TrackPlatformInfo(Base):
@@ -94,16 +215,23 @@ class TrackPlatformInfo(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"), nullable=False)
-    # 'spotify', 'rekordbox', 'discogs'
+    # 'spotify', 'rekordbox', 'discogs', 'local'
     platform: Mapped[str] = mapped_column(String(50), nullable=False)
     # ID in the platform's system
     platform_id: Mapped[str] = mapped_column(String(255), nullable=False)
     # URI/URL to the track in the platform
     uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
-    # Platform-specific metadata (JSON might be better, but using text for SQLite compatibility)
-    # Renamed from 'metadata' to 'platform_data' to avoid conflicts with SQLAlchemy
+    # Platform-specific metadata as JSON string
     platform_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # When the platform data was last synchronized
+    last_synced: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Whether this platform info needs to be updated
+    needs_update: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     track: Mapped["Track"] = relationship("Track", back_populates="platform_info")
@@ -115,6 +243,8 @@ class TrackPlatformInfo(Base):
         "platform_id": "platform_id",
         "uri": "uri",
         "platform_data": "platform_data",
+        "last_synced": "last_synced",
+        "needs_update": "needs_update",
     }
 
     # Ensure we don't have duplicates for the same track/platform combination
@@ -128,6 +258,20 @@ class TrackPlatformInfo(Base):
         """
         return f"<TrackPlatformInfo {self.platform}:{self.platform_id}>"
 
+    def get_metadata(self) -> dict[str, Any] | None:
+        """Get platform metadata as a parsed JSON object.
+
+        Returns:
+            Dictionary of metadata or None if not available
+        """
+        if not self.platform_data:
+            return None
+
+        try:
+            return json.loads(self.platform_data)
+        except json.JSONDecodeError:
+            return None
+
 
 class TrackAttribute(Base):
     """Dynamic attributes for tracks like energy, danceability, etc."""
@@ -138,7 +282,7 @@ class TrackAttribute(Base):
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
-    # e.g., 'spotify', 'user', 'analysis'
+    # e.g., 'spotify', 'user', 'analysis', 'rekordbox'
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
@@ -161,6 +305,49 @@ class TrackAttribute(Base):
         return f"<TrackAttribute {self.name}: {self.value}>"
 
 
+class Image(Base):
+    """Model for storing images like album covers and artist photos."""
+
+    __tablename__ = "images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Image data stored as binary
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+    # Image metadata
+    mime_type: Mapped[str] = mapped_column(String(50), nullable=False, default="image/jpeg")
+    size: Mapped[str] = mapped_column(SQLEnum(ImageSize), nullable=False)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Size in bytes
+
+    # Track relationships - bidirectional relationships to albums and tracks
+    track_id: Mapped[int | None] = mapped_column(ForeignKey("tracks.id"), nullable=True)
+    track: Mapped[Optional["Track"]] = relationship(
+        "Track", back_populates="images", foreign_keys=[track_id]
+    )
+
+    # Album relationships
+    album_id: Mapped[int | None] = mapped_column(ForeignKey("albums.id"), nullable=True)
+    album: Mapped[Optional["Album"]] = relationship(
+        "Album", back_populates="images", foreign_keys=[album_id]
+    )
+
+    # Source information
+    source: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # e.g., 'spotify', 'discogs'
+    source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        """String representation of Image."""
+        source_info = f" from {self.source}" if self.source else ""
+        return f"<Image {self.id}: {self.size.name}{source_info}, {self.width}x{self.height}>"
+
+
 class Album(Base):
     """Album model representing music albums."""
 
@@ -171,8 +358,16 @@ class Album(Base):
     artist: Mapped[str] = mapped_column(String(255), nullable=False)
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Album art URL or path
+    # Album art URL or path (kept for backward compatibility)
     artwork_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Album images
+    images: Mapped[list["Image"]] = relationship(
+        "Image",
+        back_populates="album",
+        cascade="all, delete-orphan",
+        primaryjoin="Album.id == Image.album_id",
+    )
 
     # Additional album information
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -188,6 +383,22 @@ class Album(Base):
     def __repr__(self) -> str:
         """String representation of Album."""
         return f"<Album {self.id}: {self.artist} - {self.title}>"
+
+    def get_artwork(self, size: ImageSize = ImageSize.MEDIUM) -> "Image | None":
+        """Get album artwork of the requested size.
+
+        Args:
+            size: Desired image size
+
+        Returns:
+            Image object or None if not available
+        """
+        for image in self.images:
+            if image.size == size:
+                return image
+
+        # Fallback to any available image
+        return self.images[0] if self.images else None
 
 
 class Vinyl(Base):
@@ -236,7 +447,7 @@ class Genre(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
-    # e.g., 'spotify', 'discogs', 'user'
+    # e.g., 'spotify', 'discogs', 'user', 'rekordbox'
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Tracks with this genre
@@ -247,6 +458,25 @@ class Genre(Base):
     def __repr__(self) -> str:
         """String representation of Genre."""
         return f"<Genre {self.id}: {self.name} ({self.source})>"
+
+
+class Tag(Base):
+    """User-defined tags for tracks."""
+
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Tracks with this tag
+    tracks: Mapped[list["Track"]] = relationship(
+        "Track", secondary=track_tags, back_populates="tags"
+    )
+
+    def __repr__(self) -> str:
+        """String representation of Tag."""
+        return f"<Tag {self.id}: {self.name}>"
 
 
 class Playlist(Base):

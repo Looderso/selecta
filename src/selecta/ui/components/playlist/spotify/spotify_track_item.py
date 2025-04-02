@@ -20,6 +20,8 @@ class SpotifyTrackItem(TrackItem):
         popularity: int | None = None,
         explicit: bool = False,
         preview_url: str | None = None,
+        album_id: int | None = None,
+        has_image: bool = False,
     ):
         """Initialize a Spotify track item.
 
@@ -34,8 +36,10 @@ class SpotifyTrackItem(TrackItem):
             popularity: Popularity score (0-100)
             explicit: Whether the track has explicit content
             preview_url: URL to a 30-second preview
+            album_id: The database ID of the album, if available
+            has_image: Whether this track has an image in the database
         """
-        super().__init__(track_id, title, artist, duration_ms, album, added_at)
+        super().__init__(track_id, title, artist, duration_ms, album, added_at, album_id, has_image)
         self.uri = uri
         self.popularity = popularity
         self.explicit = explicit
@@ -54,6 +58,11 @@ class SpotifyTrackItem(TrackItem):
             stars = round(self.popularity / 20)
             popularity_stars = "★" * stars
 
+        # Prepare image data for the track
+        has_db_image = False
+        if self.has_image:
+            has_db_image = True
+
         return {
             "id": self.track_id,
             "title": self.title,
@@ -71,4 +80,7 @@ class SpotifyTrackItem(TrackItem):
             # Include the full URI and preview URL for potential use
             "spotify_uri": self.uri,
             "preview_url": self.preview_url,
+            # Add database image fields
+            "has_db_image": has_db_image,
+            "album_id": self.album_id,
         }

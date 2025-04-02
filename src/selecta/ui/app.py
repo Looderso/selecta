@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QSizePolicy,
     QSplitter,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -140,9 +139,13 @@ class SelectaMainWindow(QMainWindow):
         # Track the current platform
         self.current_platform = "local"
 
-        self.spotify_panel = None
-        self.discogs_panel = None
-        self.track_details_panel = None
+        # Initialize selection state
+        from selecta.ui.components.selection_state import SelectionState
+
+        self.selection_state = SelectionState()
+
+        # Dynamic content will be created later
+        self.dynamic_content = None
 
     def resize_to_available_screen(self):
         """Resize the window to fill the available screen space."""
@@ -365,11 +368,21 @@ class SelectaMainWindow(QMainWindow):
         if not playlist_component:
             playlist_component = PlaylistComponent()
             self.set_playlist_content(playlist_component)
-            # Store a reference to the details panel
-            self.track_details_panel = playlist_component.details_panel
+
+            # Make sure we have the dynamic content set up
+            self._setup_search_panels()
 
         # Update the data provider in the existing component
         playlist_component.set_data_provider(data_provider)
+
+    def _on_track_updated(self, track_id: int):
+        """Handle track updated signal from dynamic content.
+
+        Args:
+            track_id: The ID of the updated track
+        """
+        # Refresh the UI if needed
+        self.selection_state.notify_data_changed()
 
     def _show_auth_required_message(self, platform: str):
         """Show a message when authentication is required.
@@ -456,83 +469,45 @@ class SelectaMainWindow(QMainWindow):
         self.switch_platform(getattr(self, "current_platform", "local"))
 
     def _setup_search_panels(self):
-        """Set up the search panels in the right sidebar."""
-        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
-        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
+        """Set up the dynamic content component in the right container."""
+        from selecta.ui.components.dynamic_content import DynamicContent
 
-        # Create a tab widget for the right panel
-        search_tabs = QTabWidget()
-        search_tabs.setObjectName("searchTabs")
-        search_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        # Create the dynamic content component
+        self.dynamic_content = DynamicContent()
 
-        # Create Spotify search panel if not already created
-        if self.spotify_panel is None:
-            self.spotify_panel = SpotifySearchPanel()
-            self.spotify_panel.setObjectName("spotifySearchPanel")
+        # Set as right content instead of bottom content
+        self.set_right_content(self.dynamic_content)
 
-        # Create Discogs search panel if not already created
-        if self.discogs_panel is None:
-            self.discogs_panel = DiscogsSearchPanel()
-            self.discogs_panel.setObjectName("discogsSearchPanel")
-
-        # Add tabs
-        search_tabs.addTab(self.spotify_panel, "Spotify")
-        search_tabs.addTab(self.discogs_panel, "Discogs")
-
-        # Set the tab widget as right content
-        self.set_right_content(search_tabs)
+        # Connect signals
+        self.dynamic_content.track_updated.connect(self._on_track_updated)
 
     def show_spotify_search(self, initial_search=None):
         """Show Spotify search panel in the right area."""
-        # Make sure search panels are set up
+        # Make sure dynamic content is set up
         self._setup_search_panels()
 
-        # Find the tab widget and switch to Spotify tab
-        for i in range(self.right_layout.count()):
-            item = self.right_layout.itemAt(i)
-            if item:
-                widget = item.widget()
-                if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
-                    # Switch to the Spotify tab (index 0)
-                    widget.setCurrentIndex(0)
-
-                    # Set the initial search if provided
-                    if initial_search and self.spotify_panel:
-                        self.spotify_panel.search_bar.set_search_text(initial_search)
-                        self.spotify_panel._on_search(initial_search)
-                    break
+        # Show spotify search panel
+        if hasattr(self, "dynamic_content"):
+            self.dynamic_content.show_search_panel("spotify", initial_search)
 
     def show_discogs_search(self, initial_search=None):
         """Show Discogs search panel in the right area."""
-        # Make sure search panels are set up
+        # Make sure dynamic content is set up
         self._setup_search_panels()
 
-        # Find the tab widget and switch to Discogs tab
-        for i in range(self.right_layout.count()):
-            item = self.right_layout.itemAt(i)
-            if item:
-                widget = item.widget()
-                if isinstance(widget, QTabWidget) and widget.objectName() == "searchTabs":
-                    # Switch to the Discogs tab (index 1)
-                    widget.setCurrentIndex(1)
-
-                    # Set the initial search if provided
-                    if initial_search and self.discogs_panel:
-                        self.discogs_panel.search_bar.set_search_text(initial_search)
-                        self.discogs_panel._on_search(initial_search)
-                    break
+        # Show discogs search panel
+        if hasattr(self, "dynamic_content"):
+            self.dynamic_content.show_search_panel("discogs", initial_search)
 
     def show_tracks(self):
         """Show tracks content."""
-        from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.main_content import MainContent
 
         # Add main content to playlist area for now
         self.set_playlist_content(MainContent())
 
-        # Add bottom content
-        bottom_content = BottomContent()
-        self.set_bottom_content(bottom_content)
+        # Make sure dynamic content is set up
+        self._setup_search_panels()
 
         # Clear right side
         empty_widget = QWidget()
@@ -540,15 +515,13 @@ class SelectaMainWindow(QMainWindow):
 
     def show_vinyl(self):
         """Show vinyl content."""
-        from selecta.ui.components.bottom_content import BottomContent
         from selecta.ui.components.main_content import MainContent
 
         # Add main content to playlist area for now
         self.set_playlist_content(MainContent())
 
-        # Add bottom content
-        bottom_content = BottomContent()
-        self.set_bottom_content(bottom_content)
+        # Make sure dynamic content is set up
+        self._setup_search_panels()
 
         # Clear right side
         empty_widget = QWidget()

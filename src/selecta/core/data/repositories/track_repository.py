@@ -1,12 +1,14 @@
 """Track repository for database operations."""
 
+import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.db import Track, TrackAttribute, TrackPlatformInfo
+from selecta.core.data.models.db import Genre, Tag, Track, TrackAttribute, TrackPlatformInfo
 from selecta.core.data.types import BaseRepository
 
 
@@ -33,7 +35,16 @@ class TrackRepository(BaseRepository[Track]):
         """
         if self.session is None:
             return None
-        return self.session.query(Track).filter(Track.id == track_id).first()
+        return (
+            self.session.query(Track)
+            .options(
+                joinedload(Track.platform_info),
+                joinedload(Track.genres),
+                joinedload(Track.tags),
+            )
+            .filter(Track.id == track_id)
+            .first()
+        )
 
     def get_by_platform_id(self, platform: str, platform_id: str) -> Track | None:
         """Get a track by its platform-specific ID.
@@ -50,6 +61,11 @@ class TrackRepository(BaseRepository[Track]):
         return (
             self.session.query(Track)
             .join(TrackPlatformInfo)
+            .options(
+                joinedload(Track.platform_info),
+                joinedload(Track.genres),
+                joinedload(Track.tags),
+            )
             .filter(
                 TrackPlatformInfo.platform == platform,
                 TrackPlatformInfo.platform_id == platform_id,
@@ -83,7 +99,13 @@ class TrackRepository(BaseRepository[Track]):
         total = base_query.count()
 
         # Get paginated results
-        tracks = base_query.order_by(Track.artist, Track.title).limit(limit).offset(offset).all()
+        tracks = (
+            base_query.options(joinedload(Track.platform_info))
+            .order_by(Track.artist, Track.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
 
         return tracks, total
 
@@ -162,6 +184,8 @@ class TrackRepository(BaseRepository[Track]):
         info.platform_id = platform_id
         info.uri = uri
         info.platform_data = metadata
+        info.last_synced = datetime.utcnow()
+        info.needs_update = False
         return info
 
     def add_platform_info(
@@ -205,6 +229,10 @@ class TrackRepository(BaseRepository[Track]):
             if metadata is not None:
                 # Use platform_data instead of metadata
                 existing.platform_data = metadata
+            # Update sync timestamp
+            existing.last_synced = datetime.utcnow()
+            existing.needs_update = False
+
             self.session.commit()
             return existing
 
@@ -219,6 +247,27 @@ class TrackRepository(BaseRepository[Track]):
         self.session.add(info)
         self.session.commit()
         return info
+
+    def mark_platform_info_for_update(self, track_id: int, platform: str) -> bool:
+        """Mark platform info as needing an update.
+
+        Args:
+            track_id: The track ID
+            platform: The platform name
+
+        Returns:
+            True if marked, False if not found
+        """
+        if self.session is None:
+            return False
+
+        info = self.get_platform_info(track_id, platform)
+        if not info:
+            return False
+
+        info.needs_update = True
+        self.session.commit()
+        return True
 
     def _create_track_attribute(
         self, track_id: int, name: str, value: float, source: str | None = None
@@ -308,6 +357,25 @@ class TrackRepository(BaseRepository[Track]):
             .first()
         )
 
+    def get_platform_metadata(self, track_id: int, platform: str) -> dict[str, Any] | None:
+        """Get parsed metadata for a specific platform.
+
+        Args:
+            track_id: The track ID
+            platform: The platform name
+
+        Returns:
+            Dictionary of metadata or None if not available
+        """
+        info = self.get_platform_info(track_id, platform)
+        if not info or not info.platform_data:
+            return None
+
+        try:
+            return json.loads(info.platform_data)
+        except json.JSONDecodeError:
+            return None
+
     def get_all_platform_info(self, track_id: int) -> list[TrackPlatformInfo]:
         """Get all platform information for a track.
 
@@ -325,3 +393,284 @@ class TrackRepository(BaseRepository[Track]):
             .filter(TrackPlatformInfo.track_id == track_id)
             .all()
         )
+
+    def get_tracks_needing_update(self, platform: str, limit: int = 100) -> list[Track]:
+        """Get tracks that need platform metadata updates.
+
+        Args:
+            platform: The platform name
+            limit: Maximum number of tracks to return
+
+        Returns:
+            List of tracks needing updates
+        """
+        if self.session is None:
+            return []
+
+        return (
+            self.session.query(Track)
+            .join(TrackPlatformInfo)
+            .options(
+                joinedload(Track.platform_info),
+                joinedload(Track.genres),
+            )
+            .filter(
+                TrackPlatformInfo.platform == platform,
+                TrackPlatformInfo.needs_update == True,  # noqa: E712
+            )
+            .limit(limit)
+            .all()
+        )
+
+    def update_track_from_platform(self, track_id: int, platform: str, fields: list[str]) -> bool:
+        """Update track fields using data from a specific platform.
+
+        Args:
+            track_id: The track ID
+            platform: The platform to use as source
+            fields: List of fields to update
+
+        Returns:
+            True if successful, False otherwise
+        """
+        track = self.get_by_id(track_id)
+        if not track:
+            return False
+
+        # Use the track's method to update from platform
+        updated = track.update_from_platform(platform, fields)
+
+        if updated and self.session:
+            self.session.commit()
+
+        return updated
+
+    def get_or_create_tag(self, name: str, description: str | None = None) -> Tag:
+        """Get an existing tag or create a new one.
+
+        Args:
+            name: Tag name
+            description: Optional tag description
+
+        Returns:
+            The tag instance
+        """
+        if self.session is None:
+            raise ValueError("Session is required for tag operations")
+
+        tag = self.session.query(Tag).filter(Tag.name == name).first()
+
+        if not tag:
+            tag = Tag(name=name, description=description)
+            self.session.add(tag)
+            self.session.commit()
+
+        return tag
+
+    def add_tag_to_track(self, track_id: int, tag_name: str) -> bool:
+        """Add a tag to a track.
+
+        Args:
+            track_id: The track ID
+            tag_name: Name of the tag to add
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.session is None:
+            return False
+
+        track = self.get_by_id(track_id)
+        if not track:
+            return False
+
+        # Get or create the tag
+        tag = self.get_or_create_tag(tag_name)
+
+        # Check if the track already has this tag
+        if tag in track.tags:
+            return True
+
+        # Add the tag to the track
+        track.tags.append(tag)
+        self.session.commit()
+        return True
+
+    def remove_tag_from_track(self, track_id: int, tag_name: str) -> bool:
+        """Remove a tag from a track.
+
+        Args:
+            track_id: The track ID
+            tag_name: Name of the tag to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.session is None:
+            return False
+
+        track = self.get_by_id(track_id)
+        if not track:
+            return False
+
+        # Find the tag
+        tag = self.session.query(Tag).filter(Tag.name == tag_name).first()
+        if not tag or tag not in track.tags:
+            return False
+
+        # Remove the tag from the track
+        track.tags.remove(tag)
+        self.session.commit()
+        return True
+
+    def get_or_create_genre(self, name: str, source: str | None = None) -> Genre:
+        """Get an existing genre or create a new one.
+
+        Args:
+            name: Genre name
+            source: Optional source (e.g., 'spotify', 'discogs')
+
+        Returns:
+            The genre instance
+        """
+        if self.session is None:
+            raise ValueError("Session is required for genre operations")
+
+        genre = self.session.query(Genre).filter(Genre.name == name).first()
+
+        if not genre:
+            genre = Genre(name=name, source=source)
+            self.session.add(genre)
+            self.session.commit()
+
+        return genre
+
+    def set_track_genres(
+        self, track_id: int, genre_names: list[str], source: str | None = None
+    ) -> bool:
+        """Set the genres for a track (replacing existing ones with the same source).
+
+        Args:
+            track_id: The track ID
+            genre_names: List of genre names
+            source: Optional source of the genres
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.session is None:
+            return False
+
+        track = self.get_by_id(track_id)
+        if not track:
+            return False
+
+        # If a source is provided, remove all genres from that source
+        if source:
+            # Get the current genres
+            current_genres = [g for g in track.genres if g.source == source]
+            for genre in current_genres:
+                track.genres.remove(genre)
+
+        # Add the new genres
+        for name in genre_names:
+            genre = self.get_or_create_genre(name, source)
+            if genre not in track.genres:
+                track.genres.append(genre)
+
+        self.session.commit()
+        return True
+
+    def get_tracks_by_tag(
+        self, tag_name: str, limit: int = 50, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """Get tracks with a specific tag.
+
+        Args:
+            tag_name: The tag name
+            limit: Maximum number of tracks to return
+            offset: Number of tracks to skip
+
+        Returns:
+            Tuple of (list of tracks, total count)
+        """
+        if self.session is None:
+            return [], 0
+
+        base_query = self.session.query(Track).join(Track.tags).filter(Tag.name == tag_name)
+
+        total = base_query.count()
+
+        tracks = (
+            base_query.options(joinedload(Track.platform_info))
+            .order_by(Track.artist, Track.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        return tracks, total
+
+    def get_tracks_by_genre(
+        self, genre_name: str, limit: int = 50, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """Get tracks with a specific genre.
+
+        Args:
+            genre_name: The genre name
+            limit: Maximum number of tracks to return
+            offset: Number of tracks to skip
+
+        Returns:
+            Tuple of (list of tracks, total count)
+        """
+        if self.session is None:
+            return [], 0
+
+        base_query = self.session.query(Track).join(Track.genres).filter(Genre.name == genre_name)
+
+        total = base_query.count()
+
+        tracks = (
+            base_query.options(joinedload(Track.platform_info))
+            .order_by(Track.artist, Track.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        return tracks, total
+
+    def get_tracks_by_platform(
+        self, platform: str, limit: int = 50, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """Get tracks that have info from a specific platform.
+
+        Args:
+            platform: The platform name
+            limit: Maximum number of tracks to return
+            offset: Number of tracks to skip
+
+        Returns:
+            Tuple of (list of tracks, total count)
+        """
+        if self.session is None:
+            return [], 0
+
+        base_query = (
+            self.session.query(Track)
+            .join(TrackPlatformInfo)
+            .filter(TrackPlatformInfo.platform == platform)
+        )
+
+        total = base_query.count()
+
+        tracks = (
+            base_query.options(joinedload(Track.platform_info))
+            .order_by(Track.artist, Track.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        return tracks, total

@@ -1,6 +1,19 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from typing import Any
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from selecta.core.data.models.db import ImageSize
+from selecta.ui.components.image_loader import DatabaseImageLoader
 from selecta.ui.components.playlist.track_item import TrackItem
 
 
@@ -73,6 +86,9 @@ class PlatformInfoCard(QFrame):
 class TrackDetailsPanel(QWidget):
     """Panel displaying detailed information about a track."""
 
+    # Shared image loader
+    _db_image_loader = None
+
     def __init__(self, parent=None):
         """Initialize the track details panel.
 
@@ -82,12 +98,43 @@ class TrackDetailsPanel(QWidget):
         super().__init__(parent)
         self.setMinimumWidth(300)
 
+        # Initialize the database image loader if needed
+        if TrackDetailsPanel._db_image_loader is None:
+            TrackDetailsPanel._db_image_loader = DatabaseImageLoader()
+
+        # Connect to image loader signals
+        TrackDetailsPanel._db_image_loader.track_image_loaded.connect(self._on_track_image_loaded)
+        TrackDetailsPanel._db_image_loader.album_image_loaded.connect(self._on_album_image_loaded)
+
+        # Track the current track and album IDs
+        self._current_track_id = None
+        self._current_album_id = None
+
         layout = QVBoxLayout(self)
 
         # Header
         self.header_label = QLabel("Track Details")
         self.header_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(self.header_label)
+
+        # Album artwork
+        self.image_container = QWidget()
+        self.image_layout = QHBoxLayout(self.image_container)
+        self.image_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        self.image_label = QLabel()
+        self.image_label.setFixedSize(200, 200)
+        self.image_label.setScaledContents(True)
+        self.image_label.setStyleSheet("border: 1px solid #555; border-radius: 4px;")
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        # Set placeholder
+        placeholder = QPixmap(200, 200)
+        placeholder.fill(Qt.GlobalColor.darkGray)
+        self.image_label.setPixmap(placeholder)
+
+        self.image_layout.addWidget(self.image_label)
+        layout.addWidget(self.image_container)
 
         # Create scroll area for platform cards
         self.scroll_area = QScrollArea()
@@ -104,31 +151,102 @@ class TrackDetailsPanel(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         layout.addWidget(self.scroll_area, 1)  # 1 = stretch factor
 
-    def set_track(self, track: TrackItem | None):
+    def set_track(self, track: TrackItem | None, platform_info: dict[str, Any] = None):
         """Set the track to display.
 
         Args:
             track: Track item to display details for, or None to clear
+            platform_info: Optional dictionary of platform info objects keyed by platform name
         """
         # Clear existing cards
         self._clear_cards()
 
         if not track:
             self.header_label.setText("No Track Selected")
+            # Reset image
+            placeholder = QPixmap(200, 200)
+            placeholder.fill(Qt.GlobalColor.darkGray)
+            self.image_label.setPixmap(placeholder)
+            self._current_track_id = None
+            self._current_album_id = None
             return
 
         # Update header with track info
         self.header_label.setText(f"{track.artist} - {track.title}")
 
-        # Get platform info from track
-        display_data = track.to_display_data()
-        platform_info = display_data.get("platform_info", [])
+        # Get platform info from track or use provided platform_info
+        if platform_info:
+            # Process platform info from database
+            for platform_name, info in platform_info.items():
+                if info:
+                    # Create card for each platform
+                    platform_data = {
+                        "platform": platform_name,
+                    }
 
-        # Create cards for each platform
-        for info in platform_info:
-            platform = info.get("platform", "unknown")
-            card = PlatformInfoCard(platform, info)
-            self.scroll_layout.insertWidget(0, card)  # Insert at the top
+                    # If platform_data is a JSON string, parse it
+                    if info.platform_data:
+                        import json
+
+                        try:
+                            platform_metadata = json.loads(info.platform_data)
+                            # Add all metadata to platform_data dictionary
+                            for key, value in platform_metadata.items():
+                                platform_data[key] = value
+                        except json.JSONDecodeError:
+                            pass
+
+                    # Add platform ID and URI
+                    platform_data["id"] = info.platform_id
+                    platform_data["uri"] = info.platform_uri
+
+                    # Create and add the card
+                    card = PlatformInfoCard(platform_name, platform_data)
+                    self.scroll_layout.insertWidget(0, card)
+        else:
+            # Get platform info from track's display data
+            display_data = track.to_display_data()
+            track_platform_info = display_data.get("platform_info", [])
+
+            # Create cards for each platform
+            for info in track_platform_info:
+                platform = info.get("platform", "unknown")
+                card = PlatformInfoCard(platform, info)
+                self.scroll_layout.insertWidget(0, card)  # Insert at the top
+
+        # Try to load the track image
+        self._current_track_id = track.track_id
+        self._current_album_id = track.album_id
+
+        # Load track image from database if available
+        if hasattr(track, "has_image") and track.has_image and TrackDetailsPanel._db_image_loader:
+            TrackDetailsPanel._db_image_loader.load_track_image(track.track_id, ImageSize.MEDIUM)
+
+        # Also try to load the album image as a fallback
+        if hasattr(track, "album_id") and track.album_id and TrackDetailsPanel._db_image_loader:
+            TrackDetailsPanel._db_image_loader.load_album_image(track.album_id, ImageSize.MEDIUM)
+
+    def _on_track_image_loaded(self, track_id: int, pixmap: QPixmap):
+        """Handle loaded image from database for a track.
+
+        Args:
+            track_id: The track ID
+            pixmap: The loaded image pixmap
+        """
+        # Check if this image belongs to the current track
+        if track_id == self._current_track_id:
+            self.image_label.setPixmap(pixmap)
+
+    def _on_album_image_loaded(self, album_id: int, pixmap: QPixmap):
+        """Handle loaded image from database for an album.
+
+        Args:
+            album_id: The album ID
+            pixmap: The loaded image pixmap
+        """
+        # Check if this image belongs to the current album and we don't already have a track image
+        if album_id == self._current_album_id and self.image_label.pixmap().width() <= 200:
+            self.image_label.setPixmap(pixmap)
 
     def _clear_cards(self):
         """Clear all platform cards."""

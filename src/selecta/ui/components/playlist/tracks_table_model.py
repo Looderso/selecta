@@ -88,6 +88,14 @@ class TracksTableModel(QAbstractTableModel):
             if column_key == "platforms":
                 # The default empty list makes sure we always return a list
                 return track_data.get("platforms", [])
+            # Return the raw track data for any UserRole requests
+            if column_key == "title":
+                return {
+                    "track_id": track.track_id,
+                    "album_id": track.album_id,
+                    "has_image": track.has_image,
+                    "db_id": track.track_id if hasattr(track, "db_id") else None,
+                }
         elif role == Qt.ItemDataRole.ToolTipRole:
             if column_key == "title":
                 title = dict_str(track_data, "title")
@@ -163,3 +171,21 @@ class TracksTableModel(QAbstractTableModel):
         if 0 <= row < len(self.tracks):
             return self.tracks[row]
         return None
+
+    def get_image_metadata(self, row: int) -> dict[str, Any]:
+        """Get image metadata for the track at the given row.
+
+        Args:
+            row: Row index
+
+        Returns:
+            Dictionary with image metadata (track_id, album_id, has_image)
+        """
+        if 0 <= row < len(self.tracks):
+            track = self.tracks[row]
+            return {
+                "track_id": track.track_id,
+                "album_id": track.album_id,
+                "has_image": track.has_image,
+            }
+        return {}

@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.core.data.models.db import ImageSize
+from selecta.ui.components.image_loader import DatabaseImageLoader
 from selecta.ui.components.spotify.image_loader import ImageLoader
 
 
@@ -20,8 +22,9 @@ class DiscogsTrackItem(QWidget):
     sync_clicked = pyqtSignal(dict)  # Emits release data on sync button click
     add_clicked = pyqtSignal(dict)  # Emits release data on add button click
 
-    # Shared image loader for all track items - reuse the one from Spotify
-    _image_loader = None
+    # Shared image loaders for all track items
+    _url_image_loader = None
+    _db_image_loader = None
 
     def __init__(self, release_data: dict, parent=None):
         """Initialize the Discogs release item.
@@ -45,13 +48,23 @@ class DiscogsTrackItem(QWidget):
         self._can_add = False
         self._can_sync = False
 
-        # Initialize image loader if needed
-        if DiscogsTrackItem._image_loader is None:
-            DiscogsTrackItem._image_loader = ImageLoader()
+        # Track image loading state
+        self._db_image_tried = False
+        self._track_id = release_data.get("id")
+        self._album_id = None
+
+        # Initialize image loaders if needed
+        if DiscogsTrackItem._url_image_loader is None:
+            DiscogsTrackItem._url_image_loader = ImageLoader()
+
+        if DiscogsTrackItem._db_image_loader is None:
+            DiscogsTrackItem._db_image_loader = DatabaseImageLoader()
 
         # Always connect to the image loader signals
         # This is important as each widget needs its own connection
-        DiscogsTrackItem._image_loader.image_loaded.connect(self._on_image_loaded)
+        DiscogsTrackItem._url_image_loader.image_loaded.connect(self._on_url_image_loaded)
+        DiscogsTrackItem._db_image_loader.track_image_loaded.connect(self._on_track_image_loaded)
+        DiscogsTrackItem._db_image_loader.album_image_loaded.connect(self._on_album_image_loaded)
 
         # Apply styling
         self.setStyleSheet("""
@@ -123,12 +136,31 @@ class DiscogsTrackItem(QWidget):
         placeholder.fill(Qt.GlobalColor.darkGray)
         self.cover_label.setPixmap(placeholder)
 
-        # Store the URL for loading
+        # Try to load image from database first if we have a database ID
+        if self._track_id and "db_id" in self.release_data:
+            db_id = self.release_data.get("db_id")
+            self.cover_label.setProperty("trackId", db_id)
+            # Try loading from database
+            if DiscogsTrackItem._db_image_loader:
+                DiscogsTrackItem._db_image_loader.load_track_image(db_id, ImageSize.THUMBNAIL)
+                self._db_image_tried = True
+
+        # If we have an album ID, also try to load that image
+        if "album_id" in self.release_data:
+            self._album_id = self.release_data.get("album_id")
+            self.cover_label.setProperty("albumId", self._album_id)
+            # Try loading album image from database
+            if DiscogsTrackItem._db_image_loader and self._album_id:
+                DiscogsTrackItem._db_image_loader.load_album_image(
+                    self._album_id, ImageSize.THUMBNAIL
+                )
+
+        # Store the URL for loading if we don't have a database image yet
         if cover_image_url:
             self.cover_label.setProperty("imageUrl", cover_image_url)
-            # Start loading the image
-            if DiscogsTrackItem._image_loader:
-                DiscogsTrackItem._image_loader.load_image(cover_image_url, 60)
+            # Start loading the image only if we haven't tried database loading
+            if not self._db_image_tried and DiscogsTrackItem._url_image_loader:
+                DiscogsTrackItem._url_image_loader.load_image(cover_image_url, 60)
 
         layout.addWidget(self.cover_label)
 
@@ -223,16 +255,40 @@ class DiscogsTrackItem(QWidget):
         # Only show buttons if we're hovered and set appropriate state
         self._update_button_visibility()
 
-    def _on_image_loaded(self, url: str, pixmap: QPixmap):
-        """Handle loaded image.
+    def _on_url_image_loaded(self, url: str, pixmap: QPixmap):
+        """Handle loaded image from URL.
 
         Args:
             url: The URL of the loaded image
             pixmap: The loaded image pixmap
         """
-        # Check if this image belongs to this widget
-        if self.cover_label.property("imageUrl") == url:
+        # Check if this image belongs to this widget and no DB image has been loaded
+        if self.cover_label.property("imageUrl") == url and not self._db_image_tried:
             self.cover_label.setPixmap(pixmap)
+
+    def _on_track_image_loaded(self, track_id: int, pixmap: QPixmap):
+        """Handle loaded image from database for a track.
+
+        Args:
+            track_id: The track ID
+            pixmap: The loaded image pixmap
+        """
+        # Check if this image belongs to this widget
+        if self.cover_label.property("trackId") == track_id:
+            self.cover_label.setPixmap(pixmap)
+            self._db_image_tried = True
+
+    def _on_album_image_loaded(self, album_id: int, pixmap: QPixmap):
+        """Handle loaded image from database for an album.
+
+        Args:
+            album_id: The album ID
+            pixmap: The loaded image pixmap
+        """
+        # Check if this image belongs to this widget and we don't already have a track image
+        if self.cover_label.property("albumId") == album_id and not self._db_image_tried:
+            self.cover_label.setPixmap(pixmap)
+            self._db_image_tried = True
 
     def _on_sync_clicked(self):
         """Handle sync button click."""

@@ -14,6 +14,8 @@ class TrackItem(ABC):
         duration_ms: int | None = None,
         album: str | None = None,
         added_at: datetime | None = None,
+        album_id: int | None = None,
+        has_image: bool = False,
     ):
         """Initialize a track item.
 
@@ -24,6 +26,8 @@ class TrackItem(ABC):
             duration_ms: Duration in milliseconds
             album: Album name
             added_at: When the track was added to the playlist
+            album_id: The database ID of the album, if available
+            has_image: Whether this track has an image in the database
         """
         self.track_id = track_id
         self.title = title
@@ -31,6 +35,8 @@ class TrackItem(ABC):
         self.duration_ms = duration_ms
         self.album = album
         self.added_at = added_at
+        self.album_id = album_id
+        self.has_image = has_image
 
     @property
     def duration_str(self) -> str:
