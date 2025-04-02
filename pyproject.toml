@@ -27,6 +27,7 @@ dependencies = [
     "PyQt6-Qt6",     # Qt6 bindings
     "PyQt6-sip",     # SIP bindings
     "qtstylish",     # For modern styling
+    "pyqtspinner",   # Loading spinner
     "pyqtdarktheme", # Dark theme support
     # Garden packages will be added later once the core setup is working
     # API clients
@@ -98,6 +99,7 @@ select = [
 ]
 ignore = [
     "D100",  # Missing docstring in public module
+    "D107",  # Missing docsting in __init__
     "D104",  # Missing docstring in public package
     "E402",  # Imports not first in code
     "E722",  # Allow bare excepts

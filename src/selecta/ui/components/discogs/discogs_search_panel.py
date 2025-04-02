@@ -1,7 +1,7 @@
 """Discogs search panel for searching and displaying Discogs releases."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -21,18 +21,20 @@ from selecta.core.data.repositories.settings_repository import SettingsRepositor
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.platform_factory import PlatformFactory
-from selecta.core.utils.type_helpers import column_to_int
+from selecta.core.utils.type_helpers import column_to_int, has_artist_and_title
+from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.discogs.discogs_track_item import DiscogsTrackItem
+from selecta.ui.components.loading_widget import LoadableWidget
 from selecta.ui.components.search_bar import SearchBar
 
 
-class DiscogsSearchPanel(QWidget):
+class DiscogsSearchPanel(LoadableWidget):
     """Panel for searching and displaying Discogs releases."""
 
     track_synced = pyqtSignal(dict)  # Emitted when a track is synced
     track_added = pyqtSignal(dict)  # Emitted when a track is added
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the Discogs search panel.
 
         Args:
@@ -44,9 +46,9 @@ class DiscogsSearchPanel(QWidget):
         self.setObjectName("discogsSearchPanel")
 
         # Initialize attributes
-        self.result_widgets = []
-        self.message_label = None
-        self.initial_message = None
+        self.result_widgets: list[QWidget] = []
+        self.message_label: QLabel | None = None
+        self.initial_message: QLabel | None = None
 
         # Initialize repositories for database operations
         self.track_repo = TrackRepository()
@@ -57,7 +59,22 @@ class DiscogsSearchPanel(QWidget):
         self.discogs_client = PlatformFactory.create("discogs", self.settings_repo)
 
         # Create layout
-        self._setup_ui()
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Create content widget
+        content_widget = QWidget()
+        self.set_content_widget(content_widget)
+        main_layout.addWidget(content_widget)
+
+        # Create loading widget (will be added in show_loading)
+        loading_widget = self._create_loading_widget("Searching Discogs...")
+        main_layout.addWidget(loading_widget)
+        loading_widget.setVisible(False)
+
+        # Setup the UI in the content widget
+        self._setup_ui(content_widget)
 
         # Use the shared selection state - import here to avoid circular imports
         from selecta.ui.components.selection_state import SelectionState
@@ -69,9 +86,13 @@ class DiscogsSearchPanel(QWidget):
         self.selection_state.track_selected.connect(self._on_global_track_selected)
         self.selection_state.data_changed.connect(self._on_data_changed)
 
-    def _setup_ui(self):
-        """Set up the UI components."""
-        layout = QVBoxLayout(self)
+    def _setup_ui(self, content_widget: QWidget) -> None:
+        """Set up the UI components.
+
+        Args:
+            content_widget: The widget to add UI components to
+        """
+        layout = QVBoxLayout(content_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(12)
 
@@ -151,7 +172,7 @@ class DiscogsSearchPanel(QWidget):
             if isinstance(widget, DiscogsTrackItem):
                 widget.update_button_state(can_add=can_add, can_sync=can_sync)
 
-    def _on_search(self, query: str):
+    def _on_search(self, query: str) -> None:
         """Handle search query submission.
 
         Args:
@@ -165,26 +186,53 @@ class DiscogsSearchPanel(QWidget):
         self.clear_results()
 
         # Show loading state
-        self.show_message("Searching...")
+        self.show_loading(f"Searching Discogs for '{query}'...")
 
-        # Perform search using the Discogs client
         try:
             if (
                 self.discogs_client
                 and self.discogs_client.is_authenticated()
                 and isinstance(self.discogs_client, DiscogsClient)
             ):
-                # Call the search_release method to get releases
-                results = self.discogs_client.search_release(query, limit=10)
-                self.display_results(results)
+                # Run the search in a background thread
+                def perform_search() -> list[Any]:
+                    return self.discogs_client.search_release(query, limit=10)  # type: ignore
+
+                # Create a worker and connect signals
+                thread_manager = ThreadManager()
+                worker = thread_manager.run_task(perform_search)
+
+                # Handle the results
+                worker.signals.result.connect(lambda results: self._handle_search_results(results))
+                worker.signals.error.connect(lambda error_msg: self._handle_search_error(error_msg))
+                worker.signals.finished.connect(lambda: self.hide_loading())
+
             else:
+                self.hide_loading()
                 self.show_message(
                     "Not connected to Discogs. Please authenticate in the settings panel."
                 )
         except Exception as e:
+            self.hide_loading()
             self.show_message(f"Error searching Discogs: {str(e)}")
 
-    def display_results(self, results):
+    def _handle_search_results(self, results: list[Any]) -> None:
+        """Handle the search results from the background thread.
+
+        Args:
+            results: Search results from Discogs API
+        """
+        self.display_results(results)
+
+    def _handle_search_error(self, error_msg: str) -> None:
+        """Handle errors from the background thread.
+
+        Args:
+            error_msg: Error message
+        """
+        self.show_message(f"Error searching Discogs: {error_msg}")
+
+    def display_results(self, results: list[Any]) -> None:
         """Display search results.
 
         Args:
@@ -200,11 +248,9 @@ class DiscogsSearchPanel(QWidget):
         # Add results to the layout
         for release in results:
             # Convert DiscogsRelease to a formatted dict for our UI
-            from selecta.core.utils.type_helpers import has_artist_and_title
-
             if has_artist_and_title(release):
                 # Create a compatible dict from DiscogsRelease object
-                release_data = {
+                release_data: dict[str, Any] = {
                     "id": release.id,
                     "title": release.title,
                     "artist": release.artist,
@@ -219,7 +265,7 @@ class DiscogsSearchPanel(QWidget):
                 }
             else:
                 # Use the release as is (assuming it's already a dict)
-                release_data = release
+                release_data = cast(dict[str, Any], release)
 
             track_widget = DiscogsTrackItem(release_data)
             track_widget.sync_clicked.connect(self._on_track_sync)
@@ -233,15 +279,15 @@ class DiscogsSearchPanel(QWidget):
         # Add a spacer at the end for better layout
         self.results_layout.addStretch(1)
 
-    def clear_results(self):
+    def clear_results(self) -> None:
         """Clear all search results."""
         # Remove the initial message if it exists
-        if hasattr(self, "initial_message") and self.initial_message is not None:
+        if self.initial_message is not None:
             self.initial_message.setParent(None)
             self.initial_message = None
 
         # Remove any message widget
-        if hasattr(self, "message_label") and self.message_label is not None:
+        if self.message_label is not None:
             self.message_label.setParent(None)
             self.message_label = None
 
@@ -257,7 +303,7 @@ class DiscogsSearchPanel(QWidget):
             if spacer_item and spacer_item.spacerItem():
                 self.results_layout.removeItem(spacer_item)
 
-    def show_message(self, message: str):
+    def show_message(self, message: str) -> None:
         """Show a message in the results area.
 
         Args:
@@ -273,7 +319,7 @@ class DiscogsSearchPanel(QWidget):
         self.results_layout.addWidget(self.message_label)
         self.results_layout.addStretch(1)
 
-    def _on_track_sync(self, release_data: dict):
+    def _on_track_sync(self, release_data: dict[str, Any]) -> None:
         """Handle track sync button click.
 
         Args:
@@ -312,28 +358,57 @@ class DiscogsSearchPanel(QWidget):
             # Convert to JSON
             platform_data_json = json.dumps(platform_data)
 
-            # Add platform info to the track
-            self.track_repo.add_platform_info(
-                track_id, "discogs", str(discogs_id), discogs_uri, platform_data_json
-            )
+            # Show loading overlay
+            self.show_loading("Syncing track with Discogs...")
 
-            # Emit signal with the synchronized track
-            self.track_synced.emit(release_data)
+            # Run sync operation in background
+            def sync_task() -> dict[str, Any]:
+                # Add platform info to the track
+                self.track_repo.add_platform_info(
+                    track_id, "discogs", str(discogs_id), discogs_uri, platform_data_json
+                )
+                return release_data
 
-            # Notify that data has changed
-            self.selection_state.notify_data_changed()
+            thread_manager = ThreadManager()
+            worker = thread_manager.run_task(sync_task)
 
-            # Show success message
-            self.show_message(f"Track synchronized: {release_data.get('title')}")
-
-            # Wait a moment, then restore the search results
-            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+            worker.signals.result.connect(lambda rd: self._handle_sync_complete(rd))
+            worker.signals.error.connect(lambda err: self._handle_sync_error(err))
+            worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
+            self.hide_loading()
             logger.exception(f"Error syncing track: {e}")
             QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
 
-    def _on_track_add(self, release_data: dict):
+    def _handle_sync_complete(self, release_data: dict[str, Any]) -> None:
+        """Handle completion of track sync.
+
+        Args:
+            release_data: The release data that was synced
+        """
+        # Emit signal with the synchronized track
+        self.track_synced.emit(release_data)
+
+        # Notify that data has changed
+        self.selection_state.notify_data_changed()
+
+        # Show success message
+        self.show_message(f"Track synchronized: {release_data.get('title')}")
+
+        # Wait a moment, then restore the search results
+        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+    def _handle_sync_error(self, error_msg: str) -> None:
+        """Handle error during track sync.
+
+        Args:
+            error_msg: The error message
+        """
+        logger.error(f"Error syncing track: {error_msg}")
+        QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
+
+    def _on_track_add(self, release_data: dict[str, Any]) -> None:
         """Handle track add button click.
 
         Args:
@@ -369,57 +444,91 @@ class DiscogsSearchPanel(QWidget):
                 QMessageBox.warning(self, "Add Error", f"Track already exists: {artist} - {title}")
                 return
 
-            # Create a new track
-            new_track_data = {
-                "title": title,
-                "artist": artist,
-            }
+            # Show loading overlay
+            self.show_loading(f"Adding {artist} - {title} to playlist...")
 
-            # Create the track
-            track = self.track_repo.create(new_track_data)
-
-            # Add Discogs platform info
-            discogs_id = release_data.get("id")
-            discogs_uri = release_data.get("uri")
-
-            if discogs_id and discogs_uri:
-                # Create platform data dictionary
-                platform_data = {
-                    "release_id": discogs_id,
-                    "year": release_data.get("year", ""),
-                    "label": release_data.get("label", ""),
-                    "catno": release_data.get("catno", ""),
-                    "format": release_data.get("format", []),
-                    "genre": release_data.get("genre", []),
+            # Run add operation in background
+            def add_task() -> dict[str, Any]:
+                # Create a new track
+                new_track_data = {
+                    "title": title,
+                    "artist": artist,
                 }
 
-                # Convert to JSON
-                platform_data_json = json.dumps(platform_data)
+                # Create the track
+                track = self.track_repo.create(new_track_data)
 
-                # Add platform info to the track
-                self.track_repo.add_platform_info(
-                    column_to_int(track.id),
-                    "discogs",
-                    str(discogs_id),
-                    discogs_uri,
-                    platform_data_json,
-                )
+                # Add Discogs platform info
+                discogs_id = release_data.get("id")
+                discogs_uri = release_data.get("uri")
 
-            # Add track to the playlist
-            self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
+                if discogs_id and discogs_uri:
+                    # Create platform data dictionary
+                    platform_data = {
+                        "release_id": discogs_id,
+                        "year": release_data.get("year", ""),
+                        "label": release_data.get("label", ""),
+                        "catno": release_data.get("catno", ""),
+                        "format": release_data.get("format", []),
+                        "genre": release_data.get("genre", []),
+                    }
 
-            # Emit signal with the added track
-            self.track_added.emit(release_data)
+                    # Convert to JSON
+                    platform_data_json = json.dumps(platform_data)
 
-            # Notify that data has changed
-            self.selection_state.notify_data_changed()
+                    # Add platform info to the track
+                    self.track_repo.add_platform_info(
+                        column_to_int(track.id),
+                        "discogs",
+                        str(discogs_id),
+                        discogs_uri,
+                        platform_data_json,
+                    )
 
-            # Show success message
-            self.show_message(f"Track added: {artist} - {title}")
+                # Add track to the playlist
+                self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
 
-            # Wait a moment, then restore the search results
-            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+                return release_data
+
+            thread_manager = ThreadManager()
+            worker = thread_manager.run_task(add_task)
+
+            worker.signals.result.connect(lambda td: self._handle_add_complete(td))
+            worker.signals.error.connect(lambda err: self._handle_add_error(err))
+            worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
+            self.hide_loading()
             logger.exception(f"Error adding track: {e}")
             QMessageBox.critical(self, "Add Error", f"Error adding track: {str(e)}")
+
+    def _handle_add_complete(self, release_data: dict[str, Any]) -> None:
+        """Handle completion of track add.
+
+        Args:
+            release_data: The release data that was added
+        """
+        # Extract title and artist for display
+        title = release_data.get("title", "")
+        artist = release_data.get("artist", "")
+
+        # Emit signal with the added track
+        self.track_added.emit(release_data)
+
+        # Notify that data has changed
+        self.selection_state.notify_data_changed()
+
+        # Show success message
+        self.show_message(f"Track added: {artist} - {title}")
+
+        # Wait a moment, then restore the search results
+        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+    def _handle_add_error(self, error_msg: str) -> None:
+        """Handle error during track add.
+
+        Args:
+            error_msg: The error message
+        """
+        logger.error(f"Error adding track: {error_msg}")
+        QMessageBox.critical(self, "Add Error", f"Error adding track: {error_msg}")

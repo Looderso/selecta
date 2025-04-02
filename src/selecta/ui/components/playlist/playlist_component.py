@@ -1,6 +1,8 @@
+from contextlib import suppress
 from typing import Any
 
 from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QMovie
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -9,6 +11,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QTableView,
     QTabWidget,
     QTreeView,
@@ -16,6 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.playlist.platform_icon_delegate import PlatformIconDelegate
 from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
@@ -24,75 +28,140 @@ from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
 from selecta.ui.components.search_bar import SearchBar
 
 
-class PlaylistComponent(QWidget):
-    """A component for displaying and navigating playlists."""
+class LoadingWidget(QWidget):
+    """A widget that displays a loading spinner and message."""
 
-    playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
-    track_selected = pyqtSignal(object)  # Emits the selected track item
-
-    def __init__(self, data_provider: PlaylistDataProvider, parent: QWidget | None = None):
-        """Initialize the playlist component.
+    def __init__(self, message: str = "Loading...", parent: QWidget | None = None) -> None:
+        """Initialize the loading widget.
 
         Args:
-            data_provider: Provider for playlist data
+            message: The message to display
             parent: Parent widget
         """
         super().__init__(parent)
-        self.data_provider = data_provider
-        self.data_provider.register_refresh_callback(self.refresh)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(10, 10, 10, 10)
 
-        self.current_playlist_id = None
-        self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
+        # Create spinner label
+        self.spinner_label = QLabel()
+        self.spinner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Create the details panel but don't add it to our layout
-        # It will be managed by the main window
-        self.details_panel = TrackDetailsPanel()
-        self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
+        # Create the spinner movie
+        self.spinner_movie = QMovie("resources/spinner.gif")
+        if self.spinner_movie.isValid():
+            self.spinner_label.setMovie(self.spinner_movie)
+            self.spinner_movie.start()
+        else:
+            # Fallback to a text indicator
+            self.spinner_label.setText("⟳")
+            self.spinner_label.setStyleSheet("font-size: 48px; color: #888; margin: 10px;")
 
-        # Use the shared selection state - import here to avoid circular imports
-        from selecta.ui.components.selection_state import SelectionState
+        # Create message label
+        self.message_label = QLabel(message)
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message_label.setStyleSheet("color: #888; font-size: 14px; margin: 10px;")
 
-        self.selection_state = SelectionState()
-        self.selection_state.data_changed.connect(self._on_data_changed)
+        # Add to layout
+        layout.addWidget(self.spinner_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.message_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self._setup_ui()
-        self._connect_signals()
-        self._load_playlists()
+    def set_message(self, message: str) -> None:
+        """Set the loading message.
 
-    def _setup_ui(self) -> None:
-        """Set up the UI components."""
-        layout = QHBoxLayout(self)
+        Args:
+            message: The new message to display
+        """
+        self.message_label.setText(message)
+
+    def showEvent(self, event: Any) -> None:
+        """Handle show event.
+
+        Args:
+            event: The show event
+        """
+        super().showEvent(event)
+        if self.spinner_movie.isValid():
+            self.spinner_movie.start()
+
+    def hideEvent(self, event: Any) -> None:
+        """Handle hide event.
+
+        Args:
+            event: The hide event
+        """
+        if self.spinner_movie.isValid():
+            self.spinner_movie.stop()
+        super().hideEvent(event)
+
+
+class PlaylistTreeContainer(QWidget):
+    """Container for the playlist tree with loading state."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the playlist tree container.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+
+        # Create layout
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Set our widget to expand both horizontally and vertically
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Create stacked widget for content/loading states
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget)
 
-        # Create a splitter to allow resizing
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setHandleWidth(2)
-        self.splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        # Left side - Playlist tree
+        # Create tree view
         self.playlist_tree = QTreeView()
         self.playlist_tree.setHeaderHidden(True)
         self.playlist_tree.setExpandsOnDoubleClick(True)
         self.playlist_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.playlist_tree.setMinimumWidth(200)  # Ensure playlist tree has a reasonable width
+        self.playlist_tree.setMinimumWidth(200)
         self.playlist_tree.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
-        # Create model for the playlist tree
-        self.playlist_model = PlaylistTreeModel()
-        self.playlist_tree.setModel(self.playlist_model)
+        # Create loading widget
+        self.loading_widget = LoadingWidget("Loading playlists...")
 
-        # Middle - Container for track list and header
-        self.middle_container = QWidget()
-        self.middle_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self.middle_layout = QVBoxLayout(self.middle_container)
-        self.middle_layout.setContentsMargins(0, 0, 0, 0)
-        self.middle_layout.setSpacing(0)
+        # Add both to stacked widget
+        self.stacked_widget.addWidget(self.playlist_tree)
+        self.stacked_widget.addWidget(self.loading_widget)
+
+        # Show tree view by default
+        self.stacked_widget.setCurrentWidget(self.playlist_tree)
+
+    def show_loading(self, message: str = "Loading playlists...") -> None:
+        """Show loading state.
+
+        Args:
+            message: Loading message to display
+        """
+        self.loading_widget.set_message(message)
+        self.stacked_widget.setCurrentWidget(self.loading_widget)
+
+    def hide_loading(self) -> None:
+        """Hide loading state and show tree view."""
+        self.stacked_widget.setCurrentWidget(self.playlist_tree)
+
+
+class TrackListContainer(QWidget):
+    """Container for the track list with loading state."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the track list container.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+
+        # Create layout
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
 
         # Header container with playlist info and search bar
         self.header_container = QWidget()
@@ -108,15 +177,132 @@ class PlaylistComponent(QWidget):
         self.search_bar = SearchBar(placeholder_text="Search in playlist...")
         self.header_layout.addWidget(self.search_bar, 1)  # 1 = stretch factor
 
-        self.middle_layout.addWidget(self.header_container)
+        self._layout.addWidget(self.header_container)
 
-        # Tracks table
+        # Create stacked widget for content/loading states
+        self.stacked_widget = QStackedWidget()
+        self._layout.addWidget(self.stacked_widget, 1)  # 1 = stretch factor
+
+        # Create tracks table
         self.tracks_table = QTableView()
         self.tracks_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tracks_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # type: ignore
         self.tracks_table.verticalHeader().setVisible(False)  # type: ignore
         self.tracks_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Create loading widget
+        self.loading_widget = LoadingWidget("Loading tracks...")
+
+        # Create message widget for displaying messages
+        self.message_container = QWidget()
+        message_layout = QVBoxLayout(self.message_container)
+        message_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message_label = QLabel("Select a playlist")
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message_label.setStyleSheet("color: #888; font-size: 16px; margin: 20px;")
+        message_layout.addWidget(self.message_label)
+
+        # Add all to stacked widget
+        self.stacked_widget.addWidget(self.tracks_table)
+        self.stacked_widget.addWidget(self.loading_widget)
+        self.stacked_widget.addWidget(self.message_container)
+
+        # Show message by default
+        self.stacked_widget.setCurrentWidget(self.message_container)
+
+    def show_loading(self, message: str = "Loading tracks...") -> None:
+        """Show loading state.
+
+        Args:
+            message: Loading message to display
+        """
+        self.loading_widget.set_message(message)
+        self.stacked_widget.setCurrentWidget(self.loading_widget)
+
+    def hide_loading(self) -> None:
+        """Hide loading state and show tracks table."""
+        self.stacked_widget.setCurrentWidget(self.tracks_table)
+
+    def show_message(self, message: str) -> None:
+        """Show a message.
+
+        Args:
+            message: Message to display
+        """
+        self.message_label.setText(message)
+        self.stacked_widget.setCurrentWidget(self.message_container)
+
+
+class PlaylistComponent(QWidget):
+    """A component for displaying and navigating playlists."""
+
+    playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
+    track_selected = pyqtSignal(object)  # Emits the selected track item
+
+    def __init__(
+        self, data_provider: PlaylistDataProvider | None = None, parent: QWidget | None = None
+    ) -> None:
+        """Initialize the playlist component.
+
+        Args:
+            data_provider: Provider for playlist data (can be set later with set_data_provider)
+            parent: Parent widget
+        """
+        super().__init__(parent)
+
+        # Initialize instance variables
+        self.data_provider: PlaylistDataProvider | None = None
+        self.current_playlist_id: int | None = None
+        self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
+
+        # Create the details panel but don't add it to our layout
+        # It will be managed by the main window
+        self.details_panel = TrackDetailsPanel()
+        self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
+
+        # Use the shared selection state - import here to avoid circular imports
+        from selecta.ui.components.selection_state import SelectionState
+
+        self.selection_state = SelectionState()
+        self.selection_state.data_changed.connect(self._on_data_changed)
+
+        # Set up the UI
+        self._setup_ui()
+        self._connect_signals()
+
+        # If a data provider was given, initialize with it
+        if data_provider:
+            self.set_data_provider(data_provider)
+
+    def _setup_ui(self) -> None:
+        """Set up the UI components."""
+        # Main layout
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Set our widget to expand both horizontally and vertically
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Create a splitter to allow resizing
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setHandleWidth(2)
+        self.splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Create playlist tree container (left side)
+        self.playlist_container = PlaylistTreeContainer()
+        self.playlist_tree = self.playlist_container.playlist_tree
+
+        # Create model for the playlist tree
+        self.playlist_model = PlaylistTreeModel()
+        self.playlist_tree.setModel(self.playlist_model)
+
+        # Create track list container (right side)
+        self.track_container = TrackListContainer()
+        self.tracks_table = self.track_container.tracks_table
+        self.playlist_header = self.track_container.playlist_header
+        self.search_bar = self.track_container.search_bar
 
         # Create model for the tracks table
         self.tracks_model = TracksTableModel()
@@ -133,13 +319,13 @@ class PlaylistComponent(QWidget):
                 platforms_column_index, PlatformIconDelegate(self.tracks_table)
             )
 
-        self.middle_layout.addWidget(self.tracks_table, 1)  # Add with stretch factor of 1
-
+        # Set context menu for tracks table
         self.tracks_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tracks_table.customContextMenuRequested.connect(self._show_track_context_menu)
-        # Add widgets to splitter
-        self.splitter.addWidget(self.playlist_tree)
-        self.splitter.addWidget(self.middle_container)
+
+        # Add containers to splitter
+        self.splitter.addWidget(self.playlist_container)
+        self.splitter.addWidget(self.track_container)
 
         # Add the splitter to the main layout
         layout.addWidget(self.splitter)
@@ -147,7 +333,7 @@ class PlaylistComponent(QWidget):
         # Set the desired proportions once the widget is shown
         QTimer.singleShot(0, self._apply_splitter_ratio)
 
-    def _apply_splitter_ratio(self):
+    def _apply_splitter_ratio(self) -> None:
         """Apply the desired ratio to the splitter after widget initialization."""
         # Get the total width
         total_width = self.splitter.width()
@@ -183,6 +369,39 @@ class PlaylistComponent(QWidget):
         # When a search completion is highlighted, highlight that track
         self.search_bar.completer_highlighted.connect(self._on_search_completion_highlighted)
 
+    def set_data_provider(self, data_provider: PlaylistDataProvider) -> None:
+        """Set or change the data provider and load playlists.
+
+        Args:
+            data_provider: The new data provider to use
+        """
+        # Clear current data
+        self.playlist_model.clear()
+        self.tracks_model.clear()
+        self.current_tracks = []
+        self.current_playlist_id = None
+        self.playlist_header.setText("Select a playlist")
+        self.details_panel.set_track(None)
+
+        # Show message in track area
+        self.track_container.show_message("Select a playlist")
+
+        # If we had a previous provider, unregister our refresh callback
+        if self.data_provider:
+            with suppress(AttributeError):
+                # Some providers might not have this method
+                self.data_provider.unregister_refresh_callback(self.refresh)
+
+        # Set the new provider
+        self.data_provider = data_provider
+
+        # Register our refresh callback with the new provider
+        if self.data_provider:
+            self.data_provider.register_refresh_callback(self.refresh)
+
+            # Load playlists from the new provider
+            self._load_playlists()
+
     def _on_search_completion_highlighted(self, text: str) -> None:
         """Handle highlighting of a search completion item.
 
@@ -214,11 +433,49 @@ class PlaylistComponent(QWidget):
 
     def _load_playlists(self) -> None:
         """Load playlists from the data provider."""
-        playlists = self.data_provider.get_all_playlists()
-        self.playlist_model.add_items(playlists)
+        if not self.data_provider:
+            return
 
-        # Automatically expand all folders
+        # Show loading state in the playlist tree area only
+        self.playlist_container.show_loading("Loading playlists...")
+
+        def load_playlists_task() -> list[Any]:
+            if self.data_provider is None:
+                return []
+            return self.data_provider.get_all_playlists()
+
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(load_playlists_task)
+
+        worker.signals.result.connect(self._handle_playlists_loaded)
+        worker.signals.error.connect(
+            lambda err: self._handle_loading_error("Failed to load playlists", err)
+        )
+        worker.signals.finished.connect(lambda: self.playlist_container.hide_loading())
+
+    def _handle_playlists_loaded(self, playlists: list[Any]) -> None:
+        """Handle loaded playlists.
+
+        Args:
+            playlists: List of playlist items to display
+        """
+        self.playlist_model.add_items(playlists)
         self._expand_all_folders()
+
+    def _handle_loading_error(self, context: str, error_msg: str) -> None:
+        """Handle loading errors.
+
+        Args:
+            context: Description of the operation that failed
+            error_msg: The error message
+        """
+        from PyQt6.QtWidgets import QMessageBox
+
+        QMessageBox.critical(self, "Loading Error", f"{context}: {error_msg}")
+
+        # Hide all loading indicators
+        self.playlist_container.hide_loading()
+        self.track_container.hide_loading()
 
     def _expand_all_folders(self) -> None:
         """Expand all folder items in the tree view."""
@@ -236,7 +493,14 @@ class PlaylistComponent(QWidget):
 
     def _on_playlist_selected(self) -> None:
         """Handle playlist selection."""
-        indexes = self.playlist_tree.selectionModel().selectedIndexes()  # type: ignore
+        if not self.data_provider:
+            return
+
+        selection_model = self.playlist_tree.selectionModel()
+        if selection_model is None:
+            return
+
+        indexes = selection_model.selectedIndexes()
         if not indexes:
             return
 
@@ -250,19 +514,43 @@ class PlaylistComponent(QWidget):
         if item.is_folder():
             self.playlist_header.setText(f"Folder: {item.name}")
             self.tracks_model.clear()
-            # Clear track details
             self.details_panel.set_track(None)
-            # Clear search suggestions
             self.search_bar.set_completion_items(None)
             self.current_tracks = []
+            self.track_container.show_message("This is a folder. Select a playlist to view tracks.")
             return
 
-        # Load tracks for the selected playlist
+        # Load tracks for the selected playlist in background
         self.current_playlist_id = item.item_id
-        self.playlist_header.setText(f"Playlist: {item.name} ({item.track_count} tracks)")
+        self.playlist_header.setText(f"Loading playlist: {item.name}...")
 
-        self.current_tracks = self.data_provider.get_playlist_tracks(item.item_id)
+        # Show loading state only in the track table area
+        self.track_container.show_loading(f"Loading tracks for {item.name}...")
+
+        def load_tracks_task() -> list[Any]:
+            if self.data_provider is None:
+                return []
+            return self.data_provider.get_playlist_tracks(item.item_id)
+
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(load_tracks_task)
+
+        worker.signals.result.connect(lambda tracks: self._handle_tracks_loaded(item, tracks))
+        worker.signals.error.connect(
+            lambda err: self._handle_loading_error("Failed to load tracks", err)
+        )
+        worker.signals.finished.connect(lambda: self.track_container.hide_loading())
+
+    def _handle_tracks_loaded(self, playlist_item: Any, tracks: list[Any]) -> None:
+        """Handle loaded tracks.
+
+        Args:
+            playlist_item: The playlist item that was selected
+            tracks: List of track items to display
+        """
+        self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
+        self.playlist_header.setText(f"Playlist: {playlist_item.name} ({len(tracks)} tracks)")
 
         # Update search bar suggestions with track names
         self._update_search_suggestions()
@@ -271,7 +559,11 @@ class PlaylistComponent(QWidget):
         self.details_panel.set_track(None)
 
         # Emit signal with the selected playlist
-        self.playlist_selected.emit(item)
+        self.playlist_selected.emit(playlist_item)
+
+        # If no tracks found, show a message
+        if not tracks:
+            self.track_container.show_message("This playlist is empty.")
 
     def _update_search_suggestions(self) -> None:
         """Update search bar suggestions with current tracks."""
@@ -285,7 +577,11 @@ class PlaylistComponent(QWidget):
 
     def _on_track_selected(self) -> None:
         """Handle track selection."""
-        indexes = self.tracks_table.selectionModel().selectedIndexes()  # type: ignore
+        selection_model = self.tracks_table.selectionModel()
+        if selection_model is None:
+            return
+
+        indexes = selection_model.selectedIndexes()
         if not indexes:
             # Clear track details if no track is selected
             self.details_panel.set_track(None)
@@ -318,6 +614,7 @@ class PlaylistComponent(QWidget):
 
         # Always show all tracks
         self.tracks_model.set_tracks(self.current_tracks)
+        self.track_container.hide_loading()  # Make sure we are showing the tracks table
 
         if not search_text:
             return
@@ -352,7 +649,7 @@ class PlaylistComponent(QWidget):
             return
 
         # Find the track that matches the selected suggestion
-        for _, track in enumerate(self.current_tracks):
+        for track in self.current_tracks:
             track_text = f"{track.artist} - {track.title}"
             if track_text == text:
                 # Find the track in the current view (might be filtered)
@@ -373,25 +670,84 @@ class PlaylistComponent(QWidget):
 
     def refresh(self) -> None:
         """Refresh the playlist and track data."""
+        if not self.data_provider:
+            return
+
         # Remember current selections
         current_playlist_id = self.current_playlist_id
 
-        # Reload playlists
+        # Show separate loading states for each section
+        self.playlist_container.show_loading("Refreshing playlists...")
+        if current_playlist_id is not None:
+            self.track_container.show_loading("Refreshing tracks...")
+
+        # Run the refresh in a background thread
+        def refresh_task() -> dict[str, Any]:
+            if self.data_provider is None:
+                return {"playlists": [], "tracks": None}
+
+            # Reload playlists
+            playlists = self.data_provider.get_all_playlists()
+
+            # Reload tracks if a playlist was selected
+            tracks = None
+            if current_playlist_id is not None:
+                tracks = self.data_provider.get_playlist_tracks(current_playlist_id)
+
+            return {"playlists": playlists, "tracks": tracks}
+
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(refresh_task)
+
+        worker.signals.result.connect(self._handle_refresh_complete)
+        worker.signals.error.connect(
+            lambda err: self._handle_loading_error("Failed to refresh data", err)
+        )
+        worker.signals.finished.connect(self._handle_refresh_finished)
+
+    def _handle_refresh_finished(self) -> None:
+        """Handle completion of refresh operation."""
+        # Hide loading indicators
+        self.playlist_container.hide_loading()
+        self.track_container.hide_loading()
+
+    def _handle_refresh_complete(self, result: dict[str, Any]) -> None:
+        """Handle data from refresh operation.
+
+        Args:
+            result: Dictionary containing playlists and tracks data
+        """
+        # Update playlists
         self.playlist_model.clear()
-        playlists = self.data_provider.get_all_playlists()
-        self.playlist_model.add_items(playlists)
+        self.playlist_model.add_items(result["playlists"])
+        self._expand_all_folders()
 
-        # Reload tracks if a playlist was selected
-        if current_playlist_id is not None:  # type: ignore[unreachable]
-            self.current_playlist_id = current_playlist_id  # type: ignore[unreachable]
-            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)  # type: ignore[unreachable]
-            self.tracks_model.set_tracks(self.current_tracks)  # type: ignore[unreachable]
-            self._update_search_suggestions()  # type: ignore[unreachable]
+        # Update tracks if they were loaded
+        if result["tracks"] is not None:
+            self.current_tracks = result["tracks"]
+            self.tracks_model.set_tracks(self.current_tracks)
+            self._update_search_suggestions()
 
-            # Clear track details
-            self.details_panel.set_track(None)
+            # Update the playlist header
+            if self.current_playlist_id is not None:
+                # Find the playlist item to get its name
+                for row in range(self.playlist_model.rowCount()):
+                    index = self.playlist_model.index(row, 0)
+                    item = index.internalPointer()
+                    if hasattr(item, "item_id") and item.item_id == self.current_playlist_id:
+                        self.playlist_header.setText(
+                            f"Playlist: {item.name} ({len(self.current_tracks)} tracks)"
+                        )
+                        break
 
-    def _show_track_context_menu(self, position: Any):
+            # If no tracks, show a message
+            if not self.current_tracks:
+                self.track_container.show_message("This playlist is empty.")
+
+        # Clear track details
+        self.details_panel.set_track(None)
+
+    def _show_track_context_menu(self, position: Any) -> None:
         """Show context menu for tracks table.
 
         Args:
@@ -421,7 +777,7 @@ class PlaylistComponent(QWidget):
         # Show the menu at the cursor position
         menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
 
-    def _search_on_spotify(self, track: Any):
+    def _search_on_spotify(self, track: Any) -> None:
         """Search for a track on Spotify.
 
         Args:
@@ -467,7 +823,7 @@ class PlaylistComponent(QWidget):
                                 spotify_panel._on_search(search_query)
                         break
 
-    def _search_on_discogs(self, track: Any):
+    def _search_on_discogs(self, track: Any) -> None:
         """Search for a track on Discogs.
 
         Args:
@@ -516,38 +872,6 @@ class PlaylistComponent(QWidget):
 
     def _on_data_changed(self) -> None:
         """Handle notification that data has changed."""
-        # Remember the current playlist and selection
-        current_playlist_id = self.current_playlist_id
-        selected_track = None
-
-        # Get the currently selected track if any
-        indexes = self.tracks_table.selectionModel().selectedIndexes()  # type: ignore
-        if indexes:
-            row = indexes[0].row()
-            selected_track = self.tracks_model.get_track(row)
-
-        # If we have a current playlist, refresh its contents
-        if current_playlist_id is not None:  # type: ignore[unreachable]
-            # Reload the tracks for this playlist
-            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)  # type: ignore[unreachable]
-            self.tracks_model.set_tracks(self.current_tracks)  # type: ignore[unreachable]
-
-            # Update search suggestions
-            self._update_search_suggestions()
-
-            # If we had a selected track, try to reselect it
-            if selected_track:
-                for row in range(self.tracks_model.rowCount()):
-                    track = self.tracks_model.get_track(row)
-                    if track and track.track_id == selected_track.track_id:
-                        # Reselect this track
-                        index = self.tracks_model.index(row, 0)
-                        selection_model = self.tracks_table.selectionModel()
-                        if selection_model:
-                            selection_model.select(
-                                index,
-                                QItemSelectionModel.SelectionFlag.ClearAndSelect
-                                | QItemSelectionModel.SelectionFlag.Rows,
-                            )
-                        self.tracks_table.scrollTo(index)
-                        break
+        # Only refresh if we have a selected playlist
+        if self.data_provider is not None and self.current_playlist_id is not None:
+            self.refresh()

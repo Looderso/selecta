@@ -345,7 +345,7 @@ class SelectaMainWindow(QMainWindow):
             self._show_platform_error_message(platform, str(e))
 
     def _create_playlist_view(self, data_provider, is_authenticated=True):
-        """Create and display the playlist view with the given data provider.
+        """Create or update the playlist view with the given data provider.
 
         Args:
             data_provider: The playlist data provider
@@ -353,14 +353,23 @@ class SelectaMainWindow(QMainWindow):
         """
         from selecta.ui.components.playlist.playlist_component import PlaylistComponent
 
-        # Create a new playlist component
-        playlist_component = PlaylistComponent(data_provider)
+        # Check if we already have a playlist component in the playlist area
+        playlist_component = None
+        for i in range(self.playlist_layout.count()):
+            widget = self.playlist_layout.itemAt(i).widget()
+            if isinstance(widget, PlaylistComponent):
+                playlist_component = widget
+                break
 
-        # Clear current content in playlist area
-        self.set_playlist_content(playlist_component)
+        # If we don't have a playlist component yet, create one
+        if not playlist_component:
+            playlist_component = PlaylistComponent()
+            self.set_playlist_content(playlist_component)
+            # Store a reference to the details panel
+            self.track_details_panel = playlist_component.details_panel
 
-        # Store a reference to the details panel
-        self.track_details_panel = playlist_component.details_panel
+        # Update the data provider in the existing component
+        playlist_component.set_data_provider(data_provider)
 
     def _show_auth_required_message(self, platform: str):
         """Show a message when authentication is required.
