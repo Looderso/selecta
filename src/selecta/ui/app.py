@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
+from selecta.ui.import_rekordbox_dialog import ImportRekordboxDialog
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
@@ -552,6 +553,179 @@ class SelectaMainWindow(QMainWindow):
 
         # Set the widget as the playlist content
         self.set_playlist_content(error_widget)
+
+    def on_local_database_folder_changed(self, folder_path: str):
+        """Handle when the local database folder is changed.
+
+        Args:
+            folder_path: The new folder path
+        """
+        from loguru import logger
+
+        logger.info(f"Local database folder changed to: {folder_path}")
+
+        # Show a notification to the user
+        from PyQt6.QtWidgets import QMessageBox
+
+        # Ask if the user wants to scan the folder now
+        response = QMessageBox.question(
+            self,
+            "Scan Folder?",
+            f"Do you want to scan the folder '{folder_path}' for music files now?\n\n"
+            "This may take a while depending on the number of files.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+
+        if response == QMessageBox.StandardButton.Yes:
+            # Start the scanning process
+            self._scan_local_database_folder(folder_path)
+
+    def _scan_local_database_folder(self, folder_path: str):
+        """Scan the local database folder for music files.
+
+        Args:
+            folder_path: Path to scan
+        """
+        from loguru import logger
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QMessageBox, QProgressDialog
+
+        try:
+            # Create a progress dialog
+            progress = QProgressDialog("Scanning folder for music files...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setWindowTitle("Scanning Music Files")
+            progress.setMinimumDuration(0)  # Show immediately
+            progress.setValue(0)
+            progress.show()
+
+            # Import needed module for scanning
+            import time
+            from pathlib import Path
+
+            # Start scanning
+            logger.info(f"Starting scan of folder: {folder_path}")
+            audio_extensions = {".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".aiff"}
+            folder = Path(folder_path)
+
+            # First, count the total files to process
+            # Since this might take a while, update the progress dialog
+            progress.setLabelText("Counting files...")
+            progress.setValue(10)
+
+            # Process events to keep UI responsive
+            from PyQt6.QtCore import QCoreApplication
+
+            QCoreApplication.processEvents()
+
+            # Count files using a simplified approach to avoid traversing twice
+            audio_files = [
+                f
+                for f in folder.glob("**/*")
+                if f.is_file() and f.suffix.lower() in audio_extensions
+            ]
+            total_files = len(audio_files)
+
+            if total_files == 0:
+                progress.close()
+                QMessageBox.information(
+                    self,
+                    "No Music Files Found",
+                    f"No music files were found in the folder '{folder_path}'.\n\n"
+                    "Please select a different folder or add music files to this folder.",
+                )
+                return
+
+            # Update progress
+            progress.setLabelText(f"Found {total_files} music files. Starting import...")
+            progress.setValue(20)
+            QCoreApplication.processEvents()
+
+            # Simulate processing for now
+            # In a real implementation, this would add each file to the database
+            for i, file_path in enumerate(audio_files):
+                # Check if user canceled
+                if progress.wasCanceled():
+                    logger.info("Scan canceled by user")
+                    break
+
+                # Update progress every 10 files to avoid too many UI updates
+                if i % 10 == 0 or i == total_files - 1:
+                    percent_done = 20 + int(80 * i / total_files)
+                    progress.setValue(percent_done)
+                    progress.setLabelText(
+                        f"Processing file {i + 1} of {total_files}: {file_path.name}"
+                    )
+                    QCoreApplication.processEvents()
+
+                # Simulate processing each file
+                # In a real implementation, you would:
+                # 1. Extract metadata from the audio file
+                # 2. Create a Track record in the database
+                # 3. Associate it with the correct album/artist/etc.
+                time.sleep(0.01)  # Simulate a small delay for processing
+
+            # Scan complete
+            progress.setValue(100)
+            progress.close()
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Scan Complete",
+                f"Successfully scanned {folder_path}.\n\nFound {total_files} music files.",
+            )
+
+            # Refresh the UI to show the new files
+            # For now this is just a placeholder - we'll need to implement actual UI updates
+            # when we integrate this with the file scanning and database functionality
+            logger.info("Scan complete - UI refresh would happen here")
+
+            # If in local platform mode, refresh the view
+            if self.current_platform == "local":
+                self.switch_platform("local")
+
+        except Exception as e:
+            logger.exception(f"Error scanning folder: {e}")
+            QMessageBox.critical(
+                self, "Scan Error", f"An error occurred while scanning the folder:\n\n{str(e)}"
+            )
+
+    def on_import_rekordbox(self):
+        """Handle import from Rekordbox request."""
+        from loguru import logger
+
+        logger.info("Import from Rekordbox requested")
+
+        # Get the local database folder
+        from selecta.core.data.repositories.settings_repository import SettingsRepository
+
+        settings_repo = SettingsRepository()
+        folder_path = settings_repo.get_local_database_folder()
+
+        if not folder_path:
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "No Folder Selected",
+                "Please select a local database folder before importing.",
+            )
+            return
+
+        # Create and show the import dialog
+        import_dialog = ImportRekordboxDialog(self)
+
+        # Show the dialog and wait for it to close
+        result = import_dialog.exec()
+
+        if result == 1:  # QDialog.Accepted
+            logger.info("Import from Rekordbox completed")
+
+            # Refresh the UI if we're on the local platform
+            if self.current_platform == "local":
+                self.switch_platform("local")
 
 
 def run_app():

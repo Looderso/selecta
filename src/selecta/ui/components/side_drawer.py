@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
+from selecta.ui.components.folder_selection_widget import FolderSelectionWidget
 from selecta.ui.components.platform_auth_panel import PlatformAuthPanel
 
 
@@ -90,11 +91,47 @@ class SideDrawer(QWidget):
         self.auth_panel = PlatformAuthPanel()
         scroll_layout.addWidget(self.auth_panel)
 
+        # Add separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet("background-color: #444444; margin: 15px 0;")
+        scroll_layout.addWidget(separator)
+
+        # Add local database folder selection widget
+        self.folder_selection = FolderSelectionWidget()
+        self.folder_selection.folder_changed.connect(self._on_folder_changed)
+        self.folder_selection.import_rekordbox_clicked.connect(self._on_import_rekordbox)
+        scroll_layout.addWidget(self.folder_selection)
+
+        # Connect signals
+        self.folder_selection.folder_changed.connect(self._on_folder_changed)
+
         # Add additional settings sections as needed
         scroll_layout.addStretch(1)  # Push everything to the top
 
         scroll_area.setWidget(scroll_widget)
         layout.addWidget(scroll_area, 1)  # 1 = stretch factor
+
+    # Add this method to handle folder changes
+    def _on_folder_changed(self, folder_path: str):
+        """Handle when the local database folder is changed.
+
+        Args:
+            folder_path: The new folder path
+        """
+        # Notify the main window that the folder has changed
+        # This could trigger a scan of the folder or update UI elements
+        main_window = self.window()
+        if hasattr(main_window, "on_local_database_folder_changed"):
+            main_window.on_local_database_folder_changed(folder_path)
+
+    def _on_import_rekordbox(self):
+        """Handle import from Rekordbox request."""
+        # Forward the request to the main window
+        main_window = self.window()
+        if hasattr(main_window, "on_import_rekordbox"):
+            main_window.on_import_rekordbox()
 
     def show_drawer(self):
         """Show the drawer with animation."""
