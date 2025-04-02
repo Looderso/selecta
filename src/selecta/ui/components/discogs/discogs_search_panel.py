@@ -3,6 +3,7 @@
 import json
 from typing import Any, cast
 
+import requests
 from loguru import logger
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
 from sqlalchemy import and_
 
 from selecta.core.data.models.db import Track
+from selecta.core.data.repositories.image_repository import ImageRepository
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.data.repositories.track_repository import TrackRepository
@@ -53,6 +55,7 @@ class DiscogsSearchPanel(LoadableWidget):
         # Initialize repositories for database operations
         self.track_repo = TrackRepository()
         self.playlist_repo = PlaylistRepository()
+        self.image_repo = ImageRepository()
 
         # Initialize discogs client
         self.settings_repo = SettingsRepository()
@@ -171,6 +174,15 @@ class DiscogsSearchPanel(LoadableWidget):
         for widget in self.result_widgets:
             if isinstance(widget, DiscogsTrackItem):
                 widget.update_button_state(can_add=can_add, can_sync=can_sync)
+
+    def search(self, query: str) -> None:
+        """Public method to perform a search.
+
+        Args:
+            query: The search query
+        """
+        self.search_bar.set_search_text(query)
+        self._on_search(query)
 
     def _on_search(self, query: str) -> None:
         """Handle search query submission.
@@ -345,6 +357,11 @@ class DiscogsSearchPanel(LoadableWidget):
                 QMessageBox.warning(self, "Sync Error", "Invalid Discogs release data")
                 return
 
+            # Get cover image URL if available
+            cover_url = release_data.get("cover_url")
+            thumb_url = release_data.get("thumb_url")
+            image_url = cover_url or thumb_url
+
             # Create platform data dictionary
             platform_data = {
                 "release_id": discogs_id,
@@ -353,6 +370,7 @@ class DiscogsSearchPanel(LoadableWidget):
                 "catno": release_data.get("catno", ""),
                 "format": release_data.get("format", []),
                 "genre": release_data.get("genre", []),
+                "artwork_url": image_url,
             }
 
             # Convert to JSON
@@ -367,6 +385,33 @@ class DiscogsSearchPanel(LoadableWidget):
                 self.track_repo.add_platform_info(
                     track_id, "discogs", str(discogs_id), discogs_uri, platform_data_json
                 )
+
+                # Download and store image if available
+                if image_url:
+                    try:
+                        # Get the image data
+                        response = requests.get(image_url, timeout=10)
+                        if response.ok:
+                            # Store images in database at different sizes
+                            self.image_repo.resize_and_store_image(
+                                original_data=response.content,
+                                track_id=track_id,
+                                source="discogs",
+                                source_url=image_url,
+                            )
+                    except Exception as img_err:
+                        logger.error(f"Error downloading Discogs image: {img_err}")
+                        # Continue even if image download fails
+
+                # Update genres
+                if "genre" in platform_data and platform_data["genre"]:
+                    try:
+                        self.track_repo.set_track_genres(
+                            track_id=track_id, genre_names=platform_data["genre"], source="discogs"
+                        )
+                    except Exception as genre_err:
+                        logger.error(f"Error updating genres: {genre_err}")
+
                 return release_data
 
             thread_manager = ThreadManager()
@@ -444,6 +489,11 @@ class DiscogsSearchPanel(LoadableWidget):
                 QMessageBox.warning(self, "Add Error", f"Track already exists: {artist} - {title}")
                 return
 
+            # Get cover image URL if available
+            cover_url = release_data.get("cover_url")
+            thumb_url = release_data.get("thumb_url")
+            image_url = cover_url or thumb_url
+
             # Show loading overlay
             self.show_loading(f"Adding {artist} - {title} to playlist...")
 
@@ -453,10 +503,13 @@ class DiscogsSearchPanel(LoadableWidget):
                 new_track_data = {
                     "title": title,
                     "artist": artist,
+                    "year": release_data.get("year"),
+                    "artwork_url": image_url,  # Keep for backward compatibility
                 }
 
                 # Create the track
                 track = self.track_repo.create(new_track_data)
+                track_id = column_to_int(track.id)
 
                 # Add Discogs platform info
                 discogs_id = release_data.get("id")
@@ -471,6 +524,7 @@ class DiscogsSearchPanel(LoadableWidget):
                         "catno": release_data.get("catno", ""),
                         "format": release_data.get("format", []),
                         "genre": release_data.get("genre", []),
+                        "artwork_url": image_url,
                     }
 
                     # Convert to JSON
@@ -478,15 +532,43 @@ class DiscogsSearchPanel(LoadableWidget):
 
                     # Add platform info to the track
                     self.track_repo.add_platform_info(
-                        column_to_int(track.id),
+                        track_id,
                         "discogs",
                         str(discogs_id),
                         discogs_uri,
                         platform_data_json,
                     )
 
+                    # Download and store image if available
+                    if image_url:
+                        try:
+                            # Get the image data
+                            response = requests.get(image_url, timeout=10)
+                            if response.ok:
+                                # Store images in database at different sizes
+                                self.image_repo.resize_and_store_image(
+                                    original_data=response.content,
+                                    track_id=track_id,
+                                    source="discogs",
+                                    source_url=image_url,
+                                )
+                        except Exception as img_err:
+                            logger.error(f"Error downloading Discogs image: {img_err}")
+                            # Continue even if image download fails
+
+                    # Add genres
+                    if "genre" in platform_data and platform_data["genre"]:
+                        try:
+                            self.track_repo.set_track_genres(
+                                track_id=track_id,
+                                genre_names=platform_data["genre"],
+                                source="discogs",
+                            )
+                        except Exception as genre_err:
+                            logger.error(f"Error setting genres: {genre_err}")
+
                 # Add track to the playlist
-                self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
+                self.playlist_repo.add_track(playlist_id, track_id)
 
                 return release_data
 

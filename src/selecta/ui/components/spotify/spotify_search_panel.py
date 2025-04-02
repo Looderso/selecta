@@ -3,6 +3,7 @@
 import json
 from typing import Any, cast
 
+import requests
 from loguru import logger
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
 from sqlalchemy import and_
 
 from selecta.core.data.models.db import Track
+from selecta.core.data.repositories.image_repository import ImageRepository
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.data.repositories.track_repository import TrackRepository
@@ -53,6 +55,7 @@ class SpotifySearchPanel(LoadableWidget):
         # Initialize repositories for database operations
         self.track_repo = TrackRepository()
         self.playlist_repo = PlaylistRepository()
+        self.image_repo = ImageRepository()
 
         # Initialize spotify client
         self.settings_repo = SettingsRepository()
@@ -171,6 +174,15 @@ class SpotifySearchPanel(LoadableWidget):
         for widget in self.result_widgets:
             if isinstance(widget, SpotifyTrackItem):
                 widget.update_button_state(can_add=can_add, can_sync=can_sync)
+
+    def search(self, query: str) -> None:
+        """Public method to perform a search.
+
+        Args:
+            query: The search query
+        """
+        self.search_bar.set_search_text(query)
+        self._on_search(query)
 
     def _on_search(self, query: str) -> None:
         """Handle search query submission.
@@ -347,11 +359,22 @@ class SpotifySearchPanel(LoadableWidget):
                 QMessageBox.warning(self, "Sync Error", "Invalid Spotify track data")
                 return
 
+            # Get album image URLs if available
+            album_image_url = None
+            if "album" in track_data and "images" in track_data["album"]:
+                images = track_data["album"]["images"]
+                if images:
+                    # Find largest image for best quality when resizing
+                    sorted_images = sorted(images, key=lambda x: x.get("width", 0), reverse=True)
+                    if sorted_images:
+                        album_image_url = sorted_images[0].get("url")
+
             # Create platform data dictionary
             platform_data = {
                 "popularity": track_data.get("popularity", 0),
                 "explicit": track_data.get("explicit", False),
                 "preview_url": track_data.get("preview_url", ""),
+                "artwork_url": album_image_url,  # Store the URL for future reference
             }
 
             # Convert to JSON
@@ -362,9 +385,28 @@ class SpotifySearchPanel(LoadableWidget):
 
             # Run sync in background
             def sync_task() -> dict[str, Any]:
+                # Add platform info
                 self.track_repo.add_platform_info(
                     track_id, "spotify", spotify_id, spotify_uri, platform_data_json
                 )
+
+                # Download and store images if available
+                if album_image_url:
+                    try:
+                        # Get the image data
+                        response = requests.get(album_image_url, timeout=10)
+                        if response.ok:
+                            # Store images in database at different sizes
+                            self.image_repo.resize_and_store_image(
+                                original_data=response.content,
+                                track_id=track_id,
+                                source="spotify",
+                                source_url=album_image_url,
+                            )
+                    except Exception as img_err:
+                        logger.error(f"Error downloading album image: {img_err}")
+                        # Continue even if image download fails
+
                 return track_data
 
             thread_manager = ThreadManager()
@@ -447,6 +489,16 @@ class SpotifySearchPanel(LoadableWidget):
             # Get duration
             duration_ms = track_data.get("duration_ms")
 
+            # Get album image URLs if available
+            album_image_url = None
+            if "album" in track_data and "images" in track_data["album"]:
+                images = track_data["album"]["images"]
+                if images:
+                    # Find largest image for best quality when resizing
+                    sorted_images = sorted(images, key=lambda x: x.get("width", 0), reverse=True)
+                    if sorted_images:
+                        album_image_url = sorted_images[0].get("url")
+
             # Show loading overlay
             self.show_loading(f"Adding {artist} - {title} to playlist...")
 
@@ -457,6 +509,10 @@ class SpotifySearchPanel(LoadableWidget):
                     "title": title,
                     "artist": artist,
                     "duration_ms": duration_ms,
+                    "year": track_data.get("album", {}).get("release_date", "")[:4]
+                    if track_data.get("album", {}).get("release_date", "")
+                    else None,
+                    "artwork_url": album_image_url,  # Store URL for backward compatibility
                 }
 
                 # Create the track
@@ -472,6 +528,9 @@ class SpotifySearchPanel(LoadableWidget):
                         "popularity": track_data.get("popularity", 0),
                         "explicit": track_data.get("explicit", False),
                         "preview_url": track_data.get("preview_url", ""),
+                        "artwork_url": album_image_url,
+                        "album_type": track_data.get("album", {}).get("album_type"),
+                        "release_date": track_data.get("album", {}).get("release_date"),
                     }
 
                     # Convert to JSON
@@ -485,6 +544,23 @@ class SpotifySearchPanel(LoadableWidget):
                         spotify_uri,
                         platform_data_json,
                     )
+
+                    # Download and store images if available
+                    if album_image_url:
+                        try:
+                            # Get the image data
+                            response = requests.get(album_image_url, timeout=10)
+                            if response.ok:
+                                # Store images in database at different sizes
+                                self.image_repo.resize_and_store_image(
+                                    original_data=response.content,
+                                    track_id=column_to_int(track.id),
+                                    source="spotify",
+                                    source_url=album_image_url,
+                                )
+                        except Exception as img_err:
+                            logger.error(f"Error downloading album image: {img_err}")
+                            # Continue even if image download fails
 
                 # Add track to the playlist
                 self.playlist_repo.add_track(playlist_id, column_to_int(track.id))

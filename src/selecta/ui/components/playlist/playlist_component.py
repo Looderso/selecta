@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QTableView,
-    QTabWidget,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -789,39 +788,12 @@ class PlaylistComponent(QWidget):
         # Create a search query using artist and title
         search_query = f"{track.artist} {track.title}"
 
-        # Access the main window to switch to the Spotify search panel
-        from selecta.core.utils.type_helpers import (
-            has_right_container,
-            has_search_bar,
-            has_show_spotify_search,
-        )
-        from selecta.ui.components.search_bar import SearchBar
-        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
-
+        # Access the main window
         main_window = self.window()
 
         # Call the show_spotify_search method on the main window
-        if has_show_spotify_search(main_window):
-            main_window.show_spotify_search()
-
-            # Find the Spotify search panel in the right container
-            if has_right_container(main_window):
-                for i in range(main_window.right_layout.count()):
-                    widget = main_window.right_layout.itemAt(i).widget()
-                    if isinstance(widget, QTabWidget):
-                        # The Spotify tab is at index 0
-                        widget.setCurrentIndex(0)
-
-                        # Find the Spotify search panel within the tab widget
-                        spotify_panel = widget.widget(0)
-                        if isinstance(spotify_panel, SpotifySearchPanel) and has_search_bar(
-                            spotify_panel
-                        ):
-                            search_bar = spotify_panel.search_bar
-                            if isinstance(search_bar, SearchBar):
-                                search_bar.set_search_text(search_query)
-                                spotify_panel._on_search(search_query)
-                        break
+        if hasattr(main_window, "show_spotify_search"):
+            main_window.show_spotify_search(search_query)
 
     def _search_on_discogs(self, track: Any) -> None:
         """Search for a track on Discogs.
@@ -835,40 +807,12 @@ class PlaylistComponent(QWidget):
         # Create a search query using artist and title
         search_query = f"{track.artist} {track.title}"
 
-        # Access the main window to switch to the Discogs search panel
-        from selecta.core.utils.type_helpers import (
-            has_right_container,
-            has_search_bar,
-            has_show_discogs_search,
-        )
-        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
-        from selecta.ui.components.search_bar import SearchBar
-
+        # Access the main window
         main_window = self.window()
 
         # Call the show_discogs_search method on the main window
-        if has_show_discogs_search(main_window):
-            main_window.show_discogs_search()
-
-            # Find the Discogs search panel in the right container
-            if has_right_container(main_window):
-                for i in range(main_window.right_layout.count()):
-                    widget = main_window.right_layout.itemAt(i).widget()
-                    if isinstance(widget, QTabWidget):
-                        # The Discogs tab is at index 1
-                        widget.setCurrentIndex(1)
-
-                        # Find the Discogs search panel within the tab widget
-                        discogs_panel = widget.widget(1)
-
-                        if isinstance(discogs_panel, DiscogsSearchPanel) and has_search_bar(
-                            discogs_panel
-                        ):
-                            search_bar = discogs_panel.search_bar
-                            if isinstance(search_bar, SearchBar):
-                                search_bar.set_search_text(search_query)
-                                discogs_panel._on_search(search_query)
-                        break
+        if hasattr(main_window, "show_discogs_search"):
+            main_window.show_discogs_search(search_query)
 
     def _on_data_changed(self) -> None:
         """Handle notification that data has changed."""

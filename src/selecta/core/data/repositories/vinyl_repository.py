@@ -1,13 +1,17 @@
 """Vinyl repository for database operations."""
 
+import json
+from typing import Any
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.db import Album, Vinyl
+from selecta.core.data.models.db import Album, Track, Vinyl
+from selecta.core.data.types import BaseRepository
 
 
-class VinylRepository:
+class VinylRepository(BaseRepository[Vinyl]):
     """Repository for vinyl-related database operations."""
 
     def __init__(self, session: Session | None = None) -> None:
@@ -17,6 +21,7 @@ class VinylRepository:
             session: SQLAlchemy session (creates a new one if not provided)
         """
         self.session = session or get_session()
+        super().__init__(Vinyl, self.session)
 
     def get_by_id(self, vinyl_id: int) -> Vinyl | None:
         """Get a vinyl record by its ID.
@@ -27,9 +32,12 @@ class VinylRepository:
         Returns:
             The vinyl record if found, None otherwise
         """
+        if self.session is None:
+            return None
+
         return (
             self.session.query(Vinyl)
-            .options(joinedload(Vinyl.album))
+            .options(joinedload(Vinyl.album).joinedload(Album.tracks))
             .filter(Vinyl.id == vinyl_id)
             .first()
         )
@@ -43,7 +51,15 @@ class VinylRepository:
         Returns:
             The vinyl record if found, None otherwise
         """
-        return self.session.query(Vinyl).filter(Vinyl.discogs_id == discogs_id).first()
+        if self.session is None:
+            return None
+
+        return (
+            self.session.query(Vinyl)
+            .options(joinedload(Vinyl.album))
+            .filter(Vinyl.discogs_id == discogs_id)
+            .first()
+        )
 
     def get_all(
         self,
@@ -61,6 +77,9 @@ class VinylRepository:
         Returns:
             List of vinyl records
         """
+        if self.session is None:
+            return []
+
         query = self.session.query(Vinyl).options(joinedload(Vinyl.album))
 
         if owned_only:
@@ -83,6 +102,9 @@ class VinylRepository:
         Returns:
             Tuple of (list of vinyl records, total count)
         """
+        if self.session is None:
+            return [], 0
+
         # Prepare search terms
         search_term = f"%{query}%"
 
@@ -97,11 +119,17 @@ class VinylRepository:
         total = base_query.count()
 
         # Get paginated results
-        records = base_query.order_by(Album.artist, Album.title).limit(limit).offset(offset).all()
+        records = (
+            base_query.options(joinedload(Vinyl.album))
+            .order_by(Album.artist, Album.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
 
         return records, total
 
-    def create(self, vinyl_data: dict, album_data: dict | None = None) -> Vinyl:
+    def create(self, vinyl_data: dict[str, Any], album_data: dict[str, Any] | None = None) -> Vinyl:
         """Create a new vinyl record.
 
         Args:
@@ -111,6 +139,9 @@ class VinylRepository:
         Returns:
             The created vinyl record
         """
+        if self.session is None:
+            raise ValueError("Session is required for creating a vinyl record")
+
         # Create album if provided
         album_id = None
         if album_data:
@@ -132,7 +163,7 @@ class VinylRepository:
         return vinyl
 
     def update(
-        self, vinyl_id: int, vinyl_data: dict, album_data: dict | None = None
+        self, vinyl_id: int, vinyl_data: dict[str, Any], album_data: dict[str, Any] | None = None
     ) -> Vinyl | None:
         """Update an existing vinyl record.
 
@@ -144,6 +175,9 @@ class VinylRepository:
         Returns:
             The updated vinyl record if found, None otherwise
         """
+        if self.session is None:
+            return None
+
         vinyl = self.get_by_id(vinyl_id)
         if not vinyl:
             return None
@@ -170,6 +204,9 @@ class VinylRepository:
         Returns:
             True if deleted, False if not found
         """
+        if self.session is None:
+            return False
+
         vinyl = self.get_by_id(vinyl_id)
         if not vinyl:
             return False
@@ -191,3 +228,88 @@ class VinylRepository:
 
         self.session.commit()
         return True
+
+    def update_vinyl_from_discogs(self, vinyl_id: int, discogs_data: str | dict[str, Any]) -> bool:
+        """Update vinyl and album information from Discogs data.
+
+        Args:
+            vinyl_id: The vinyl ID
+            discogs_data: JSON string or dictionary with Discogs data
+
+        Returns:
+            True if updated, False if failed
+        """
+        if self.session is None:
+            return False
+
+        vinyl = self.get_by_id(vinyl_id)
+        if not vinyl:
+            return False
+
+        # Parse JSON if needed
+        if isinstance(discogs_data, str):
+            try:
+                data = json.loads(discogs_data)
+            except json.JSONDecodeError:
+                return False
+        else:
+            data = discogs_data
+
+        # Update vinyl fields
+        updated = False
+
+        # Update condition information
+        if "media_condition" in data:
+            vinyl.media_condition = data["media_condition"]
+            updated = True
+
+        if "sleeve_condition" in data:
+            vinyl.sleeve_condition = data["sleeve_condition"]
+            updated = True
+
+        # Update catalog number
+        if vinyl.album and "catno" in data:
+            vinyl.album.catalog_number = data["catno"]
+            updated = True
+
+        # Update label information
+        if vinyl.album and "label" in data:
+            vinyl.album.label = data["label"]
+            updated = True
+
+        # Update artwork
+        if vinyl.album and "cover_url" in data:
+            vinyl.album.artwork_url = data["cover_url"]
+            # Update linked tracks as well
+            for track in vinyl.album.tracks:
+                if not track.artwork_url:
+                    track.artwork_url = data["cover_url"]
+            updated = True
+
+        # Update release year
+        if vinyl.album and "year" in data:
+            vinyl.album.release_year = data["year"]
+            updated = True
+
+        if updated:
+            self.session.commit()
+
+        return updated
+
+    def get_track_by_vinyl_id(self, vinyl_id: int) -> list[Track]:
+        """Get all tracks associated with a vinyl record.
+
+        Args:
+            vinyl_id: The vinyl ID
+
+        Returns:
+            List of tracks
+        """
+        if self.session is None:
+            return []
+
+        vinyl = self.get_by_id(vinyl_id)
+        if not vinyl or not vinyl.album:
+            return []
+
+        return vinyl.album.tracks
