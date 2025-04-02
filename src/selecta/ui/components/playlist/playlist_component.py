@@ -32,7 +32,7 @@ class PlaylistComponent(LoadableWidget):
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
 
-    def __init__(self, data_provider: PlaylistDataProvider, parent: QWidget | None = None):
+    def __init__(self, data_provider: PlaylistDataProvider, parent: QWidget | None = None) -> None:
         """Initialize the playlist component.
 
         Args:
@@ -43,7 +43,7 @@ class PlaylistComponent(LoadableWidget):
         self.data_provider = data_provider
         self.data_provider.register_refresh_callback(self.refresh)
 
-        self.current_playlist_id = None
+        self.current_playlist_id: int | None = None
         self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
 
         # Create the details panel but don't add it to our layout
@@ -77,7 +77,7 @@ class PlaylistComponent(LoadableWidget):
         self._connect_signals()
         self._load_playlists()
 
-    def _setup_ui(self, content_widget) -> None:
+    def _setup_ui(self, content_widget: QWidget) -> None:
         """Set up the UI components.
 
         Args:
@@ -169,7 +169,7 @@ class PlaylistComponent(LoadableWidget):
         # Set the desired proportions once the widget is shown
         QTimer.singleShot(0, self._apply_splitter_ratio)
 
-    def _apply_splitter_ratio(self):
+    def _apply_splitter_ratio(self) -> None:
         """Apply the desired ratio to the splitter after widget initialization."""
         # Get the total width
         total_width = self.splitter.width()
@@ -238,7 +238,7 @@ class PlaylistComponent(LoadableWidget):
         """Load playlists from the data provider."""
         self.show_loading("Loading playlists...")
 
-        def load_playlists_task():
+        def load_playlists_task() -> list[Any]:
             return self.data_provider.get_all_playlists()
 
         thread_manager = ThreadManager()
@@ -250,13 +250,22 @@ class PlaylistComponent(LoadableWidget):
         )
         worker.signals.finished.connect(lambda: self.hide_loading())
 
-    def _handle_playlists_loaded(self, playlists):
-        """Handle loaded playlists."""
+    def _handle_playlists_loaded(self, playlists: list[Any]) -> None:
+        """Handle loaded playlists.
+
+        Args:
+            playlists: List of playlist items to display
+        """
         self.playlist_model.add_items(playlists)
         self._expand_all_folders()
 
-    def _handle_loading_error(self, context, error_msg):
-        """Handle loading errors."""
+    def _handle_loading_error(self, context: str, error_msg: str) -> None:
+        """Handle loading errors.
+
+        Args:
+            context: Description of the operation that failed
+            error_msg: The error message
+        """
         from PyQt6.QtWidgets import QMessageBox
 
         QMessageBox.critical(self, "Loading Error", f"{context}: {error_msg}")
@@ -277,7 +286,7 @@ class PlaylistComponent(LoadableWidget):
 
     def _on_playlist_selected(self) -> None:
         """Handle playlist selection."""
-        indexes = self.playlist_tree.selectionModel().selectedIndexes()
+        indexes = self.playlist_tree.selectionModel().selectedIndexes()  # type: ignore
         if not indexes:
             return
 
@@ -302,7 +311,7 @@ class PlaylistComponent(LoadableWidget):
 
         self.show_loading(f"Loading tracks for {item.name}...")
 
-        def load_tracks_task():
+        def load_tracks_task() -> list[Any]:
             return self.data_provider.get_playlist_tracks(item.item_id)
 
         thread_manager = ThreadManager()
@@ -314,8 +323,13 @@ class PlaylistComponent(LoadableWidget):
         )
         worker.signals.finished.connect(lambda: self.hide_loading())
 
-    def _handle_tracks_loaded(self, playlist_item, tracks):
-        """Handle loaded tracks."""
+    def _handle_tracks_loaded(self, playlist_item: Any, tracks: list[Any]) -> None:
+        """Handle loaded tracks.
+
+        Args:
+            playlist_item: The playlist item that was selected
+            tracks: List of track items to display
+        """
         self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
         self.playlist_header.setText(f"Playlist: {playlist_item.name} ({len(tracks)} tracks)")
@@ -408,7 +422,7 @@ class PlaylistComponent(LoadableWidget):
             return
 
         # Find the track that matches the selected suggestion
-        for _, track in enumerate(self.current_tracks):
+        for track in self.current_tracks:
             track_text = f"{track.artist} - {track.title}"
             if track_text == text:
                 # Find the track in the current view (might be filtered)
@@ -436,7 +450,7 @@ class PlaylistComponent(LoadableWidget):
         self.show_loading("Refreshing playlists and tracks...")
 
         # Run the refresh in a background thread
-        def refresh_task():
+        def refresh_task() -> dict[str, Any]:
             # Reload playlists
             playlists = self.data_provider.get_all_playlists()
 
@@ -456,8 +470,12 @@ class PlaylistComponent(LoadableWidget):
         )
         worker.signals.finished.connect(lambda: self.hide_loading())
 
-    def _handle_refresh_complete(self, result):
-        """Handle completion of refresh operation."""
+    def _handle_refresh_complete(self, result: dict[str, Any]) -> None:
+        """Handle completion of refresh operation.
+
+        Args:
+            result: Dictionary containing playlists and tracks data
+        """
         # Update playlists
         self.playlist_model.clear()
         self.playlist_model.add_items(result["playlists"])
@@ -475,7 +493,7 @@ class PlaylistComponent(LoadableWidget):
                 for row in range(self.playlist_model.rowCount()):
                     index = self.playlist_model.index(row, 0)
                     item = index.internalPointer()
-                    if item.item_id == self.current_playlist_id:
+                    if hasattr(item, "item_id") and item.item_id == self.current_playlist_id:
                         self.playlist_header.setText(
                             f"Playlist: {item.name} ({len(self.current_tracks)} tracks)"
                         )
@@ -484,7 +502,7 @@ class PlaylistComponent(LoadableWidget):
         # Clear track details
         self.details_panel.set_track(None)
 
-    def _show_track_context_menu(self, position: Any):
+    def _show_track_context_menu(self, position: Any) -> None:
         """Show context menu for tracks table.
 
         Args:
@@ -514,7 +532,7 @@ class PlaylistComponent(LoadableWidget):
         # Show the menu at the cursor position
         menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
 
-    def _search_on_spotify(self, track: Any):
+    def _search_on_spotify(self, track: Any) -> None:
         """Search for a track on Spotify.
 
         Args:
@@ -560,7 +578,7 @@ class PlaylistComponent(LoadableWidget):
                                 spotify_panel._on_search(search_query)
                         break
 
-    def _search_on_discogs(self, track: Any):
+    def _search_on_discogs(self, track: Any) -> None:
         """Search for a track on Discogs.
 
         Args:

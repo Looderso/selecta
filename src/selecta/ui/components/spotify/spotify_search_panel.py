@@ -34,7 +34,7 @@ class SpotifySearchPanel(LoadableWidget):
     track_synced = pyqtSignal(dict)  # Emitted when a track is synced
     track_added = pyqtSignal(dict)  # Emitted when a track is added
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the Spotify search panel.
 
         Args:
@@ -46,9 +46,9 @@ class SpotifySearchPanel(LoadableWidget):
         self.setObjectName("spotifySearchPanel")
 
         # Initialize attributes
-        self.result_widgets = []
-        self.message_label = None
-        self.initial_message = None
+        self.result_widgets: list[QWidget] = []
+        self.message_label: QLabel | None = None
+        self.initial_message: QLabel | None = None
 
         # Initialize repositories for database operations
         self.track_repo = TrackRepository()
@@ -86,7 +86,7 @@ class SpotifySearchPanel(LoadableWidget):
         self.selection_state.track_selected.connect(self._on_global_track_selected)
         self.selection_state.data_changed.connect(self._on_data_changed)
 
-    def _setup_ui(self, content_widget):
+    def _setup_ui(self, content_widget: QWidget) -> None:
         """Set up the UI components.
 
         Args:
@@ -172,7 +172,7 @@ class SpotifySearchPanel(LoadableWidget):
             if isinstance(widget, SpotifyTrackItem):
                 widget.update_button_state(can_add=can_add, can_sync=can_sync)
 
-    def _on_search(self, query: str):
+    def _on_search(self, query: str) -> None:
         """Handle search query submission.
 
         Args:
@@ -195,8 +195,8 @@ class SpotifySearchPanel(LoadableWidget):
                 and isinstance(self.spotify_client, SpotifyClient)
             ):
                 # Run the search in a background thread
-                def perform_search():
-                    return self.spotify_client.search_tracks(query, limit=10)
+                def perform_search() -> list[Any]:
+                    return self.spotify_client.search_tracks(query, limit=10)  # type: ignore
 
                 # Create a worker and connect signals
                 thread_manager = ThreadManager()
@@ -216,7 +216,7 @@ class SpotifySearchPanel(LoadableWidget):
             self.hide_loading()
             self.show_message(f"Error searching Spotify: {str(e)}")
 
-    def _handle_search_results(self, results):
+    def _handle_search_results(self, results: list[Any]) -> None:
         """Handle the search results from the background thread.
 
         Args:
@@ -224,7 +224,7 @@ class SpotifySearchPanel(LoadableWidget):
         """
         self.display_results(results)
 
-    def _handle_search_error(self, error_msg: str):
+    def _handle_search_error(self, error_msg: str) -> None:
         """Handle errors from the background thread.
 
         Args:
@@ -232,7 +232,7 @@ class SpotifySearchPanel(LoadableWidget):
         """
         self.show_message(f"Error searching Spotify: {error_msg}")
 
-    def display_results(self, results):
+    def display_results(self, results: list[Any]) -> None:
         """Display search results.
 
         Args:
@@ -250,7 +250,7 @@ class SpotifySearchPanel(LoadableWidget):
             # Convert SpotifyTrack to a properly formatted dict for our UI
             if has_artist_names(track):
                 # Create a compatible dict from SpotifyTrack object
-                track_data = {
+                track_data: dict[str, Any] = {
                     "id": track.id,
                     "name": track.name,
                     "uri": track.uri,
@@ -281,7 +281,7 @@ class SpotifySearchPanel(LoadableWidget):
         # Add a spacer at the end for better layout
         self.results_layout.addStretch(1)
 
-    def clear_results(self):
+    def clear_results(self) -> None:
         """Clear all search results."""
         # Remove the initial message if it exists
         if self.initial_message is not None:
@@ -305,7 +305,7 @@ class SpotifySearchPanel(LoadableWidget):
             if spacer_item and spacer_item.spacerItem():
                 self.results_layout.removeItem(spacer_item)
 
-    def show_message(self, message: str):
+    def show_message(self, message: str) -> None:
         """Show a message in the results area.
 
         Args:
@@ -321,7 +321,7 @@ class SpotifySearchPanel(LoadableWidget):
         self.results_layout.addWidget(self.message_label)
         self.results_layout.addStretch(1)
 
-    def _on_track_sync(self, track_data: dict):
+    def _on_track_sync(self, track_data: dict[str, Any]) -> None:
         """Handle track sync button click.
 
         Args:
@@ -361,7 +361,7 @@ class SpotifySearchPanel(LoadableWidget):
             self.show_loading("Syncing track with Spotify...")
 
             # Run sync in background
-            def sync_task():
+            def sync_task() -> dict[str, Any]:
                 self.track_repo.add_platform_info(
                     track_id, "spotify", spotify_id, spotify_uri, platform_data_json
                 )
@@ -379,8 +379,12 @@ class SpotifySearchPanel(LoadableWidget):
             logger.exception(f"Error syncing track: {e}")
             QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
 
-    def _handle_sync_complete(self, track_data):
-        """Handle completion of track sync."""
+    def _handle_sync_complete(self, track_data: dict[str, Any]) -> None:
+        """Handle completion of track sync.
+
+        Args:
+            track_data: The track data that was synced
+        """
         # Emit signal with the synchronized track
         self.track_synced.emit(track_data)
 
@@ -393,12 +397,16 @@ class SpotifySearchPanel(LoadableWidget):
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_sync_error(self, error_msg):
-        """Handle error during track sync."""
+    def _handle_sync_error(self, error_msg: str) -> None:
+        """Handle error during track sync.
+
+        Args:
+            error_msg: The error message
+        """
         logger.error(f"Error syncing track: {error_msg}")
         QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
 
-    def _on_track_add(self, track_data: dict):
+    def _on_track_add(self, track_data: dict[str, Any]) -> None:
         """Handle track add button click.
 
         Args:
@@ -443,7 +451,7 @@ class SpotifySearchPanel(LoadableWidget):
             self.show_loading(f"Adding {artist} - {title} to playlist...")
 
             # Run add in background
-            def add_task():
+            def add_task() -> dict[str, Any]:
                 # Create a new track
                 new_track_data = {
                     "title": title,
@@ -495,8 +503,12 @@ class SpotifySearchPanel(LoadableWidget):
             logger.exception(f"Error adding track: {e}")
             QMessageBox.critical(self, "Add Error", f"Error adding track: {str(e)}")
 
-    def _handle_add_complete(self, track_data):
-        """Handle completion of track add."""
+    def _handle_add_complete(self, track_data: dict[str, Any]) -> None:
+        """Handle completion of track add.
+
+        Args:
+            track_data: The track data that was added
+        """
         # Extract title and artist for display
         title = track_data.get("name", "")
         artists = track_data.get("artists", [])
@@ -514,7 +526,11 @@ class SpotifySearchPanel(LoadableWidget):
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_add_error(self, error_msg):
-        """Handle error during track add."""
+    def _handle_add_error(self, error_msg: str) -> None:
+        """Handle error during track add.
+
+        Args:
+            error_msg: The error message
+        """
         logger.error(f"Error adding track: {error_msg}")
         QMessageBox.critical(self, "Add Error", f"Error adding track: {error_msg}")

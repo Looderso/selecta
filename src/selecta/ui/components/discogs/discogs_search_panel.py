@@ -196,7 +196,7 @@ class DiscogsSearchPanel(LoadableWidget):
             ):
                 # Run the search in a background thread
                 def perform_search():
-                    return self.discogs_client.search_release(query, limit=10)
+                    return self.discogs_client.search_release(query, limit=10)  # type: ignore
 
                 # Create a worker and connect signals
                 thread_manager = ThreadManager()

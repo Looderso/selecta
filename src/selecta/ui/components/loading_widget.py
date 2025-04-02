@@ -8,25 +8,28 @@ from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 class LoadableWidget(QWidget):
     """Base class for widgets that can display a loading state."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the loadable widget.
 
         Args:
             parent: Parent widget
         """
         super().__init__(parent)
-        self._loading = False
-        self._loading_indicator = None
-        self._loading_message = None
-        self._content_widget = None
-        self._loading_widget = None
-        self._spinner_movie = None
+        self._loading: bool = False
+        self._loading_indicator: QLabel | None = None
+        self._loading_message: QLabel | None = None
+        self._content_widget: QWidget | None = None
+        self._loading_widget: QWidget | None = None
+        self._spinner_movie: QMovie | None = None
 
-    def _create_loading_widget(self, message="Loading..."):
+    def _create_loading_widget(self, message: str = "Loading...") -> QWidget:
         """Create a widget to display during loading state.
 
         Args:
             message: Loading message to display
+
+        Returns:
+            A widget that displays a loading indicator and message
         """
         loading_widget = QWidget(self)
         layout = QVBoxLayout(loading_widget)
@@ -63,7 +66,7 @@ class LoadableWidget(QWidget):
 
         return loading_widget
 
-    def set_content_widget(self, widget):
+    def set_content_widget(self, widget: QWidget) -> None:
         """Set the main content widget.
 
         Args:
@@ -71,7 +74,7 @@ class LoadableWidget(QWidget):
         """
         self._content_widget = widget
 
-    def show_loading(self, message="Loading..."):
+    def show_loading(self, message: str = "Loading...") -> None:
         """Show loading state with the given message.
 
         Args:
@@ -80,14 +83,16 @@ class LoadableWidget(QWidget):
         if not self._loading_widget:
             self._create_loading_widget(message)
         else:
-            self._loading_message.setText(message)
+            if self._loading_message:
+                self._loading_message.setText(message)
 
         # Hide content widget
         if self._content_widget:
             self._content_widget.setVisible(False)
 
         # Show loading widget
-        self._loading_widget.setVisible(True)
+        if self._loading_widget:
+            self._loading_widget.setVisible(True)
 
         # Start animation
         if self._spinner_movie and self._spinner_movie.isValid():
@@ -95,7 +100,7 @@ class LoadableWidget(QWidget):
 
         self._loading = True
 
-    def hide_loading(self):
+    def hide_loading(self) -> None:
         """Hide loading state and show content widget."""
         # Stop animation
         if self._spinner_movie and self._spinner_movie.isValid():
@@ -111,15 +116,15 @@ class LoadableWidget(QWidget):
 
         self._loading = False
 
-    def is_loading(self):
+    def is_loading(self) -> bool:
         """Return whether the widget is in loading state.
 
         Returns:
-            bool: True if loading, False otherwise
+            True if loading, False otherwise
         """
         return self._loading
 
-    def update_loading_message(self, message):
+    def update_loading_message(self, message: str) -> None:
         """Update the loading message.
 
         Args:
