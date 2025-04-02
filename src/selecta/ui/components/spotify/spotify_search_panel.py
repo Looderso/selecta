@@ -22,11 +22,13 @@ from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.spotify.client import SpotifyClient
 from selecta.core.utils.type_helpers import column_to_int, has_artist_names
+from selecta.core.utils.worker import ThreadManager
+from selecta.ui.components.loading_widget import LoadableWidget
 from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.components.spotify.spotify_track_item import SpotifyTrackItem
 
 
-class SpotifySearchPanel(QWidget):
+class SpotifySearchPanel(LoadableWidget):
     """Panel for searching and displaying Spotify tracks."""
 
     track_synced = pyqtSignal(dict)  # Emitted when a track is synced
@@ -57,7 +59,22 @@ class SpotifySearchPanel(QWidget):
         self.spotify_client = PlatformFactory.create("spotify", self.settings_repo)
 
         # Create layout
-        self._setup_ui()
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Create content widget
+        content_widget = QWidget()
+        self.set_content_widget(content_widget)
+        main_layout.addWidget(content_widget)
+
+        # Create loading widget (will be added in show_loading)
+        loading_widget = self._create_loading_widget("Searching Spotify...")
+        main_layout.addWidget(loading_widget)
+        loading_widget.setVisible(False)
+
+        # Setup the UI in the content widget
+        self._setup_ui(content_widget)
 
         # Use the shared selection state - import here to avoid circular imports
         from selecta.ui.components.selection_state import SelectionState
@@ -69,9 +86,13 @@ class SpotifySearchPanel(QWidget):
         self.selection_state.track_selected.connect(self._on_global_track_selected)
         self.selection_state.data_changed.connect(self._on_data_changed)
 
-    def _setup_ui(self):
-        """Set up the UI components."""
-        layout = QVBoxLayout(self)
+    def _setup_ui(self, content_widget):
+        """Set up the UI components.
+
+        Args:
+            content_widget: The widget to add UI components to
+        """
+        layout = QVBoxLayout(content_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(12)
 
@@ -165,24 +186,51 @@ class SpotifySearchPanel(QWidget):
         self.clear_results()
 
         # Show loading state
-        self.show_message("Searching...")
+        self.show_loading(f"Searching Spotify for '{query}'...")
 
-        # Perform search using the Spotify client
         try:
             if (
                 self.spotify_client
                 and self.spotify_client.is_authenticated()
                 and isinstance(self.spotify_client, SpotifyClient)
             ):
-                # Call the raw search_tracks method to get full track data with album images
-                results = self.spotify_client.search_tracks(query, limit=10)
-                self.display_results(results)
+                # Run the search in a background thread
+                def perform_search():
+                    return self.spotify_client.search_tracks(query, limit=10)
+
+                # Create a worker and connect signals
+                thread_manager = ThreadManager()
+                worker = thread_manager.run_task(perform_search)
+
+                # Handle the results
+                worker.signals.result.connect(lambda results: self._handle_search_results(results))
+                worker.signals.error.connect(lambda error_msg: self._handle_search_error(error_msg))
+                worker.signals.finished.connect(lambda: self.hide_loading())
+
             else:
+                self.hide_loading()
                 self.show_message(
                     "Not connected to Spotify. Please authenticate in the settings panel."
                 )
         except Exception as e:
+            self.hide_loading()
             self.show_message(f"Error searching Spotify: {str(e)}")
+
+    def _handle_search_results(self, results):
+        """Handle the search results from the background thread.
+
+        Args:
+            results: Search results from Spotify API
+        """
+        self.display_results(results)
+
+    def _handle_search_error(self, error_msg: str):
+        """Handle errors from the background thread.
+
+        Args:
+            error_msg: Error message
+        """
+        self.show_message(f"Error searching Spotify: {error_msg}")
 
     def display_results(self, results):
         """Display search results.
@@ -309,26 +357,46 @@ class SpotifySearchPanel(QWidget):
             # Convert to JSON
             platform_data_json = json.dumps(platform_data)
 
-            # Add platform info to the track
-            self.track_repo.add_platform_info(
-                track_id, "spotify", spotify_id, spotify_uri, platform_data_json
-            )
+            # Show loading overlay
+            self.show_loading("Syncing track with Spotify...")
 
-            # Emit signal with the synchronized track
-            self.track_synced.emit(track_data)
+            # Run sync in background
+            def sync_task():
+                self.track_repo.add_platform_info(
+                    track_id, "spotify", spotify_id, spotify_uri, platform_data_json
+                )
+                return track_data
 
-            # Notify that data has changed
-            self.selection_state.notify_data_changed()
+            thread_manager = ThreadManager()
+            worker = thread_manager.run_task(sync_task)
 
-            # Show success message
-            self.show_message(f"Track synchronized: {track_data.get('name')}")
-
-            # Wait a moment, then restore the search results
-            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+            worker.signals.result.connect(lambda td: self._handle_sync_complete(td))
+            worker.signals.error.connect(lambda err: self._handle_sync_error(err))
+            worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
+            self.hide_loading()
             logger.exception(f"Error syncing track: {e}")
             QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
+
+    def _handle_sync_complete(self, track_data):
+        """Handle completion of track sync."""
+        # Emit signal with the synchronized track
+        self.track_synced.emit(track_data)
+
+        # Notify that data has changed
+        self.selection_state.notify_data_changed()
+
+        # Show success message
+        self.show_message(f"Track synchronized: {track_data.get('name')}")
+
+        # Wait a moment, then restore the search results
+        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+    def _handle_sync_error(self, error_msg):
+        """Handle error during track sync."""
+        logger.error(f"Error syncing track: {error_msg}")
+        QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
 
     def _on_track_add(self, track_data: dict):
         """Handle track add button click.
@@ -357,6 +425,7 @@ class SpotifySearchPanel(QWidget):
                 return
 
             # Check if a track with the same title and artist already exists
+            # This check should be quick so we'll keep it in the UI thread
             existing_track = (
                 self.track_repo.session.query(Track)
                 .filter(and_(Track.title == title, Track.artist == artist))
@@ -370,51 +439,82 @@ class SpotifySearchPanel(QWidget):
             # Get duration
             duration_ms = track_data.get("duration_ms")
 
-            # Create a new track
-            new_track_data = {
-                "title": title,
-                "artist": artist,
-                "duration_ms": duration_ms,
-            }
+            # Show loading overlay
+            self.show_loading(f"Adding {artist} - {title} to playlist...")
 
-            # Create the track
-            track = self.track_repo.create(new_track_data)
-
-            # Add Spotify platform info
-            spotify_id = track_data.get("id")
-            spotify_uri = track_data.get("uri")
-
-            if spotify_id and spotify_uri:
-                # Create platform data dictionary
-                platform_data = {
-                    "popularity": track_data.get("popularity", 0),
-                    "explicit": track_data.get("explicit", False),
-                    "preview_url": track_data.get("preview_url", ""),
+            # Run add in background
+            def add_task():
+                # Create a new track
+                new_track_data = {
+                    "title": title,
+                    "artist": artist,
+                    "duration_ms": duration_ms,
                 }
 
-                # Convert to JSON
-                platform_data_json = json.dumps(platform_data)
+                # Create the track
+                track = self.track_repo.create(new_track_data)
 
-                # Add platform info to the track
-                self.track_repo.add_platform_info(
-                    column_to_int(track.id), "spotify", spotify_id, spotify_uri, platform_data_json
-                )
+                # Add Spotify platform info
+                spotify_id = track_data.get("id")
+                spotify_uri = track_data.get("uri")
 
-            # Add track to the playlist
-            self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
+                if spotify_id and spotify_uri:
+                    # Create platform data dictionary
+                    platform_data = {
+                        "popularity": track_data.get("popularity", 0),
+                        "explicit": track_data.get("explicit", False),
+                        "preview_url": track_data.get("preview_url", ""),
+                    }
 
-            # Emit signal with the added track
-            self.track_added.emit(track_data)
+                    # Convert to JSON
+                    platform_data_json = json.dumps(platform_data)
 
-            # Notify that data has changed
-            self.selection_state.notify_data_changed()
+                    # Add platform info to the track
+                    self.track_repo.add_platform_info(
+                        column_to_int(track.id),
+                        "spotify",
+                        spotify_id,
+                        spotify_uri,
+                        platform_data_json,
+                    )
 
-            # Show success message
-            self.show_message(f"Track added: {artist} - {title}")
+                # Add track to the playlist
+                self.playlist_repo.add_track(playlist_id, column_to_int(track.id))
 
-            # Wait a moment, then restore the search results
-            QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+                return track_data
+
+            thread_manager = ThreadManager()
+            worker = thread_manager.run_task(add_task)
+
+            worker.signals.result.connect(lambda td: self._handle_add_complete(td))
+            worker.signals.error.connect(lambda err: self._handle_add_error(err))
+            worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
+            self.hide_loading()
             logger.exception(f"Error adding track: {e}")
             QMessageBox.critical(self, "Add Error", f"Error adding track: {str(e)}")
+
+    def _handle_add_complete(self, track_data):
+        """Handle completion of track add."""
+        # Extract title and artist for display
+        title = track_data.get("name", "")
+        artists = track_data.get("artists", [])
+        artist = ", ".join([a.get("name", "") for a in artists]) if artists else ""
+
+        # Emit signal with the added track
+        self.track_added.emit(track_data)
+
+        # Notify that data has changed
+        self.selection_state.notify_data_changed()
+
+        # Show success message
+        self.show_message(f"Track added: {artist} - {title}")
+
+        # Wait a moment, then restore the search results
+        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+
+    def _handle_add_error(self, error_msg):
+        """Handle error during track add."""
+        logger.error(f"Error adding track: {error_msg}")
+        QMessageBox.critical(self, "Add Error", f"Error adding track: {error_msg}")
