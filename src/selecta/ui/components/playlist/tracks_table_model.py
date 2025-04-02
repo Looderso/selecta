@@ -16,7 +16,17 @@ class TracksTableModel(QAbstractTableModel):
         """
         super().__init__(parent)
         self.tracks: list[TrackItem] = []
-        self.columns = ["Title", "Artist", "Album", "BPM", "Genre", "Tags", "Platforms", "Duration"]
+        self.columns = [
+            "Title",
+            "Artist",
+            "Album",
+            "BPM",
+            "Genre",
+            "Tags",
+            "Platforms",
+            "Duration",
+            "Quality",
+        ]
         self.column_keys = [
             "title",
             "artist",
@@ -26,9 +36,10 @@ class TracksTableModel(QAbstractTableModel):
             "tags",
             "platforms",
             "duration",
+            "quality",
         ]
-        self.columns = ["Title", "Artist", "Tags", "Genre", "BPM", "Platforms"]
-        self.column_keys = ["title", "artist", "tags", "genre", "bpm", "platforms"]
+        self.columns = ["Title", "Artist", "Tags", "Genre", "BPM", "Quality", "Platforms"]
+        self.column_keys = ["title", "artist", "tags", "genre", "bpm", "quality", "platforms"]
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         """Get the number of rows.
@@ -78,9 +89,9 @@ class TracksTableModel(QAbstractTableModel):
         track_data = display_data
 
         if role == Qt.ItemDataRole.DisplayRole:
-            # For platforms column, we'll handle this differently - we return
-            # empty string here and use the custom delegate for icons
-            if column_key == "platforms":
+            # For platforms and quality columns, we'll handle this differently - we return
+            # empty string here and use custom delegates for visualization
+            if column_key == "platforms" or column_key == "quality":
                 return ""
             return dict_str(track_data, column_key)
         elif role == Qt.ItemDataRole.UserRole:
@@ -88,6 +99,9 @@ class TracksTableModel(QAbstractTableModel):
             if column_key == "platforms":
                 # The default empty list makes sure we always return a list
                 return track_data.get("platforms", [])
+            # Return the quality value for the TrackQualityDelegate
+            if column_key == "quality":
+                return track_data.get("quality", -1)
             # Return the raw track data for any UserRole requests
             if column_key == "title":
                 return {
@@ -103,6 +117,8 @@ class TracksTableModel(QAbstractTableModel):
                 return f"{title} by {artist}"
             if column_key == "platforms":
                 return dict_str(track_data, "platforms_tooltip")
+            if column_key == "quality":
+                return dict_str(track_data, "quality_str")
             return dict_str(track_data, column_key)
 
         return None
@@ -189,3 +205,36 @@ class TracksTableModel(QAbstractTableModel):
                 "has_image": track.has_image,
             }
         return {}
+
+    def update_track_quality(self, track_id: Any, quality: int) -> bool:
+        """Update a specific track's quality rating.
+
+        Args:
+            track_id: The track ID to update
+            quality: The new quality rating
+
+        Returns:
+            True if track was found and updated, False otherwise
+        """
+        for row, track in enumerate(self.tracks):
+            if track.track_id == track_id:
+                # Update the track's quality
+                track.quality = quality
+
+                # Notify the view that this row has changed
+                # Create indexes for all cells in the row
+                first_index = self.index(row, 0)
+                last_index = self.index(row, self.columnCount() - 1)
+
+                # Emit the dataChanged signal to update the view
+                self.dataChanged.emit(first_index, last_index)
+
+                # Also specifically update the quality cell
+                if "quality" in self.column_keys:
+                    quality_col = self.column_keys.index("quality")
+                    quality_index = self.index(row, quality_col)
+                    self.dataChanged.emit(quality_index, quality_index)
+
+                return True
+
+        return False

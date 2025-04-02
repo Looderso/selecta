@@ -57,6 +57,7 @@ class LocalTrackItem(TrackItem):
         bpm: float | None = None,
         tags: list[str] | None = None,
         platform_info: list[dict] | None = None,
+        quality: int = -1,
     ):
         """Initialize a local track item.
 
@@ -72,6 +73,7 @@ class LocalTrackItem(TrackItem):
             bpm: Beats per minute
             tags: List of tags
             platform_info: List of platform information dictionaries
+            quality: Track quality rating (-1=not rated, 1-5=star rating)
         """
         super().__init__(track_id, title, artist, duration_ms, album, added_at)
         self.local_path = local_path
@@ -79,6 +81,7 @@ class LocalTrackItem(TrackItem):
         self.bpm = bpm
         self.tags = tags or []
         self.platform_info = platform_info or []  # [{'platform': 'spotify', 'id': '...', ...}, ...]
+        self.quality = quality
 
     def to_display_data(self) -> dict[str, Any]:
         """Convert the track to a dictionary for display in the UI.
@@ -111,6 +114,10 @@ class LocalTrackItem(TrackItem):
         # Format tags
         tags_str = ", ".join(self.tags) if self.tags else ""
 
+        # Map quality rating to a user-friendly string for tooltip
+        quality_map = {-1: "Not Rated", 1: "Very Poor", 2: "Poor", 3: "OK", 4: "Good", 5: "Great"}
+        quality_str = quality_map.get(self.quality, "Not Rated")
+
         return {
             "id": self.track_id,
             "title": self.title,
@@ -120,6 +127,8 @@ class LocalTrackItem(TrackItem):
             "genre": self.genre or "",
             "bpm": bpm_str,
             "tags": tags_str,
+            "quality": self.quality,
+            "quality_str": quality_str,
             "local_path": self.local_path or "",
             "added_at": self.added_at.strftime("%Y-%m-%d") if self.added_at else "",
             "platforms": platforms,

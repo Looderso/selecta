@@ -674,3 +674,67 @@ class TrackRepository(BaseRepository[Track]):
         )
 
         return tracks, total
+
+    def set_track_quality(self, track_id: int, quality: int) -> bool:
+        """Set the quality rating for a track.
+
+        Args:
+            track_id: The track ID
+            quality: Rating value (-1=not rated, 1-5=star rating)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        from loguru import logger
+
+        if self.session is None:
+            logger.warning("Cannot set track quality: No database session available")
+            return False
+
+        track = self.get_by_id(track_id)
+        if not track:
+            logger.warning(f"Cannot set track quality: Track with ID {track_id} not found")
+            return False
+
+        # Validate quality value
+        if quality not in [Track.NOT_RATED, 1, 2, 3, 4, 5]:
+            logger.warning(f"Invalid quality value {quality}, must be -1 or 1-5")
+            return False
+
+        logger.debug(
+            f"Setting quality for track {track_id} ({track.artist} - {track.title}) to {quality}"
+        )
+        track.quality = quality
+        self.session.commit()
+        logger.info(f"Track quality updated: Track ID {track_id} quality={quality}")
+        return True
+
+    def get_tracks_by_quality(
+        self, quality: int, limit: int = 50, offset: int = 0
+    ) -> tuple[list[Track], int]:
+        """Get tracks with a specific quality rating.
+
+        Args:
+            quality: The quality rating to filter by (-1=not rated, 1-5=star rating)
+            limit: Maximum number of tracks to return
+            offset: Number of tracks to skip
+
+        Returns:
+            Tuple of (list of tracks, total count)
+        """
+        if self.session is None:
+            return [], 0
+
+        base_query = self.session.query(Track).filter(Track.quality == quality)
+
+        total = base_query.count()
+
+        tracks = (
+            base_query.options(joinedload(Track.platform_info))
+            .order_by(Track.artist, Track.title)
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        return tracks, total

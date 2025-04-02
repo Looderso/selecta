@@ -1,7 +1,8 @@
 from contextlib import suppress
 from typing import Any
 
-from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal
+from loguru import logger
+from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QMovie
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -18,11 +19,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.playlist.platform_icon_delegate import PlatformIconDelegate
 from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
 from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
 from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
+from selecta.ui.components.playlist.track_quality_delegate import TrackQualityDelegate
 from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
 from selecta.ui.components.search_bar import SearchBar
 
@@ -260,6 +263,10 @@ class PlaylistComponent(QWidget):
         self.details_panel = TrackDetailsPanel()
         self.details_panel.setMinimumWidth(250)  # Ensure details panel has a reasonable width
 
+        # Connect the quality changed signal directly in the constructor
+        logger.debug("Connecting quality_changed signal in constructor")
+        self.details_panel.quality_changed.connect(self._on_track_quality_changed)
+
         # Use the shared selection state - import here to avoid circular imports
         from selecta.ui.components.selection_state import SelectionState
 
@@ -316,6 +323,17 @@ class PlaylistComponent(QWidget):
         if platforms_column_index >= 0:
             self.tracks_table.setItemDelegateForColumn(
                 platforms_column_index, PlatformIconDelegate(self.tracks_table)
+            )
+
+        # Set custom delegate for the quality column
+        quality_column_index = (
+            self.tracks_model.column_keys.index("quality")
+            if "quality" in self.tracks_model.column_keys
+            else -1
+        )
+        if quality_column_index >= 0:
+            self.tracks_table.setItemDelegateForColumn(
+                quality_column_index, TrackQualityDelegate(self.tracks_table)
             )
 
         # Set context menu for tracks table
@@ -813,6 +831,56 @@ class PlaylistComponent(QWidget):
         # Call the show_discogs_search method on the main window
         if hasattr(main_window, "show_discogs_search"):
             main_window.show_discogs_search(search_query)
+
+    @pyqtSlot(int, int)
+    def _on_track_quality_changed(self, track_id: int, quality: int) -> None:
+        """Handle quality rating changes from the details panel.
+
+        Args:
+            track_id: The track ID
+            quality: The new quality rating
+        """
+        logger.debug(
+            f"Playlist component received quality_changed signal: "
+            f"track_id={track_id}, quality={quality}"
+        )
+
+        if not track_id:
+            logger.warning("Invalid track ID, ignoring quality change")
+            return
+
+        # Update the track quality in the database
+        from selecta.core.data.database import get_session
+
+        # Create a track repository
+        session = get_session()
+        track_repo = TrackRepository(session)
+
+        logger.info(f"Updating quality in database: track_id={track_id}, quality={quality}")
+        # Set the track quality
+        success = track_repo.set_track_quality(track_id, quality)
+
+        if success:
+            logger.info("Quality update successful")
+
+            # Use our dedicated method to update the track quality in the model
+            updated = self.tracks_model.update_track_quality(track_id, quality)
+
+            if updated:
+                logger.debug(f"Updated track {track_id} quality in model to {quality}")
+            else:
+                logger.warning(f"Could not find track {track_id} in the current model")
+                logger.debug("Falling back to full refresh")
+                self.refresh()
+        else:
+            logger.error(f"Quality update failed for track {track_id}")
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "Quality Update Failed",
+                f"Failed to update quality rating for track {track_id}.",
+            )
 
     def _on_data_changed(self) -> None:
         """Handle notification that data has changed."""

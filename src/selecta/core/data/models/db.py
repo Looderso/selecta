@@ -59,12 +59,18 @@ class Track(Base):
 
     __tablename__ = "tracks"
 
+    # -1 means NOT_RATED, 1-5 are quality ratings
+    NOT_RATED = -1
+
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     artist: Mapped[str] = mapped_column(String(255), nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # User-assigned quality rating: -1 (not rated), 1-5 (stars)
+    quality: Mapped[int] = mapped_column(Integer, default=NOT_RATED, nullable=False)
 
     # Path to local file if available
     local_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)

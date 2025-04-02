@@ -1,8 +1,10 @@
 from typing import Any
 
-from PyQt6.QtCore import Qt
+from loguru import logger
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -12,7 +14,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from selecta.core.data.database import get_session
 from selecta.core.data.models.db import ImageSize
+from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.ui.components.image_loader import DatabaseImageLoader
 from selecta.ui.components.playlist.track_item import TrackItem
 
@@ -89,6 +93,9 @@ class TrackDetailsPanel(QWidget):
     # Shared image loader
     _db_image_loader = None
 
+    # Signal emitted when track quality is changed
+    quality_changed = pyqtSignal(int, int)  # track_id, new_quality
+
     def __init__(self, parent=None):
         """Initialize the track details panel.
 
@@ -98,6 +105,11 @@ class TrackDetailsPanel(QWidget):
         super().__init__(parent)
         self.setMinimumWidth(300)
 
+        # Track we're currently displaying
+        self._current_track_id = None
+        self._current_album_id = None
+        self._current_quality = -1  # NOT_RATED by default
+
         # Initialize the database image loader if needed
         if TrackDetailsPanel._db_image_loader is None:
             TrackDetailsPanel._db_image_loader = DatabaseImageLoader()
@@ -106,10 +118,7 @@ class TrackDetailsPanel(QWidget):
         TrackDetailsPanel._db_image_loader.track_image_loaded.connect(self._on_track_image_loaded)
         TrackDetailsPanel._db_image_loader.album_image_loaded.connect(self._on_album_image_loaded)
 
-        # Track the current track and album IDs
-        self._current_track_id = None
-        self._current_album_id = None
-
+        # Set up the UI
         layout = QVBoxLayout(self)
 
         # Header
@@ -135,6 +144,34 @@ class TrackDetailsPanel(QWidget):
 
         self.image_layout.addWidget(self.image_label)
         layout.addWidget(self.image_container)
+
+        # Quality rating section
+        quality_container = QWidget()
+        quality_layout = QVBoxLayout(quality_container)
+
+        # Label for the quality section
+        quality_label = QLabel("Quality Rating:")
+        quality_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        quality_layout.addWidget(quality_label)
+
+        # Quality selector dropdown
+        quality_selection = QHBoxLayout()
+
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItem("Not Rated", -1)
+        self.quality_combo.addItem("★ Very Poor", 1)
+        self.quality_combo.addItem("★★ Poor", 2)
+        self.quality_combo.addItem("★★★ OK", 3)
+        self.quality_combo.addItem("★★★★ Good", 4)
+        self.quality_combo.addItem("★★★★★ Great", 5)
+
+        # Connect the quality change signal
+        self.quality_combo.currentIndexChanged.connect(self._on_quality_changed)
+
+        quality_selection.addWidget(self.quality_combo)
+        quality_layout.addLayout(quality_selection)
+
+        layout.addWidget(quality_container)
 
         # Create scroll area for platform cards
         self.scroll_area = QScrollArea()
@@ -169,6 +206,11 @@ class TrackDetailsPanel(QWidget):
             self.image_label.setPixmap(placeholder)
             self._current_track_id = None
             self._current_album_id = None
+
+            # Reset quality dropdown
+            self.quality_combo.setCurrentIndex(0)  # Not rated
+            self.quality_combo.setEnabled(False)
+            self._current_quality = -1
             return
 
         # Update header with track info
@@ -218,6 +260,28 @@ class TrackDetailsPanel(QWidget):
         self._current_track_id = track.track_id
         self._current_album_id = track.album_id
 
+        # Set quality rating if available
+        display_data = track.to_display_data()
+        quality = display_data.get("quality", -1)
+        self._current_quality = quality
+
+        logger.debug(f"Setting quality dropdown for track {track.track_id} to {quality}")
+
+        # Set the quality dropdown to the track's quality
+        self.quality_combo.blockSignals(True)  # Prevent triggering the signal during setup
+
+        # Find the index for the current quality value
+        index = self.quality_combo.findData(quality)
+        if index >= 0:
+            logger.debug(f"Found quality {quality} at index {index}, setting it")
+            self.quality_combo.setCurrentIndex(index)
+        else:
+            logger.warning(f"Quality {quality} not found in combo box, defaulting to NOT_RATED")
+            self.quality_combo.setCurrentIndex(0)  # Default to "Not Rated"
+
+        self.quality_combo.blockSignals(False)
+        self.quality_combo.setEnabled(True)
+
         # Load track image from database if available
         if hasattr(track, "has_image") and track.has_image and TrackDetailsPanel._db_image_loader:
             TrackDetailsPanel._db_image_loader.load_track_image(track.track_id, ImageSize.MEDIUM)
@@ -247,6 +311,79 @@ class TrackDetailsPanel(QWidget):
         # Check if this image belongs to the current album and we don't already have a track image
         if album_id == self._current_album_id and self.image_label.pixmap().width() <= 200:
             self.image_label.setPixmap(pixmap)
+
+    @pyqtSlot(int)
+    def _on_quality_changed(self, index: int):
+        """Handle quality rating changes.
+
+        Args:
+            index: The index of the selected quality in the combo box
+        """
+        logger.debug(f"Quality dropdown changed to index {index}")
+
+        if self._current_track_id is None:
+            logger.warning("No track ID available, ignoring quality change")
+            return
+
+        # Get the quality value from the combo box
+        quality_data = self.quality_combo.itemData(index)
+
+        # Ensure we have an integer
+        try:
+            quality = quality_data if isinstance(quality_data, int) else int(quality_data)
+        except (ValueError, TypeError):
+            logger.error(f"Error converting quality data to int: {quality_data}")
+            quality = -1  # Default to NOT_RATED
+
+        logger.debug(f"Quality data value: {quality}")
+
+        # Only update if the quality has actually changed
+        if quality != self._current_quality:
+            self._current_quality = quality
+            logger.info(
+                f"Updating quality in database:"
+                f" track_id={self._current_track_id}, quality={quality}"
+            )
+
+            # Update the database directly
+            session = get_session()
+            track_repo = TrackRepository(session)
+
+            # Update the quality
+            success = track_repo.set_track_quality(self._current_track_id, quality)
+
+            if success:
+                logger.info(f"Quality updated successfully for track {self._current_track_id}")
+
+                # Still emit the signal for any listeners that want to know about the change
+                self.quality_changed.emit(self._current_track_id, quality)
+
+                # Force a refresh of the parent component
+                # This is a hack, but we need to refresh the UI
+                from PyQt6.QtCore import QTimer
+
+                QTimer.singleShot(100, self._notify_parent_of_change)
+            else:
+                logger.error(f"Failed to update quality for track {self._current_track_id}")
+                from PyQt6.QtWidgets import QMessageBox
+
+                QMessageBox.warning(
+                    self,
+                    "Quality Update Failed",
+                    f"Failed to update quality rating for track {self._current_track_id}.",
+                )
+        else:
+            logger.debug(f"Quality unchanged from {self._current_quality}, not updating")
+
+    def _notify_parent_of_change(self):
+        """Notify the parent component that a change has occurred."""
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, "refresh"):
+                logger.debug("Found parent with refresh method, calling it")
+                parent.refresh()
+                break
+            parent = parent.parent()
 
     def _clear_cards(self):
         """Clear all platform cards."""
