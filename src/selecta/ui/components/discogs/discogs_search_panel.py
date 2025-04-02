@@ -1,7 +1,7 @@
 """Discogs search panel for searching and displaying Discogs releases."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -34,7 +34,7 @@ class DiscogsSearchPanel(LoadableWidget):
     track_synced = pyqtSignal(dict)  # Emitted when a track is synced
     track_added = pyqtSignal(dict)  # Emitted when a track is added
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the Discogs search panel.
 
         Args:
@@ -46,9 +46,9 @@ class DiscogsSearchPanel(LoadableWidget):
         self.setObjectName("discogsSearchPanel")
 
         # Initialize attributes
-        self.result_widgets = []
-        self.message_label = None
-        self.initial_message = None
+        self.result_widgets: list[QWidget] = []
+        self.message_label: QLabel | None = None
+        self.initial_message: QLabel | None = None
 
         # Initialize repositories for database operations
         self.track_repo = TrackRepository()
@@ -86,7 +86,7 @@ class DiscogsSearchPanel(LoadableWidget):
         self.selection_state.track_selected.connect(self._on_global_track_selected)
         self.selection_state.data_changed.connect(self._on_data_changed)
 
-    def _setup_ui(self, content_widget):
+    def _setup_ui(self, content_widget: QWidget) -> None:
         """Set up the UI components.
 
         Args:
@@ -172,7 +172,7 @@ class DiscogsSearchPanel(LoadableWidget):
             if isinstance(widget, DiscogsTrackItem):
                 widget.update_button_state(can_add=can_add, can_sync=can_sync)
 
-    def _on_search(self, query: str):
+    def _on_search(self, query: str) -> None:
         """Handle search query submission.
 
         Args:
@@ -195,7 +195,7 @@ class DiscogsSearchPanel(LoadableWidget):
                 and isinstance(self.discogs_client, DiscogsClient)
             ):
                 # Run the search in a background thread
-                def perform_search():
+                def perform_search() -> list[Any]:
                     return self.discogs_client.search_release(query, limit=10)  # type: ignore
 
                 # Create a worker and connect signals
@@ -216,7 +216,7 @@ class DiscogsSearchPanel(LoadableWidget):
             self.hide_loading()
             self.show_message(f"Error searching Discogs: {str(e)}")
 
-    def _handle_search_results(self, results):
+    def _handle_search_results(self, results: list[Any]) -> None:
         """Handle the search results from the background thread.
 
         Args:
@@ -224,7 +224,7 @@ class DiscogsSearchPanel(LoadableWidget):
         """
         self.display_results(results)
 
-    def _handle_search_error(self, error_msg: str):
+    def _handle_search_error(self, error_msg: str) -> None:
         """Handle errors from the background thread.
 
         Args:
@@ -232,7 +232,7 @@ class DiscogsSearchPanel(LoadableWidget):
         """
         self.show_message(f"Error searching Discogs: {error_msg}")
 
-    def display_results(self, results):
+    def display_results(self, results: list[Any]) -> None:
         """Display search results.
 
         Args:
@@ -250,7 +250,7 @@ class DiscogsSearchPanel(LoadableWidget):
             # Convert DiscogsRelease to a formatted dict for our UI
             if has_artist_and_title(release):
                 # Create a compatible dict from DiscogsRelease object
-                release_data = {
+                release_data: dict[str, Any] = {
                     "id": release.id,
                     "title": release.title,
                     "artist": release.artist,
@@ -265,7 +265,7 @@ class DiscogsSearchPanel(LoadableWidget):
                 }
             else:
                 # Use the release as is (assuming it's already a dict)
-                release_data = release
+                release_data = cast(dict[str, Any], release)
 
             track_widget = DiscogsTrackItem(release_data)
             track_widget.sync_clicked.connect(self._on_track_sync)
@@ -279,15 +279,15 @@ class DiscogsSearchPanel(LoadableWidget):
         # Add a spacer at the end for better layout
         self.results_layout.addStretch(1)
 
-    def clear_results(self):
+    def clear_results(self) -> None:
         """Clear all search results."""
         # Remove the initial message if it exists
-        if hasattr(self, "initial_message") and self.initial_message is not None:
+        if self.initial_message is not None:
             self.initial_message.setParent(None)
             self.initial_message = None
 
         # Remove any message widget
-        if hasattr(self, "message_label") and self.message_label is not None:
+        if self.message_label is not None:
             self.message_label.setParent(None)
             self.message_label = None
 
@@ -303,7 +303,7 @@ class DiscogsSearchPanel(LoadableWidget):
             if spacer_item and spacer_item.spacerItem():
                 self.results_layout.removeItem(spacer_item)
 
-    def show_message(self, message: str):
+    def show_message(self, message: str) -> None:
         """Show a message in the results area.
 
         Args:
@@ -319,7 +319,7 @@ class DiscogsSearchPanel(LoadableWidget):
         self.results_layout.addWidget(self.message_label)
         self.results_layout.addStretch(1)
 
-    def _on_track_sync(self, release_data: dict):
+    def _on_track_sync(self, release_data: dict[str, Any]) -> None:
         """Handle track sync button click.
 
         Args:
@@ -362,7 +362,7 @@ class DiscogsSearchPanel(LoadableWidget):
             self.show_loading("Syncing track with Discogs...")
 
             # Run sync operation in background
-            def sync_task():
+            def sync_task() -> dict[str, Any]:
                 # Add platform info to the track
                 self.track_repo.add_platform_info(
                     track_id, "discogs", str(discogs_id), discogs_uri, platform_data_json
@@ -381,8 +381,12 @@ class DiscogsSearchPanel(LoadableWidget):
             logger.exception(f"Error syncing track: {e}")
             QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
 
-    def _handle_sync_complete(self, release_data):
-        """Handle completion of track sync."""
+    def _handle_sync_complete(self, release_data: dict[str, Any]) -> None:
+        """Handle completion of track sync.
+
+        Args:
+            release_data: The release data that was synced
+        """
         # Emit signal with the synchronized track
         self.track_synced.emit(release_data)
 
@@ -395,12 +399,16 @@ class DiscogsSearchPanel(LoadableWidget):
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_sync_error(self, error_msg):
-        """Handle error during track sync."""
+    def _handle_sync_error(self, error_msg: str) -> None:
+        """Handle error during track sync.
+
+        Args:
+            error_msg: The error message
+        """
         logger.error(f"Error syncing track: {error_msg}")
         QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
 
-    def _on_track_add(self, release_data: dict):
+    def _on_track_add(self, release_data: dict[str, Any]) -> None:
         """Handle track add button click.
 
         Args:
@@ -440,7 +448,7 @@ class DiscogsSearchPanel(LoadableWidget):
             self.show_loading(f"Adding {artist} - {title} to playlist...")
 
             # Run add operation in background
-            def add_task():
+            def add_task() -> dict[str, Any]:
                 # Create a new track
                 new_track_data = {
                     "title": title,
@@ -494,8 +502,12 @@ class DiscogsSearchPanel(LoadableWidget):
             logger.exception(f"Error adding track: {e}")
             QMessageBox.critical(self, "Add Error", f"Error adding track: {str(e)}")
 
-    def _handle_add_complete(self, release_data):
-        """Handle completion of track add."""
+    def _handle_add_complete(self, release_data: dict[str, Any]) -> None:
+        """Handle completion of track add.
+
+        Args:
+            release_data: The release data that was added
+        """
         # Extract title and artist for display
         title = release_data.get("title", "")
         artist = release_data.get("artist", "")
@@ -512,7 +524,11 @@ class DiscogsSearchPanel(LoadableWidget):
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_add_error(self, error_msg):
-        """Handle error during track add."""
+    def _handle_add_error(self, error_msg: str) -> None:
+        """Handle error during track add.
+
+        Args:
+            error_msg: The error message
+        """
         logger.error(f"Error adding track: {error_msg}")
         QMessageBox.critical(self, "Add Error", f"Error adding track: {error_msg}")
