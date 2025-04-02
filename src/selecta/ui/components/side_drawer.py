@@ -100,6 +100,8 @@ class SideDrawer(QWidget):
 
         # Add local database folder selection widget
         self.folder_selection = FolderSelectionWidget()
+        self.folder_selection.folder_changed.connect(self._on_folder_changed)
+        self.folder_selection.import_rekordbox_clicked.connect(self._on_import_rekordbox)
         scroll_layout.addWidget(self.folder_selection)
 
         # Connect signals
@@ -123,6 +125,13 @@ class SideDrawer(QWidget):
         main_window = self.window()
         if hasattr(main_window, "on_local_database_folder_changed"):
             main_window.on_local_database_folder_changed(folder_path)
+
+    def _on_import_rekordbox(self):
+        """Handle import from Rekordbox request."""
+        # Forward the request to the main window
+        main_window = self.window()
+        if hasattr(main_window, "on_import_rekordbox"):
+            main_window.on_import_rekordbox()
 
     def show_drawer(self):
         """Show the drawer with animation."""
