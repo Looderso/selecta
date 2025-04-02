@@ -45,7 +45,6 @@ dependencies = [
     "loguru",            # Better logging
     "httpx",             # Modern HTTP client
     "requests_oauthlib", # O-auth for testing
-    "rich",              # Rich text and formatting
     "click",             # Command-line interface
     "click-completion",
     "appdirs",           # App directories management
@@ -62,24 +61,11 @@ dev = [
     "ruff",       # Fast Python linter/formatter
     "pre-commit", # Git hooks manager
     # Testing
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "pytest-kivy",
-    # Docs
-    "mkdocs",
-    "mkdocs-material",
-    # Packaging
     "pyinstaller", # For bundling macOS app
-    "briefcase",   # Alternative packaging system
 ]
 
 # Profiles for different development tasks
 lint = ["ruff"]
-
-test = ["pytest", "pytest-cov", "pytest-mock", "pytest-kivy"]
-
-docs = ["mkdocs", "mkdocs-material"]
 
 [project.urls]
 "Homepage" = "https://github.com/Looderso/selecta"

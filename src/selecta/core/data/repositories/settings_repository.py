@@ -230,3 +230,27 @@ class SettingsRepository:
             List of platform credentials
         """
         return self.session.query(PlatformCredentials).all()
+
+    def get_local_database_folder(self) -> str | None:
+        """Get the path to the local database folder.
+
+        Returns:
+            The local database folder path, or None if not set
+        """
+        return self.get_setting_value("local_database_folder")
+
+    def set_local_database_folder(self, path: str) -> UserSettings:
+        """Set the local database folder path.
+
+        Args:
+            path: Path to the local database folder
+
+        Returns:
+            The updated setting
+        """
+        return self.set_setting(
+            "local_database_folder",
+            path,
+            data_type="string",
+            description="Root folder for local music database",
+        )

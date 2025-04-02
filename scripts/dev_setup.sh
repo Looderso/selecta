@@ -35,10 +35,6 @@ fi
 echo -e "${BLUE}Activating virtual environment...${NC}"
 source .venv/bin/activate
 
-# Install Kivy first to ensure it's set up correctly
-echo -e "${BLUE}Installing Kivy...${NC}"
-uv pip install "kivy[base]"
-
 # Install project dependencies
 echo -e "${BLUE}Installing project dependencies...${NC}"
 uv pip install -e ".[dev]"
@@ -48,5 +44,4 @@ echo -e "${BLUE}Setting up pre-commit hooks...${NC}"
 pre-commit install
 
 echo -e "${GREEN}Development environment setup complete!${NC}"
-echo -e "${YELLOW}NOTE: Garden packages (like iconfonts) will be added later.${NC}"
 echo -e "${BLUE}To activate the environment, run:${NC} source .venv/bin/activate"
