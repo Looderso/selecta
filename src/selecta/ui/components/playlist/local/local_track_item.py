@@ -58,6 +58,7 @@ class LocalTrackItem(TrackItem):
         tags: list[str] | None = None,
         platform_info: list[dict] | None = None,
         quality: int = -1,
+        has_image: bool = False,
     ):
         """Initialize a local track item.
 
@@ -74,8 +75,18 @@ class LocalTrackItem(TrackItem):
             tags: List of tags
             platform_info: List of platform information dictionaries
             quality: Track quality rating (-1=not rated, 1-5=star rating)
+            has_image: Whether this track has an image in the database
         """
-        super().__init__(track_id, title, artist, duration_ms, album, added_at)
+        super().__init__(
+            track_id,
+            title,
+            artist,
+            duration_ms,
+            album,
+            added_at,
+            album_id=None,
+            has_image=has_image,
+        )
         self.local_path = local_path
         self.genre = genre
         self.bpm = bpm

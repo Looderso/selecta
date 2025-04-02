@@ -33,7 +33,12 @@ class DatabaseImageLoader(QObject):
         super().__init__(parent)
         self._cache = {}  # Simple in-memory cache: keys: "track_<id>_<size>" or "album_<id>_<size>"
         self._loading = set()  # Track keys currently being loaded
-        self._image_repo = ImageRepository()
+
+        # Create a persistent session for the image repository
+        from selecta.core.data.database import get_session
+
+        session = get_session()
+        self._image_repo = ImageRepository(session)
 
     def load_track_image(self, track_id: int, size: ImageSize = ImageSize.THUMBNAIL) -> None:
         """Load a track's image from the database.

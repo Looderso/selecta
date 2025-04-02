@@ -102,6 +102,7 @@ class SideDrawer(QWidget):
         self.folder_selection = FolderSelectionWidget()
         self.folder_selection.folder_changed.connect(self._on_folder_changed)
         self.folder_selection.import_rekordbox_clicked.connect(self._on_import_rekordbox)
+        self.folder_selection.import_covers_clicked.connect(self._on_import_covers)
         scroll_layout.addWidget(self.folder_selection)
 
         # Connect signals
@@ -136,6 +137,15 @@ class SideDrawer(QWidget):
         main_window = self.window()
         if has_import_rekordbox_handler(main_window):
             main_window.on_import_rekordbox()
+
+    def _on_import_covers(self):
+        """Handle import covers from audio metadata request."""
+        # Forward the request to the main window
+        from selecta.core.utils.type_helpers import has_import_covers_handler
+
+        main_window = self.window()
+        if has_import_covers_handler(main_window):
+            main_window.on_import_covers()
 
     def show_drawer(self):
         """Show the drawer with animation."""
