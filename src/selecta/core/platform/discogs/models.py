@@ -3,12 +3,19 @@
 import contextlib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import (
+    Any,
+    Protocol,
+    TypeGuard,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 T = TypeVar("T")
 
 
-def safe_get_attr(obj: Any, attr_name: str, default: T = None) -> T:
+def safe_get_attr(obj: Any, attr_name: str, default: T | None = None) -> T | None:
     """Safely get an attribute from an object.
 
     Args:
@@ -22,6 +29,39 @@ def safe_get_attr(obj: Any, attr_name: str, default: T = None) -> T:
     return getattr(obj, attr_name, default)
 
 
+@runtime_checkable
+class HasNameAttribute(Protocol):
+    """Protocol for objects with a name attribute."""
+
+    name: str
+
+
+def has_name_attribute(obj: Any) -> TypeGuard[HasNameAttribute]:
+    """Check if an object has a name attribute.
+
+    Args:
+        obj: Object to check
+
+    Returns:
+        True if the object has a name attribute
+    """
+    return hasattr(obj, "name")
+
+
+@runtime_checkable
+class HasArtist(Protocol):
+    """Protocol for objects with an artist attribute."""
+
+    artist: str
+
+
+@runtime_checkable
+class HasDateAdded(Protocol):
+    """Protocol for objects with a date_added attribute."""
+
+    date_added: str
+
+
 def extract_list_attr(obj: Any, attr_name: str, key_name: str = "name") -> list[str]:
     """Extract a list of attributes from an object.
 
@@ -33,17 +73,17 @@ def extract_list_attr(obj: Any, attr_name: str, key_name: str = "name") -> list[
     Returns:
         List of extracted values
     """
-    result = []
-    attr_list = safe_get_attr(obj, attr_name, [])
+    result: list[str] = []
+    attr_list: list[Any] = safe_get_attr(obj, attr_name, []) or []
 
     if not attr_list:
         return result
 
     for item in attr_list:
         if isinstance(item, dict) and key_name in item:
-            result.append(item[key_name])
-        elif hasattr(item, key_name):
-            result.append(getattr(item, key_name))
+            result.append(cast(str, item[key_name]))
+        elif has_name_attribute(item):
+            result.append(item.name)
 
     return result
 
@@ -59,14 +99,17 @@ def extract_first_item(obj: Any, attr_name: str, key_name: str = "name") -> str 
     Returns:
         Extracted value or None
     """
-    attr_list = safe_get_attr(obj, attr_name, [])
+    attr_list: list[Any] = safe_get_attr(obj, attr_name, []) or []
     if not attr_list:
         return None
 
-    first_item = attr_list[0]
-    if isinstance(first_item, dict):
-        return first_item.get(key_name)
-    return safe_get_attr(first_item, key_name)
+    try:
+        first_item = attr_list[0]
+        if isinstance(first_item, dict):
+            return cast(str | None, first_item.get(key_name))
+        return cast(str | None, safe_get_attr(first_item, key_name))
+    except (IndexError, TypeError):
+        return None
 
 
 @dataclass
@@ -97,55 +140,64 @@ class DiscogsRelease:
             DiscogsRelease instance
         """
         # Extract ID
-        release_id = release_dict.get("id")
+        release_id: int = cast(int, release_dict.get("id"))
         if not release_id:
             raise ValueError("No release_id in data")
 
         # Extract title
-        title = release_dict.get("title", "")
+        title: str = cast(str, release_dict.get("title", ""))
 
         # Extract artist
-        artist = "Unknown Artist"
-        artist_data = release_dict.get("artists", [])
+        artist: str = "Unknown Artist"
+        artist_data: list[dict[str, Any]] = cast(
+            list[dict[str, Any]], release_dict.get("artists", []) or []
+        )
         if artist_data:
-            artist_names = [a.get("name", "") for a in artist_data]
+            artist_names = [a.get("name", "") for a in artist_data if isinstance(a, dict)]
             artist = ", ".join(filter(None, artist_names))
 
         # Extract year
-        year = release_dict.get("year")
+        year: int | None = cast(int | None, release_dict.get("year"))
 
         # Extract formats
-        formats = []
-        format_data = release_dict.get("formats", [])
+        formats: list[str] = []
+        format_data: list[dict[str, Any]] = cast(
+            list[dict[str, Any]], release_dict.get("formats", []) or []
+        )
         if format_data:
             for fmt in format_data:
                 if isinstance(fmt, dict) and "name" in fmt:
-                    formats.append(fmt["name"])
+                    formats.append(cast(str, fmt["name"]))
 
         # Extract genres
-        genres = release_dict.get("genres", [])
+        genres: list[str] = cast(list[str], release_dict.get("genres", []) or [])
         if not genres:
-            genres = release_dict.get("genre", [])
+            genres = cast(list[str], release_dict.get("genre", []) or [])
 
         # Extract label and catalog number
-        label = None
-        catno = None
-        label_data = release_dict.get("labels", [])
+        label: str | None = None
+        catno: str | None = None
+        label_data: list[dict[str, Any]] = cast(
+            list[dict[str, Any]], release_dict.get("labels", []) or []
+        )
         if label_data and isinstance(label_data, list) and label_data:
-            first_label = label_data[0]
-            if isinstance(first_label, dict):
-                label = first_label.get("name")
-                catno = first_label.get("catno")
+            try:
+                first_label = label_data[0]
+                if isinstance(first_label, dict):
+                    label = cast(str | None, first_label.get("name"))
+                    catno = cast(str | None, first_label.get("catno"))
+            except (IndexError, TypeError):
+                pass
 
         # Extract country
-        country = release_dict.get("country")
+        country: str | None = cast(str | None, release_dict.get("country"))
 
         # Extract images
-        thumb_url = release_dict.get("thumb")
-        cover_url = release_dict.get("cover_image")
+        thumb_url: str | None = cast(str | None, release_dict.get("thumb"))
+        cover_url: str | None = cast(str | None, release_dict.get("cover_image"))
 
         # Extract URI
-        uri = release_dict.get("resource_url")
+        uri: str | None = cast(str | None, release_dict.get("resource_url"))
         if not uri and release_id:
             uri = f"https://www.discogs.com/release/{release_id}"
 
@@ -175,43 +227,49 @@ class DiscogsRelease:
             DiscogsRelease instance
         """
         # Get basic fields
-        release_id = safe_get_attr(release_obj, "id")
+        release_id: int = cast(int, safe_get_attr(release_obj, "id"))
         if not release_id:
             raise ValueError("No release_id")
-        title = safe_get_attr(release_obj, "title", "")
+        title: str = cast(str, safe_get_attr(release_obj, "title", ""))
 
         # Handle artist
-        artist = "Unknown Artist"
+        artist: str = "Unknown Artist"
+
+        # Use protocol for HasArtist
+        def has_artist(obj: Any) -> TypeGuard["HasArtist"]:
+            return hasattr(obj, "artist")
+
         if hasattr(release_obj, "artists"):
             artist_names = extract_list_attr(release_obj, "artists")
-            artist = ", ".join(artist_names)
-        elif hasattr(release_obj, "artist"):
+            if artist_names:
+                artist = ", ".join(artist_names)
+        elif has_artist(release_obj):
             artist = release_obj.artist
 
         # Get year
-        year = safe_get_attr(release_obj, "year")
+        year: int | None = cast(int | None, safe_get_attr(release_obj, "year"))
 
         # Get formats
-        formats = extract_list_attr(release_obj, "formats")
+        formats: list[str] = extract_list_attr(release_obj, "formats")
 
         # Get genres
-        genres = safe_get_attr(release_obj, "genres", [])
+        genres: list[str] = cast(list[str], safe_get_attr(release_obj, "genres", []) or [])
         if not genres:
-            genres = safe_get_attr(release_obj, "genre", [])
+            genres = cast(list[str], safe_get_attr(release_obj, "genre", []) or [])
 
         # Get label and catalog number
-        label = extract_first_item(release_obj, "labels")
-        catno = extract_first_item(release_obj, "labels", "catno")
+        label: str | None = extract_first_item(release_obj, "labels")
+        catno: str | None = extract_first_item(release_obj, "labels", "catno")
 
         # Get country
-        country = safe_get_attr(release_obj, "country")
+        country: str | None = cast(str | None, safe_get_attr(release_obj, "country"))
 
         # Get image URLs
-        thumb_url = safe_get_attr(release_obj, "thumb")
-        cover_url = extract_first_item(release_obj, "images", "uri")
+        thumb_url: str | None = cast(str | None, safe_get_attr(release_obj, "thumb"))
+        cover_url: str | None = extract_first_item(release_obj, "images", "uri")
 
         # Get URI
-        uri = safe_get_attr(release_obj, "uri")
+        uri: str | None = cast(str | None, safe_get_attr(release_obj, "uri"))
         if not uri and release_id:
             uri = f"https://www.discogs.com/release/{release_id}"
 
@@ -259,17 +317,22 @@ class DiscogsVinyl:
         # Convert the release object to our model
         release = DiscogsRelease.from_discogs_object(release_obj)
 
+        # Use protocol for objects with date_added
+        def has_date_added(obj: Any) -> TypeGuard[HasDateAdded]:
+            return hasattr(obj, "date_added")
+
         # Get collection-specific metadata
-        date_added = None
-        if hasattr(release_obj, "date_added"):
+        date_added: datetime | None = None
+        if has_date_added(release_obj):
             with contextlib.suppress(ValueError, AttributeError):
-                date_added = datetime.fromisoformat(
-                    safe_get_attr(release_obj, "date_added", "").replace("Z", "+00:00")
-                )
+                date_str = cast(str, safe_get_attr(release_obj, "date_added", ""))
+                if date_str:
+                    date_str = date_str.replace("Z", "+00:00")
+                    date_added = datetime.fromisoformat(date_str)
 
         # Get rating and notes
-        rating = safe_get_attr(release_obj, "rating")
-        notes = safe_get_attr(release_obj, "notes")
+        rating: int | None = cast(int | None, safe_get_attr(release_obj, "rating"))
+        notes: str | None = cast(str | None, safe_get_attr(release_obj, "notes"))
 
         return cls(
             release=release,

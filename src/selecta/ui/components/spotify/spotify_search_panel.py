@@ -1,7 +1,7 @@
 """Spotify search panel for searching and displaying Spotify tracks."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -21,7 +21,7 @@ from selecta.core.data.repositories.settings_repository import SettingsRepositor
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.spotify.client import SpotifyClient
-from selecta.core.utils.type_helpers import column_to_int
+from selecta.core.utils.type_helpers import column_to_int, has_artist_names
 from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.components.spotify.spotify_track_item import SpotifyTrackItem
 
@@ -200,7 +200,7 @@ class SpotifySearchPanel(QWidget):
         # Add results to the layout
         for track in results:
             # Convert SpotifyTrack to a properly formatted dict for our UI
-            if hasattr(track, "artist_names") and hasattr(track, "album_name"):
+            if has_artist_names(track):
                 # Create a compatible dict from SpotifyTrack object
                 track_data = {
                     "id": track.id,
@@ -219,7 +219,7 @@ class SpotifySearchPanel(QWidget):
                 }
             else:
                 # Use the track as is (assuming it's already a dict)
-                track_data = track
+                track_data = cast(dict[str, Any], track)
 
             track_widget = SpotifyTrackItem(track_data)
             track_widget.sync_clicked.connect(self._on_track_sync)
@@ -236,12 +236,12 @@ class SpotifySearchPanel(QWidget):
     def clear_results(self):
         """Clear all search results."""
         # Remove the initial message if it exists
-        if hasattr(self, "initial_message") and self.initial_message:
+        if self.initial_message is not None:
             self.initial_message.setParent(None)
             self.initial_message = None
 
         # Remove any message widget
-        if hasattr(self, "message_label") and self.message_label:
+        if self.message_label is not None:
             self.message_label.setParent(None)
             self.message_label = None
 

@@ -1,3 +1,5 @@
+from typing import Any
+
 from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -28,7 +30,7 @@ class PlaylistComponent(QWidget):
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
 
-    def __init__(self, data_provider: PlaylistDataProvider, parent=None):
+    def __init__(self, data_provider: PlaylistDataProvider, parent: QWidget | None = None):
         """Initialize the playlist component.
 
         Args:
@@ -40,7 +42,7 @@ class PlaylistComponent(QWidget):
         self.data_provider.register_refresh_callback(self.refresh)
 
         self.current_playlist_id = None
-        self.current_tracks = []  # Store current tracks for search suggestions
+        self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
 
         # Create the details panel but don't add it to our layout
         # It will be managed by the main window
@@ -221,7 +223,7 @@ class PlaylistComponent(QWidget):
     def _expand_all_folders(self) -> None:
         """Expand all folder items in the tree view."""
 
-        def expand_recurse(parent_index):
+        def expand_recurse(parent_index: Any) -> None:
             for row in range(self.playlist_model.rowCount(parent_index)):
                 index = self.playlist_model.index(row, 0, parent_index)
                 item = index.internalPointer()
@@ -380,16 +382,16 @@ class PlaylistComponent(QWidget):
         self.playlist_model.add_items(playlists)
 
         # Reload tracks if a playlist was selected
-        if current_playlist_id is not None:
-            self.current_playlist_id = current_playlist_id
-            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)
-            self.tracks_model.set_tracks(self.current_tracks)
-            self._update_search_suggestions()
+        if current_playlist_id is not None:  # type: ignore[unreachable]
+            self.current_playlist_id = current_playlist_id  # type: ignore[unreachable]
+            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)  # type: ignore[unreachable]
+            self.tracks_model.set_tracks(self.current_tracks)  # type: ignore[unreachable]
+            self._update_search_suggestions()  # type: ignore[unreachable]
 
             # Clear track details
             self.details_panel.set_track(None)
 
-    def _show_track_context_menu(self, position):
+    def _show_track_context_menu(self, position: Any):
         """Show context menu for tracks table.
 
         Args:
@@ -419,7 +421,7 @@ class PlaylistComponent(QWidget):
         # Show the menu at the cursor position
         menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
 
-    def _search_on_spotify(self, track):
+    def _search_on_spotify(self, track: Any):
         """Search for a track on Spotify.
 
         Args:
@@ -432,36 +434,40 @@ class PlaylistComponent(QWidget):
         search_query = f"{track.artist} {track.title}"
 
         # Access the main window to switch to the Spotify search panel
+        from selecta.core.utils.type_helpers import (
+            has_right_container,
+            has_search_bar,
+            has_show_spotify_search,
+        )
+        from selecta.ui.components.search_bar import SearchBar
+        from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
+
         main_window = self.window()
 
         # Call the show_spotify_search method on the main window
-        if hasattr(main_window, "show_spotify_search"):
-            main_window.show_spotify_search()  # type: ignore
+        if has_show_spotify_search(main_window):
+            main_window.show_spotify_search()
 
             # Find the Spotify search panel in the right container
-            if hasattr(main_window, "right_container"):
-                for i in range(main_window.right_layout.count()):  # type: ignore
-                    widget = main_window.right_layout.itemAt(i).widget()  # type: ignore
+            if has_right_container(main_window):
+                for i in range(main_window.right_layout.count()):
+                    widget = main_window.right_layout.itemAt(i).widget()
                     if isinstance(widget, QTabWidget):
                         # The Spotify tab is at index 0
                         widget.setCurrentIndex(0)
 
                         # Find the Spotify search panel within the tab widget
                         spotify_panel = widget.widget(0)
-                        if hasattr(spotify_panel, "search_bar"):
-                            from selecta.ui.components.search_bar import SearchBar
-                            from selecta.ui.components.spotify.spotify_search_panel import (
-                                SpotifySearchPanel,
-                            )
-
-                            if isinstance(spotify_panel, SpotifySearchPanel):
-                                search_bar = spotify_panel.search_bar
-                                if isinstance(search_bar, SearchBar):
-                                    search_bar.set_search_text(search_query)
-                                    spotify_panel._on_search(search_query)
+                        if isinstance(spotify_panel, SpotifySearchPanel) and has_search_bar(
+                            spotify_panel
+                        ):
+                            search_bar = spotify_panel.search_bar
+                            if isinstance(search_bar, SearchBar):
+                                search_bar.set_search_text(search_query)
+                                spotify_panel._on_search(search_query)
                         break
 
-    def _search_on_discogs(self, track):
+    def _search_on_discogs(self, track: Any):
         """Search for a track on Discogs.
 
         Args:
@@ -474,16 +480,24 @@ class PlaylistComponent(QWidget):
         search_query = f"{track.artist} {track.title}"
 
         # Access the main window to switch to the Discogs search panel
+        from selecta.core.utils.type_helpers import (
+            has_right_container,
+            has_search_bar,
+            has_show_discogs_search,
+        )
+        from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
+        from selecta.ui.components.search_bar import SearchBar
+
         main_window = self.window()
 
         # Call the show_discogs_search method on the main window
-        if hasattr(main_window, "show_discogs_search"):
-            main_window.show_discogs_search()  # type: ignore
+        if has_show_discogs_search(main_window):
+            main_window.show_discogs_search()
 
             # Find the Discogs search panel in the right container
-            if hasattr(main_window, "right_container"):
-                for i in range(main_window.right_layout.count()):  # type: ignore
-                    widget = main_window.right_layout.itemAt(i).widget()  # type: ignore
+            if has_right_container(main_window):
+                for i in range(main_window.right_layout.count()):
+                    widget = main_window.right_layout.itemAt(i).widget()
                     if isinstance(widget, QTabWidget):
                         # The Discogs tab is at index 1
                         widget.setCurrentIndex(1)
@@ -491,14 +505,8 @@ class PlaylistComponent(QWidget):
                         # Find the Discogs search panel within the tab widget
                         discogs_panel = widget.widget(1)
 
-                        # Import here to avoid circular imports
-                        from selecta.ui.components.discogs.discogs_search_panel import (
-                            DiscogsSearchPanel,
-                        )
-                        from selecta.ui.components.search_bar import SearchBar
-
-                        if isinstance(discogs_panel, DiscogsSearchPanel) and hasattr(
-                            discogs_panel, "search_bar"
+                        if isinstance(discogs_panel, DiscogsSearchPanel) and has_search_bar(
+                            discogs_panel
                         ):
                             search_bar = discogs_panel.search_bar
                             if isinstance(search_bar, SearchBar):
@@ -519,10 +527,10 @@ class PlaylistComponent(QWidget):
             selected_track = self.tracks_model.get_track(row)
 
         # If we have a current playlist, refresh its contents
-        if current_playlist_id is not None:
+        if current_playlist_id is not None:  # type: ignore[unreachable]
             # Reload the tracks for this playlist
-            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)
-            self.tracks_model.set_tracks(self.current_tracks)
+            self.current_tracks = self.data_provider.get_playlist_tracks(current_playlist_id)  # type: ignore[unreachable]
+            self.tracks_model.set_tracks(self.current_tracks)  # type: ignore[unreachable]
 
             # Update search suggestions
             self._update_search_suggestions()
@@ -534,10 +542,12 @@ class PlaylistComponent(QWidget):
                     if track and track.track_id == selected_track.track_id:
                         # Reselect this track
                         index = self.tracks_model.index(row, 0)
-                        self.tracks_table.selectionModel().select(  # type: ignore
-                            index,
-                            QItemSelectionModel.SelectionFlag.ClearAndSelect
-                            | QItemSelectionModel.SelectionFlag.Rows,
-                        )
+                        selection_model = self.tracks_table.selectionModel()
+                        if selection_model:
+                            selection_model.select(
+                                index,
+                                QItemSelectionModel.SelectionFlag.ClearAndSelect
+                                | QItemSelectionModel.SelectionFlag.Rows,
+                            )
                         self.tracks_table.scrollTo(index)
                         break

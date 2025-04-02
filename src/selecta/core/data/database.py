@@ -2,10 +2,10 @@
 
 import os
 from pathlib import Path
-from typing import Any
 
 from loguru import logger
 from sqlalchemy import create_engine
+from sqlalchemy.engine.base import Engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -38,7 +38,7 @@ def get_db_path() -> Path:
 DB_PATH = get_db_path()
 
 
-def get_engine(db_path: Path | str | None = None) -> Any:
+def get_engine(db_path: Path | str | None = None) -> Engine:
     """Create and return a SQLAlchemy engine.
 
     Args:
@@ -60,7 +60,7 @@ def get_engine(db_path: Path | str | None = None) -> Any:
     return engine
 
 
-def get_session_factory(engine: Any) -> sessionmaker:
+def get_session_factory(engine: Engine) -> sessionmaker[Session]:
     """Create a session factory bound to the given engine.
 
     Args:
@@ -69,11 +69,11 @@ def get_session_factory(engine: Any) -> sessionmaker:
     Returns:
         Session factory
     """
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session_factory: sessionmaker[Session] = sessionmaker(bind=engine, expire_on_commit=False)
     return session_factory
 
 
-def get_session(engine: Any = None) -> Session:
+def get_session(engine: Engine | None = None) -> Session:
     """Create and return a new database session.
 
     Args:
