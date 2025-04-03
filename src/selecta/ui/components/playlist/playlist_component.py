@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMenu,
+    QPushButton,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -113,9 +114,28 @@ class PlaylistTreeContainer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Create header container for title and controls
+        self.header_container = QWidget()
+        self.header_layout = QHBoxLayout(self.header_container)
+        self.header_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Header title
+        self.header_label = QLabel("Playlists")
+        self.header_label.setStyleSheet("font-weight: bold;")
+        self.header_layout.addWidget(self.header_label)
+
+        # Create playlist button (hidden by default)
+        self.create_button = QPushButton("+")
+        self.create_button.setToolTip("Create new playlist")
+        self.create_button.setFixedSize(24, 24)
+        self.create_button.setVisible(False)  # Hide by default
+        self.header_layout.addWidget(self.create_button)
+
+        layout.addWidget(self.header_container)
+
         # Create stacked widget for content/loading states
         self.stacked_widget = QStackedWidget()
-        layout.addWidget(self.stacked_widget)
+        layout.addWidget(self.stacked_widget, 1)  # 1 = stretch factor
 
         # Create tree view
         self.playlist_tree = QTreeView()
@@ -147,6 +167,22 @@ class PlaylistTreeContainer(QWidget):
     def hide_loading(self) -> None:
         """Hide loading state and show tree view."""
         self.stacked_widget.setCurrentWidget(self.playlist_tree)
+
+    def set_platform_name(self, name: str) -> None:
+        """Set the platform name in the header.
+
+        Args:
+            name: Platform name to display
+        """
+        self.header_label.setText(f"{name} Playlists")
+
+    def show_create_button(self, visible: bool = True) -> None:
+        """Show or hide the create playlist button.
+
+        Args:
+            visible: Whether to show the button
+        """
+        self.create_button.setVisible(visible)
 
 
 class TrackListContainer(QWidget):
@@ -185,10 +221,12 @@ class TrackListContainer(QWidget):
         self.stacked_widget = QStackedWidget()
         self._layout.addWidget(self.stacked_widget, 1)  # 1 = stretch factor
 
-        # Create tracks table
+        # Create tracks table with multi-selection enabled
         self.tracks_table = QTableView()
         self.tracks_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tracks_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tracks_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )  # Enable multi-selection
         self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # type: ignore
         self.tracks_table.verticalHeader().setVisible(False)  # type: ignore
         self.tracks_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -304,6 +342,10 @@ class PlaylistComponent(QWidget):
         self.playlist_model = PlaylistTreeModel()
         self.playlist_tree.setModel(self.playlist_model)
 
+        # Set context menu for playlist tree
+        self.playlist_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.playlist_tree.customContextMenuRequested.connect(self._show_playlist_context_menu)
+
         # Create track list container (right side)
         self.track_container = TrackListContainer()
         self.tracks_table = self.track_container.tracks_table
@@ -411,6 +453,24 @@ class PlaylistComponent(QWidget):
 
         # Set the new provider
         self.data_provider = data_provider
+
+        # Update the playlist tree header with platform name
+        if self.data_provider:
+            platform_name = self.data_provider.get_platform_name()
+            self.playlist_container.set_platform_name(platform_name)
+
+            # Show the create button only for Local Database provider
+            is_local = platform_name == "Local Database"
+            self.playlist_container.show_create_button(is_local)
+
+            # Connect create button if this is the local provider
+            if is_local and hasattr(self.data_provider, "create_new_playlist"):
+                self.playlist_container.create_button.clicked.disconnect() if self.playlist_container.create_button.receivers(  # noqa: E501
+                    self.playlist_container.create_button.clicked
+                ) > 0 else None
+                self.playlist_container.create_button.clicked.connect(
+                    lambda: self.data_provider.create_new_playlist(self)  # type: ignore
+                )
 
         # Register our refresh callback with the new provider
         if self.data_provider:
@@ -598,27 +658,38 @@ class PlaylistComponent(QWidget):
         if selection_model is None:
             return
 
-        indexes = selection_model.selectedIndexes()
-        if not indexes:
+        selected_indexes = selection_model.selectedRows()
+        if not selected_indexes:
             # Clear track details if no track is selected
             self.details_panel.set_track(None)
             # Update the global selection state
             self.selection_state.set_selected_track(None)
             return
 
-        # Get the row of the first selected index
-        row = indexes[0].row()
-        track = self.tracks_model.get_track(row)
+        # Count selected tracks
+        selected_count = len(selected_indexes)
 
-        if track:
-            # Update track details panel
-            self.details_panel.set_track(track)
+        if selected_count == 1:
+            # Single selection - show track details as before
+            row = selected_indexes[0].row()
+            track = self.tracks_model.get_track(row)
 
-            # Update the global selection state
-            self.selection_state.set_selected_track(track)
+            if track:
+                # Update track details panel
+                self.details_panel.set_track(track)
 
-            # Emit signal with the selected track
-            self.track_selected.emit(track)
+                # Update the global selection state
+                self.selection_state.set_selected_track(track)
+
+                # Emit signal with the selected track
+                self.track_selected.emit(track)
+        else:
+            # Multiple tracks selected - show multi-selection info
+            self.details_panel.set_track(None)
+            # Could show a custom "Multiple tracks selected" message in the details panel
+
+            # Update global selection state to clear single selection
+            self.selection_state.set_selected_track(None)
 
     def _on_search(self, search_text: str) -> None:
         """Handle search within the playlist.
@@ -770,29 +841,115 @@ class PlaylistComponent(QWidget):
         Args:
             position: Position where the context menu should be shown
         """
-        index = self.tracks_table.indexAt(position)
-        if not index.isValid():
+        # Get selected tracks
+        selection_model = self.tracks_table.selectionModel()
+        if not selection_model:
             return
 
-        # Get the track at this position
-        row = index.row()
-        track = self.tracks_model.get_track(row)
-        if not track:
+        selected_indexes = selection_model.selectedRows()
+        if not selected_indexes:
             return
+
+        # Collect all selected tracks
+        selected_tracks = []
+        for index in selected_indexes:
+            row = index.row()
+            track = self.tracks_model.get_track(row)
+            if track:
+                selected_tracks.append(track)
+
+        if not selected_tracks:
+            return
+
+        # Use the first track as a reference for single-track operations
+        first_track = selected_tracks[0]
 
         # Create context menu
         menu = QMenu(self.tracks_table)
 
+        # Add playlist operations for local playlists
+        if self.data_provider and self.data_provider.get_platform_name() == "Local Database":
+            # Get current playlist
+            current_playlist_id = self.current_playlist_id
+
+            if current_playlist_id is not None:
+                # In a playlist view - add option to remove from current playlist
+                remove_action = menu.addAction("Remove from current playlist")
+                remove_action.triggered.connect(
+                    lambda: self._remove_tracks_from_playlist(current_playlist_id, selected_tracks)
+                )  # type: ignore
+
+            # Add to playlist submenu
+            add_menu = menu.addMenu("Add to playlist")
+
+            # Get all regular (non-folder) playlists
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            try:
+                all_playlists = playlist_repo.get_all()
+                has_playlists = False
+
+                for playlist in all_playlists:
+                    # Skip folders and the current playlist
+                    if playlist.is_folder or (
+                        current_playlist_id is not None and playlist.id == current_playlist_id
+                    ):
+                        continue
+
+                    has_playlists = True
+                    playlist_action = add_menu.addAction(playlist.name)
+                    playlist_action.triggered.connect(
+                        lambda checked, pid=playlist.id: self._add_tracks_to_playlist(
+                            pid, selected_tracks
+                        )
+                    )  # type: ignore
+
+                if not has_playlists:
+                    no_playlist_action = add_menu.addAction("No playlists available")
+                    no_playlist_action.setEnabled(False)
+
+                # Add option to create a new playlist with these tracks
+                add_menu.addSeparator()
+                new_playlist_action = add_menu.addAction("Create new playlist...")
+                new_playlist_action.triggered.connect(
+                    lambda: self._create_playlist_with_tracks(selected_tracks)
+                )  # type: ignore
+
+            except Exception as e:
+                logger.exception(f"Error getting playlists for context menu: {e}")
+
+            menu.addSeparator()
+
+        # Add search actions (only enabled for single track)
+        is_single_track = len(selected_tracks) == 1
+
         # Add search on Spotify action
         spotify_search_action = menu.addAction("Search on Spotify")
-        spotify_search_action.triggered.connect(lambda: self._search_on_spotify(track))  # type: ignore
+        spotify_search_action.setEnabled(is_single_track)
+        spotify_search_action.triggered.connect(lambda: self._search_on_spotify(first_track))  # type: ignore
 
         # Add search on Discogs action
         discogs_search_action = menu.addAction("Search on Discogs")
-        discogs_search_action.triggered.connect(lambda: self._search_on_discogs(track))  # type: ignore
+        discogs_search_action.setEnabled(is_single_track)
+        discogs_search_action.triggered.connect(lambda: self._search_on_discogs(first_track))  # type: ignore
 
         # Show the menu at the cursor position
         menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
+
+    def _show_playlist_context_menu(self, position: Any) -> None:
+        """Show context menu for playlist tree.
+
+        Args:
+            position: Position where the context menu should be shown
+        """
+        # Override this method in the data provider to show appropriate context menu
+        # based on if it's a local playlist or platform playlist
+        if self.data_provider:
+            self.data_provider.show_playlist_context_menu(self.playlist_tree, position)
 
     def _search_on_spotify(self, track: Any) -> None:
         """Search for a track on Spotify.
@@ -887,3 +1044,259 @@ class PlaylistComponent(QWidget):
         # Only refresh if we have a selected playlist
         if self.data_provider is not None and self.current_playlist_id is not None:
             self.refresh()
+
+    def _add_tracks_to_playlist(self, playlist_id: int, tracks: list[Any]) -> None:
+        """Add selected tracks to a playlist.
+
+        Args:
+            playlist_id: The ID of the playlist to add tracks to
+            tracks: List of track objects to add
+        """
+        if not tracks:
+            return
+
+        try:
+            # Create a repository instance
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            # Get the playlist
+            playlist = playlist_repo.get_by_id(playlist_id)
+            if not playlist:
+                from PyQt6.QtWidgets import QMessageBox
+
+                QMessageBox.critical(self, "Error", f"Playlist with ID {playlist_id} not found.")
+                return
+
+            # Track counters
+            added_count = 0
+            already_exists_count = 0
+
+            # Add each track to the playlist
+            for track in tracks:
+                try:
+                    # Check if the track is already in the playlist
+                    is_in_playlist = False
+                    for pt in playlist.tracks:
+                        if pt.track_id == track.track_id:
+                            is_in_playlist = True
+                            already_exists_count += 1
+                            break
+
+                    if not is_in_playlist:
+                        playlist_repo.add_track(playlist.id, track.track_id)
+                        added_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to add track {track.track_id} to playlist: {e}")
+
+            # Commit changes
+            session.commit()
+
+            # Show success message
+            from PyQt6.QtWidgets import QMessageBox
+
+            if added_count > 0:
+                message = (
+                    f"Added {added_count} track{'s' if added_count > 1 else ''} "
+                    f"to playlist '{playlist.name}'."
+                )
+                if already_exists_count > 0:
+                    message += f"\n{already_exists_count} track{'s' if already_exists_count > 1 else ''} already in playlist."  # noqa: E501
+
+                QMessageBox.information(self, "Tracks Added", message)
+            else:
+                QMessageBox.information(
+                    self,
+                    "No Tracks Added",
+                    f"All {already_exists_count} track{'s' if already_exists_count > 1 else ''} already exist in playlist '{playlist.name}'.",  # noqa: E501
+                )
+
+            # Refresh if this is the currently displayed playlist
+            if self.current_playlist_id == playlist_id:
+                self.refresh()
+
+        except Exception as e:
+            logger.exception(f"Error adding tracks to playlist: {e}")
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to add tracks to playlist: {str(e)}")
+
+    def _remove_tracks_from_playlist(self, playlist_id: int, tracks: list[Any]) -> None:
+        """Remove selected tracks from a playlist.
+
+        Args:
+            playlist_id: The ID of the playlist to remove tracks from
+            tracks: List of track objects to remove
+        """
+        if not tracks:
+            return
+
+        # Confirm removal
+        from PyQt6.QtWidgets import QMessageBox
+
+        response = QMessageBox.question(
+            self,
+            "Remove Tracks",
+            f"Are you sure you want to remove {len(tracks)} track{'s' if len(tracks) > 1 else ''} from this playlist?",  # noqa: E501
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if response != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # Create a repository instance
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            # Get the playlist
+            playlist = playlist_repo.get_by_id(playlist_id)
+            if not playlist:
+                QMessageBox.critical(self, "Error", f"Playlist with ID {playlist_id} not found.")
+                return
+
+            # Remove each track from the playlist
+            removed_count = 0
+            for track in tracks:
+                try:
+                    if playlist_repo.remove_track(playlist_id, track.track_id):
+                        removed_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to remove track {track.track_id} from playlist: {e}")
+
+            # Commit changes
+            session.commit()
+
+            # Show success message
+            if removed_count > 0:
+                QMessageBox.information(
+                    self,
+                    "Tracks Removed",
+                    f"Removed {removed_count} track{'s' if removed_count > 1 else ''} from playlist '{playlist.name}'.",  # noqa: E501
+                )
+
+                # Refresh the view
+                self.refresh()
+            else:
+                QMessageBox.information(
+                    self, "No Tracks Removed", "No tracks were removed from the playlist."
+                )
+
+        except Exception as e:
+            logger.exception(f"Error removing tracks from playlist: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to remove tracks from playlist: {str(e)}")
+
+    def _create_playlist_with_tracks(self, tracks: list[Any]) -> None:
+        """Create a new playlist and add the selected tracks to it.
+
+        Args:
+            tracks: List of track objects to add to the new playlist
+        """
+        if not tracks:
+            return
+
+        # Import the create playlist dialog
+        from selecta.core.data.models.db import Playlist
+        from selecta.ui.create_playlist_dialog import CreatePlaylistDialog
+
+        # Get all folder playlists for parent selection
+        folders = []
+        try:
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            all_playlists = playlist_repo.get_all()
+            for pl in all_playlists:
+                if pl.is_folder:
+                    folders.append((pl.id, pl.name))
+        except Exception as e:
+            logger.warning(f"Failed to fetch folders for playlist creation: {e}")
+
+        # Show create playlist dialog
+        dialog = CreatePlaylistDialog(self, available_folders=folders)
+
+        if dialog.exec() != CreatePlaylistDialog.DialogCode.Accepted:
+            return
+
+        values = dialog.get_values()
+        name = values["name"]
+        is_folder = values["is_folder"]
+        parent_id = values["parent_id"]
+
+        if not name:
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self, "Missing Information", "Please enter a name for the playlist."
+            )
+            return
+
+        if is_folder:
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "Cannot Add Tracks to Folder",
+                "You cannot add tracks to a folder. Please create a regular playlist instead.",
+            )
+            return
+
+        try:
+            # Create a repository instance
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            # Create the new playlist
+            new_playlist = Playlist(
+                name=name,
+                is_folder=False,  # Always create as regular playlist when adding tracks
+                is_local=True,
+                parent_id=parent_id,
+                description="",
+            )
+
+            playlist_repo.session.add(new_playlist)
+            playlist_repo.session.flush()  # Get the new ID
+
+            # Add tracks to the playlist
+            added_count = 0
+            for track in tracks:
+                try:
+                    playlist_repo.add_track(new_playlist.id, track.track_id)
+                    added_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to add track {track.track_id} to new playlist: {e}")
+
+            # Commit changes
+            playlist_repo.session.commit()
+
+            # Show success message
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.information(
+                self,
+                "Playlist Created",
+                f"Created playlist '{name}' with {added_count} track{'s' if added_count > 1 else ''}.",  # noqa: E501
+            )
+
+            # Refresh the view to show the new playlist
+            if self.data_provider:
+                self.data_provider.refresh()
+
+        except Exception as e:
+            logger.exception(f"Error creating playlist with tracks: {e}")
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to create playlist: {str(e)}")

@@ -1,6 +1,6 @@
 """Playlist repository for database operations."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -31,7 +31,7 @@ class PlaylistRepository:
         """
         return (
             self.session.query(Playlist)
-            .options(joinedload(Playlist.tracks).joinedload(PlaylistTrack.track))
+            .options(joinedload(Playlist.tracks))
             .filter(Playlist.id == playlist_id)
             .first()
         )
@@ -183,7 +183,7 @@ class PlaylistRepository:
             playlist_id=playlist_id,
             track_id=track_id,
             position=position,
-            added_at=datetime.utcnow(),
+            added_at=datetime.now(UTC),
         )
 
         self.session.add(playlist_track)
@@ -311,6 +311,8 @@ class PlaylistRepository:
         if not track_ids:
             return []
 
+        # Load tracks with minimal relationships to avoid database schema issues
+        # We'll let SQLAlchemy lazy-load other relationships as needed
         tracks = self.session.query(Track).filter(Track.id.in_(track_ids)).all()
 
         # Order tracks by their position in the playlist

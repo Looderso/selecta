@@ -2,7 +2,7 @@
 
 import random
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import click
@@ -696,7 +696,7 @@ def _seed_playlists(session) -> list[Playlist]:
                 playlist_id=playlist_id,
                 track_id=track_id,
                 position=position,
-                added_at=datetime.now(),
+                added_at=datetime.now(UTC),
             )
             session.add(playlist_track)
 
@@ -728,7 +728,7 @@ def _seed_playlists(session) -> list[Playlist]:
                 playlist_id=playlist_id,
                 track_id=track_id,
                 position=position,
-                added_at=datetime.now(),
+                added_at=datetime.now(UTC),
             )
             session.add(playlist_track)
 
@@ -755,7 +755,7 @@ def _seed_playlists(session) -> list[Playlist]:
             playlist_id=spotify_playlist_id,
             track_id=track_id,
             position=position,
-            added_at=datetime.now(),
+            added_at=datetime.now(UTC),
         )
         session.add(playlist_track)
 
@@ -782,7 +782,7 @@ def _seed_playlists(session) -> list[Playlist]:
             playlist_id=rekordbox_playlist_id,
             track_id=track_id,
             position=position,
-            added_at=datetime.now(),
+            added_at=datetime.now(UTC),
         )
         session.add(playlist_track)
 
@@ -823,7 +823,7 @@ def _seed_vinyl_records(session) -> list[Vinyl]:
                 "is_wanted": False,
                 "media_condition": random.choice(VINYL_CONDITIONS),
                 "sleeve_condition": random.choice(VINYL_CONDITIONS),
-                "purchase_date": datetime.now() - timedelta(days=random.randint(1, 730)),
+                "purchase_date": datetime.now(UTC) - timedelta(days=random.randint(1, 730)),
                 "purchase_price": round(random.uniform(10, 50), 2),
                 "purchase_currency": "USD",
                 "notes": "This is a great pressing with excellent sound quality.",
@@ -879,7 +879,7 @@ def _seed_platform_credentials(session) -> None:
             "client_secret": "dummy_spotify_client_secret",
             "access_token": "dummy_spotify_access_token",
             "refresh_token": "dummy_spotify_refresh_token",
-            "token_expiry": datetime.now() + timedelta(hours=1),
+            "token_expiry": datetime.now(UTC) + timedelta(hours=1),
         },
     )
 
@@ -931,7 +931,7 @@ def _seed_user_settings(session) -> None:
         "Default folder for importing music",
     )
     settings_repo.set_setting(
-        "last_sync_time", datetime.now().isoformat(), "string", "Last time data was synchronized"
+        "last_sync_time", datetime.now(UTC).isoformat(), "string", "Last time data was synchronized"
     )
 
     # Add some playlist display preferences

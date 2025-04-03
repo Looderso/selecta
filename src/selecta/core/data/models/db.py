@@ -1,7 +1,7 @@
 """Core database models for Selecta."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum, auto
 from typing import Any, ClassVar, Optional, cast
 
@@ -113,9 +113,9 @@ class Track(Base):
     )
 
     # Metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Track availability - if it's in the local_db_folder
@@ -233,7 +233,7 @@ class TrackPlatformInfo(Base):
 
     # When the platform data was last synchronized
     last_synced: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Whether this platform info needs to be updated
@@ -346,7 +346,7 @@ class Image(Base):
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     def __repr__(self) -> str:
         """String representation of Image."""
@@ -530,9 +530,9 @@ class Playlist(Base):
     )
 
     # Metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     def __repr__(self) -> str:
@@ -552,7 +552,7 @@ class PlaylistTrack(Base):
     position: Mapped[int] = mapped_column(nullable=False)  # Track position in playlist
 
     # When the track was added to the playlist
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     # Relationships
     playlist: Mapped["Playlist"] = relationship("Playlist", back_populates="tracks")
@@ -586,7 +586,7 @@ class PlatformCredentials(Base):
 
     # When credentials were last updated
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     def __repr__(self) -> str:
@@ -606,7 +606,9 @@ class PlatformCredentials(Base):
         if self.token_expiry is None:
             return True
 
-        return datetime.utcnow() > self.token_expiry
+        from selecta.core.data.database import utc_now
+
+        return utc_now() > self.token_expiry
 
 
 class UserSettings(Base):

@@ -119,6 +119,7 @@ fixable = ["ALL"]
 "src/selecta/core/data/models/*.py" = [
     "ANN",
 ] # Ignore annotation requirements in SQLAlchemy models
+
 "src/selecta/ui/**/*.py" = [
     "ANN204",
     "ANN202",

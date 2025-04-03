@@ -1,7 +1,7 @@
 """Track repository for database operations."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import or_
@@ -184,7 +184,7 @@ class TrackRepository(BaseRepository[Track]):
         info.platform_id = platform_id
         info.uri = uri
         info.platform_data = metadata
-        info.last_synced = datetime.utcnow()
+        info.last_synced = datetime.now(UTC)
         info.needs_update = False
         return info
 
@@ -230,7 +230,7 @@ class TrackRepository(BaseRepository[Track]):
                 # Use platform_data instead of metadata
                 existing.platform_data = metadata
             # Update sync timestamp
-            existing.last_synced = datetime.utcnow()
+            existing.last_synced = datetime.now(UTC)
             existing.needs_update = False
 
             self.session.commit()

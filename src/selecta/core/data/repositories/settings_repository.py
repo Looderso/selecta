@@ -1,6 +1,6 @@
 """Settings repository for database operations."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -194,7 +194,7 @@ class SettingsRepository:
             self.session.add(credentials)
 
         # Use setattr to bypass type checking issues
-        credentials.updated_at = datetime.utcnow()  # type: ignore
+        credentials.updated_at = datetime.now(UTC)  # type: ignore
 
         try:
             self.session.commit()

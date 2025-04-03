@@ -368,3 +368,55 @@ class SpotifyClient(AbstractPlatform):
             tracks.append(item)
 
         return tracks
+
+    def import_playlist_to_local(
+        self, spotify_playlist_id: str
+    ) -> tuple[list[SpotifyTrack], SpotifyPlaylist]:
+        """Import a Spotify playlist to the local database.
+
+        Args:
+            spotify_playlist_id: The Spotify playlist ID
+
+        Returns:
+            Tuple of (list of tracks, playlist object)
+
+        Raises:
+            ValueError: If the client is not authenticated
+        """
+        if not self.client:
+            raise ValueError("Spotify client not authenticated")
+
+        # Get the playlist details
+        playlist = self.get_playlist(spotify_playlist_id)
+
+        # Get all tracks in the playlist
+        tracks = self.get_playlist_tracks(spotify_playlist_id)
+
+        return tracks, playlist
+
+    def export_tracks_to_playlist(
+        self, playlist_name: str, track_uris: list[str]
+    ) -> SpotifyPlaylist:
+        """Export tracks to a new Spotify playlist.
+
+        Args:
+            playlist_name: Name for the new Spotify playlist
+            track_uris: List of Spotify track URIs to add
+
+        Returns:
+            The created SpotifyPlaylist
+
+        Raises:
+            ValueError: If the client is not authenticated
+        """
+        if not self.client:
+            raise ValueError("Spotify client not authenticated")
+
+        # Create a new playlist
+        playlist = self.create_playlist(name=playlist_name, public=False)
+
+        # Add tracks to the playlist
+        if track_uris:
+            self.add_tracks_to_playlist(playlist.id, track_uris)
+
+        return playlist

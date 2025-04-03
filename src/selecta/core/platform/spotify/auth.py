@@ -221,10 +221,10 @@ class SpotifyAuthManager:
             return
 
         # Calculate token expiry datetime
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         expires_at = token_info.get("expires_at", 0)
-        expires_datetime = datetime.fromtimestamp(expires_at)
+        expires_datetime = datetime.fromtimestamp(expires_at, tz=UTC)
 
         # Create a credentials dict with the token info
         creds_data = {

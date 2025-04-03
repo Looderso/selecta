@@ -120,11 +120,77 @@ class SpotifyTrack:
     artist_names: list[str]
     album_name: str
     album_id: str | None = None
+    album_release_date: str | None = None
     duration_ms: int | None = None
     popularity: int | None = None
     explicit: bool | None = None
     preview_url: str | None = None
     added_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert this track to a dictionary representation.
+
+        Returns:
+            Dictionary representation of the track
+        """
+        result = {
+            "id": self.id,
+            "name": self.name,
+            "uri": self.uri,
+            "artist_names": self.artist_names,
+            "album_name": self.album_name,
+        }
+
+        # Add optional fields if they exist
+        if self.album_id:
+            result["album_id"] = self.album_id
+        if self.album_release_date:
+            result["album_release_date"] = self.album_release_date
+        if self.duration_ms:
+            result["duration_ms"] = self.duration_ms
+        if self.popularity:
+            result["popularity"] = self.popularity
+        if self.explicit is not None:
+            result["explicit"] = self.explicit
+        if self.preview_url:
+            result["preview_url"] = self.preview_url
+        if self.added_at:
+            result["added_at"] = self.added_at.isoformat()
+
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SpotifyTrack":
+        """Create a SpotifyTrack from a dictionary.
+
+        Args:
+            data: Dictionary with track data
+
+        Returns:
+            SpotifyTrack instance
+        """
+        # Handle added_at if it's a string
+        added_at = None
+        if "added_at" in data and data["added_at"]:
+            from contextlib import suppress
+
+            with suppress(ValueError, TypeError):
+                added_at = datetime.fromisoformat(data["added_at"].replace("Z", "+00:00"))
+
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            uri=data.get("uri", ""),
+            artist_names=data.get("artist_names", []),
+            album_name=data.get("album_name", ""),
+            album_id=data.get("album_id"),
+            album_release_date=data.get("album_release_date"),
+            duration_ms=data.get("duration_ms"),
+            popularity=data.get("popularity"),
+            explicit=data.get("explicit"),
+            preview_url=data.get("preview_url"),
+            added_at=added_at,
+        )
 
     @classmethod
     def from_spotify_dict(
@@ -150,6 +216,7 @@ class SpotifyTrack:
         album: SpotifyAlbumDict = track_data.get("album", {})
         album_name: str = album.get("name", "")
         album_id: str | None = album.get("id")
+        album_release_date: str | None = album.get("release_date")
 
         # Handle the added_at date
         parsed_added_at: datetime | None = added_at
@@ -169,6 +236,7 @@ class SpotifyTrack:
             artist_names=artist_names,
             album_name=album_name,
             album_id=album_id,
+            album_release_date=album_release_date,
             duration_ms=track_data.get("duration_ms"),
             popularity=track_data.get("popularity"),
             explicit=track_data.get("explicit"),
