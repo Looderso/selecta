@@ -1,6 +1,7 @@
 """Spotify search panel for searching and displaying Spotify tracks."""
 
 import json
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import requests
@@ -14,9 +15,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from sqlalchemy import and_
+from sqlalchemy import and_, inspect, text
 
-from selecta.core.data.models.db import Track
+from selecta.core.data.models.db import Track, TrackPlatformInfo
 from selecta.core.data.repositories.image_repository import ImageRepository
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
@@ -61,8 +62,14 @@ class SpotifySearchPanel(LoadableWidget):
         self.settings_repo = SettingsRepository()
         self.spotify_client = PlatformFactory.create("spotify", self.settings_repo)
 
-        # Initialize loading widget
-        loading_widget = self._create_loading_widget("Searching Spotify...")
+        # Check database for compatibility - log warning if needed
+        try:
+            inspector = inspect(self.track_repo.session.bind)
+            columns = [col['name'] for col in inspector.get_columns('track_platform_info')]
+            if 'last_synced' not in columns:
+                logger.warning("Missing 'last_synced' column in track_platform_info table - update your database schema")
+        except Exception as e:
+            logger.warning(f"Could not check database schema: {e}")
 
         # Create layout
         main_layout = QVBoxLayout(self)
@@ -389,14 +396,50 @@ class SpotifySearchPanel(LoadableWidget):
             # Run sync in background
             def sync_task() -> dict[str, Any]:
                 try:
-                    # Add platform info using the repository
-                    self.track_repo.add_platform_info(
-                        track_id=track_id,
-                        platform="spotify",
-                        platform_id=spotify_id,
-                        uri=spotify_uri,
-                        metadata=platform_data_json,
-                    )
+                    # Add platform info with direct SQL queries to avoid schema issues
+                    from sqlalchemy import text
+
+                    # First check if the record exists using raw SQL
+                    result = self.track_repo.session.execute(
+                        text("SELECT id FROM track_platform_info WHERE track_id = :track_id AND platform = :platform"),
+                        {"track_id": track_id, "platform": "spotify"}
+                    ).fetchone()
+
+                    if result:
+                        # Update existing record with raw SQL
+                        self.track_repo.session.execute(
+                            text("""
+                                UPDATE track_platform_info
+                                SET platform_id = :platform_id, uri = :uri, platform_data = :platform_data
+                                WHERE id = :id
+                            """),
+                            {
+                                "id": result[0],
+                                "platform_id": spotify_id,
+                                "uri": spotify_uri,
+                                "platform_data": platform_data_json
+                            }
+                        )
+                        logger.debug(f"Updated existing platform info record {result[0]}")
+                    else:
+                        # Insert new record with raw SQL with required fields only
+                        self.track_repo.session.execute(
+                            text("""
+                                INSERT INTO track_platform_info (track_id, platform, platform_id, uri, platform_data)
+                                VALUES (:track_id, :platform, :platform_id, :uri, :platform_data)
+                            """),
+                            {
+                                "track_id": track_id,
+                                "platform": "spotify",
+                                "platform_id": spotify_id,
+                                "uri": spotify_uri,
+                                "platform_data": platform_data_json
+                            }
+                        )
+                        logger.debug("Created new platform info record")
+
+                    # Commit the changes
+                    self.track_repo.session.commit()
 
                     # Download and store images if available
                     if album_image_url:
@@ -549,14 +592,30 @@ class SpotifySearchPanel(LoadableWidget):
                     # Convert to JSON
                     platform_data_json = json.dumps(platform_data)
 
-                    # Add platform info using repository
-                    self.track_repo.add_platform_info(
-                        track_id=track_id,
-                        platform="spotify",
-                        platform_id=spotify_id,
-                        uri=spotify_uri,
-                        metadata=platform_data_json,
-                    )
+                    try:
+                        # Add platform info using direct SQL to avoid schema issues
+                        from sqlalchemy import text
+
+                        # Insert new record with raw SQL (minimal required fields)
+                        self.track_repo.session.execute(
+                            text("""
+                                INSERT INTO track_platform_info (track_id, platform, platform_id, uri, platform_data)
+                                VALUES (:track_id, :platform, :platform_id, :uri, :platform_data)
+                            """),
+                            {
+                                "track_id": track_id,
+                                "platform": "spotify",
+                                "platform_id": spotify_id,
+                                "uri": spotify_uri,
+                                "platform_data": platform_data_json
+                            }
+                        )
+                        self.track_repo.session.commit()
+                        logger.debug("Created platform info for new track")
+
+                    except Exception as e:
+                        logger.error(f"Error adding platform info: {e}")
+                        # Continue anyway - the track was created, just without platform info
 
                     # Download and store images if available
                     if album_image_url:

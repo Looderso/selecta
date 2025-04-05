@@ -1,23 +1,34 @@
-# src/selecta/ui/components/playlist/local/local_playlist_data_provider.py
 """Local database playlist data provider implementation."""
 
+import json
 import os
-from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
-from PyQt6.QtWidgets import QMenu, QMessageBox, QTreeView, QWidget
-from sqlalchemy.orm import Session
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QProgressDialog,
+    QRadioButton,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.db import Track, TrackPlatformInfo
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.data.repositories.track_repository import TrackRepository
+from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.client import RekordboxClient
 from selecta.core.platform.spotify.client import SpotifyClient
-from selecta.core.utils.type_helpers import column_to_bool, column_to_int, column_to_str
+from selecta.core.utils.type_helpers import column_to_bool
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
@@ -29,16 +40,15 @@ from selecta.ui.import_export_playlist_dialog import ImportExportPlaylistDialog
 
 
 class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
-    """Data provider for local database playlists."""
+    """Data provider for local playlists."""
 
-    def __init__(self, session: Session | None = None, cache_timeout: float = 300.0):
+    def __init__(self, cache_timeout: float = 300.0):
         """Initialize the local playlist data provider.
 
         Args:
-            session: Database session (optional)
             cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
-        # Use the global session from get_session() - this ensures we're using the singleton engine
+        # Create a database session
         self.session = get_session()
         self.playlist_repo = PlaylistRepository(self.session)
         self.track_repo = TrackRepository(self.session)
@@ -46,40 +56,67 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         # Platform clients (will be initialized on-demand)
         self._spotify_client = None
         self._rekordbox_client = None
+        self._discogs_client = None
 
         # Initialize the abstract provider with None as client (not needed for local)
         super().__init__(None, cache_timeout)
 
     def _fetch_playlists(self) -> list[PlaylistItem]:
-        """Fetch playlists from the local database.
+        """Fetch all local playlists from the database.
 
         Returns:
             List of playlist items
         """
-        db_playlists = self.playlist_repo.get_all()
-        playlist_items = []
+        try:
+            # Get all playlists from the database
+            playlists = self.playlist_repo.get_all()
 
-        for pl in db_playlists:
-            # Get the track count
-            track_count = len(pl.tracks) if pl.tracks is not None else 0
+            # Convert to PlaylistItems
+            playlist_items = []
 
-            playlist_items.append(
-                LocalPlaylistItem(
-                    name=column_to_str(pl.name),
-                    item_id=pl.id,
-                    parent_id=pl.parent_id,
-                    is_folder_flag=column_to_bool(pl.is_folder),
-                    description=column_to_str(pl.description),
-                    track_count=track_count,
-                    source_platform=column_to_str(pl.source_platform),
-                    platform_id=column_to_str(pl.platform_id),
-                )
-            )
+            for playlist in playlists:
+                # Get counts, checking for None values
+                track_count = self.playlist_repo.get_track_count(playlist.id)
 
-        return playlist_items
+                # Get platform name if this is an imported playlist
+                platform_name = None
+                platform_icon = None  # Will be used in the future for platform icons
+
+                if not playlist.is_local and playlist.source_platform:
+                    platform_name = playlist.source_platform.upper()
+
+                # Create a folder or playlist item
+                if playlist.is_folder:
+                    # Skip folders for now - folders will be implemented in a future update
+                    # This is a placeholder to handle folders in DB without showing them in UI
+                    continue
+                else:
+                    # This is a regular playlist
+                    playlist_items.append(
+                        LocalPlaylistItem(
+                            name=playlist.name,
+                            item_id=playlist.id,
+                            track_count=track_count,
+                            is_folder=False,
+                            is_imported=not playlist.is_local,
+                            platform_name=platform_name,
+                            platform_icon=platform_icon,
+                            description=playlist.description,
+                            source_platform=playlist.source_platform,
+                            platform_id=playlist.platform_id,
+                            last_synced=playlist.last_synced.isoformat()
+                            if playlist.last_synced
+                            else None,
+                        )
+                    )
+
+            return playlist_items
+        except Exception as e:
+            logger.exception(f"Error fetching playlists: {e}")
+            return []
 
     def _fetch_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]:
-        """Fetch tracks for a playlist from the local database.
+        """Get all tracks in a playlist with caching.
 
         Args:
             playlist_id: ID of the playlist
@@ -87,99 +124,64 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         Returns:
             List of track items
         """
-        # Get the playlist with its associated track relationships
-        playlist = self.playlist_repo.get_by_id(playlist_id)
-        if not playlist:
-            return []
+        try:
+            # Get all tracks in the playlist
+            tracks = self.playlist_repo.get_playlist_tracks(playlist_id)
 
-        # Create a mapping of track_id -> PlaylistTrack for quick access to added_at dates
-        playlist_track_map = {pt.track_id: pt for pt in playlist.tracks}
+            # Create TrackItems
+            track_items = []
 
-        # Get the actual tracks
-        tracks = self.playlist_repo.get_playlist_tracks(playlist_id)
-        logger.debug(f"Loaded {len(tracks)} tracks from database for playlist {playlist_id}")
-        track_items = []
+            for track in tracks:
+                # This will always be a LibraryDatabase Track
+                # Create a LocalTrackItem
+                # Get all platforms this track is available on
+                available_platforms = []
+                # Store a map of platform -> uri for direct access
+                platform_uris = {}
 
-        # Also log how many playlist_tracks we found in the playlist object
-        logger.debug(f"Playlist has {len(playlist.tracks)} playlist_track associations")
+                for platform_info in track.platform_info:
+                    available_platforms.append(platform_info.platform)
+                    if platform_info.uri:  # Store URI if available (for Spotify)
+                        platform_uris[platform_info.platform] = platform_info.uri
 
-        for track in tracks:
-            # Find the corresponding playlist track to get added_at date
-            added_at = None
-            if track.id in playlist_track_map:
-                added_at = playlist_track_map[track.id].added_at
+                # Format duration
+                duration_s = track.duration_ms / 1000 if track.duration_ms else 0
+                minutes = int(duration_s // 60)
+                seconds = int(duration_s % 60)
+                duration_str = f"{minutes}:{seconds:02d}"
 
-            # Extract album name if available
-            album_name = track.album.title if track.album else None
+                # Check if the audio quality attribute exists
+                has_audio_quality = True
+                try:
+                    quality = track.quality
+                except (AttributeError, KeyError):
+                    has_audio_quality = False
+                    quality = None
 
-            # Get first genre if available
-            genre = None
-            if track.genres and len(track.genres) > 0:
-                genre = track.genres[0].name
-
-            # Get attribute for BPM if available
-            bpm = None
-            tags = []
-            if track.attributes:
-                for attr in track.attributes:
-                    if attr.name == "bpm":
-                        bpm = attr.value
-                    elif attr.name == "tag":
-                        tags.append(attr.value)
-
-            # Get platform info
-            platform_info = []
-
-            # Try to get platform info, but handle database schema conflicts
-            try:
-                track_platform_info = self.track_repo.get_all_platform_info(column_to_int(track.id))
-            except Exception as e:
-                logger.warning(f"Failed to get platform info for track {track.id}: {e}")
-                track_platform_info = []
-
-            for info in track_platform_info:
-                platform_data = {
-                    "platform": column_to_str(info.platform),
-                    "platform_id": column_to_str(info.platform_id),
-                    "uri": column_to_str(info.uri) if column_to_str(info.uri) else None,
-                }
-
-                # Add additional platform-specific data if available
-                if column_to_str(info.platform_data):
-                    import json
-
-                    try:
-                        additional_data = json.loads(column_to_str(info.platform_data))
-                        platform_data.update(additional_data)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                platform_info.append(platform_data)
-
-            # Check if track has images directly from the images relationship
-            has_image = False
-            if hasattr(track, "images") and track.images and len(track.images) > 0:
-                has_image = True
-
-            track_items.append(
-                LocalTrackItem(
-                    track_id=track.id,
-                    title=column_to_str(track.title),
-                    artist=column_to_str(track.artist),
-                    duration_ms=column_to_int(track.duration_ms),
-                    album=album_name,
-                    added_at=added_at,
-                    local_path=column_to_str(track.local_path),
-                    genre=genre,
-                    bpm=bpm,
-                    tags=tags,
-                    platform_info=platform_info,
-                    quality=column_to_int(track.quality),
-                    has_image=has_image,
+                track_items.append(
+                    LocalTrackItem(
+                        track_id=track.id,
+                        title=track.title,
+                        artist=track.artist,
+                        album=track.album or "",
+                        genre=track.genre or "",
+                        duration_ms=track.duration_ms,
+                        duration_str=duration_str,
+                        year=track.year or "",
+                        is_locally_available=column_to_bool(track.is_available_locally),
+                        local_path=track.local_path or "",
+                        available_platforms=available_platforms,
+                        platform_uris=platform_uris,
+                        bpm=track.bpm or 0,
+                        quality=quality if has_audio_quality else 0,
+                    )
                 )
-            )
 
-        return track_items
+            return track_items
+
+        except Exception as e:
+            logger.exception(f"Error fetching playlist tracks: {e}")
+            return []
 
     def get_platform_name(self) -> str:
         """Get the name of the platform.
@@ -187,15 +189,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         Returns:
             Platform name
         """
-        return "Local Database"
-
-    def _ensure_authenticated(self) -> bool:
-        """For local database, authentication is not needed.
-
-        Returns:
-            Always True since we don't need authentication for local database
-        """
-        return True
+        return "Local"
 
     def show_playlist_context_menu(self, tree_view: QTreeView, position: Any) -> None:
         """Show a context menu for a local playlist.
@@ -211,230 +205,86 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
 
         # Get the playlist item
         playlist_item = index.internalPointer()
-        if not playlist_item:
+        if not playlist_item or playlist_item.is_folder():
             return
 
         # Create context menu
         menu = QMenu(tree_view)
 
-        # Basic operations available for all local playlists
-        if not playlist_item.is_folder():
-            # For imported playlists, allow rename and sync
-            if hasattr(playlist_item, "source_platform") and playlist_item.source_platform:
-                # Add sync action for imported playlists
-                sync_action = menu.addAction(
-                    f"Sync with {playlist_item.source_platform.capitalize()}"
-                )
-                sync_action.triggered.connect(
-                    lambda: self._sync_playlist(playlist_item.item_id, tree_view)
-                )
-
-                menu.addSeparator()
-
-                # Show rename for imported playlists
-                rename_action = menu.addAction("Rename")
-                rename_action.triggered.connect(
-                    lambda: self._rename_playlist(playlist_item.item_id, tree_view)
-                )
-            else:
-                # For local playlists, show export menu
-                export_menu = menu.addMenu("Export to...")
-
-                # Add spotify export option
-                spotify_action = export_menu.addAction("Spotify")
-                spotify_action.triggered.connect(
-                    lambda: self.export_playlist(playlist_item.item_id, "spotify", tree_view)
-                )  # type: ignore
-
-                # Add rekordbox export option
-                rekordbox_action = export_menu.addAction("Rekordbox")
-                rekordbox_action.triggered.connect(
-                    lambda: self.export_playlist(playlist_item.item_id, "rekordbox", tree_view)
-                )  # type: ignore
-
-                # Add rename and remove options for local playlists
-                menu.addSeparator()
-                rename_action = menu.addAction("Rename")
-                rename_action.triggered.connect(
-                    lambda: self._rename_playlist(playlist_item.item_id, tree_view)
-                )
-
-        # Add remove action for both folders and playlists that are not imported
-        if not (hasattr(playlist_item, "source_platform") and playlist_item.source_platform):
-            remove_action = menu.addAction("Remove")
-            remove_action.triggered.connect(
-                lambda: self._remove_playlist(playlist_item.item_id, tree_view)
+        # Figure out which platform options to show
+        if playlist_item.is_imported() and playlist_item.source_platform:
+            # This is an imported playlist - we can sync it
+            sync_action = menu.addAction(f"Sync with {playlist_item.source_platform.capitalize()}")
+            sync_action.triggered.connect(
+                lambda: self.sync_playlist(playlist_item.item_id, tree_view)
             )
 
-        # Show the menu at the cursor position
-        menu.exec(tree_view.viewport().mapToGlobal(position))  # type: ignore
+        # Add export actions for all platforms
+        export_menu = menu.addMenu("Export to...")
 
-    def _rename_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
-        """Rename a playlist.
-
-        Args:
-            playlist_id: ID of the playlist to rename
-            parent: Parent widget for dialogs
-
-        Returns:
-            True if successful, False otherwise
-        """
-        playlist = self.playlist_repo.get_by_id(playlist_id)
-        if not playlist:
-            QMessageBox.critical(
-                parent, "Rename Error", f"Playlist with ID {playlist_id} not found."
-            )
-            return False
-
-        # Show input dialog for new name
-        from PyQt6.QtWidgets import QInputDialog
-
-        new_name, ok = QInputDialog.getText(
-            parent, "Rename Playlist", "Enter new playlist name:", text=playlist.name
+        # Add export to Spotify action
+        export_spotify_action = export_menu.addAction("Spotify")
+        export_spotify_action.triggered.connect(
+            lambda: self.export_playlist(playlist_item.item_id, "spotify", tree_view)
         )
 
-        if not ok or not new_name.strip():
-            return False
+        # Add export to Rekordbox action
+        export_rekordbox_action = export_menu.addAction("Rekordbox")
+        export_rekordbox_action.triggered.connect(
+            lambda: self.export_playlist(playlist_item.item_id, "rekordbox", tree_view)
+        )
 
-        try:
-            # Update the playlist name
-            self.playlist_repo.update(playlist_id, {"name": new_name.strip()})
+        # Add export to Discogs action
+        export_discogs_action = export_menu.addAction("Discogs")
+        export_discogs_action.triggered.connect(
+            lambda: self.export_playlist(playlist_item.item_id, "discogs", tree_view)
+        )
 
-            # Refresh the UI
-            self.refresh()
-            return True
-        except Exception as e:
-            logger.exception(f"Error renaming playlist: {e}")
-            QMessageBox.critical(parent, "Rename Error", f"Failed to rename playlist: {str(e)}")
-            return False
+        # Add delete action
+        delete_action = menu.addAction("Delete Playlist")
+        delete_action.triggered.connect(
+            lambda: self._delete_playlist(playlist_item.item_id, tree_view)
+        )
 
-    def _remove_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
-        """Remove a playlist.
+        # Show the menu at the cursor position
+        menu.exec(tree_view.viewport().mapToGlobal(position))
+
+    def _delete_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> None:
+        """Delete a playlist.
 
         Args:
-            playlist_id: ID of the playlist to remove
+            playlist_id: ID of the playlist to delete
             parent: Parent widget for dialogs
-
-        Returns:
-            True if successful, False otherwise
         """
+        # Get the playlist from the database
         playlist = self.playlist_repo.get_by_id(playlist_id)
         if not playlist:
             QMessageBox.critical(
-                parent, "Remove Error", f"Playlist with ID {playlist_id} not found."
+                parent, "Delete Error", f"Playlist with ID {playlist_id} not found."
             )
-            return False
+            return
 
-        # For folders, check if they have children
-        if playlist.is_folder and playlist.children:
-            response = QMessageBox.question(
-                parent,
-                "Remove Folder",
-                f"The folder '{playlist.name}' contains {len(playlist.children)} "
-                "playlists/folders. "
-                "Do you want to remove it and all its contents?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
+        # Ask for confirmation
+        response = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete the playlist '{playlist.name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
 
-            if response != QMessageBox.StandardButton.Yes:
-                return False
+        if response != QMessageBox.StandardButton.Yes:
+            return
 
-        # For playlists, confirm removal
-        else:
-            track_count = len(playlist.tracks) if playlist.tracks else 0
-            response = QMessageBox.question(
-                parent,
-                "Remove Playlist",
-                f"Are you sure you want to remove the playlist '{playlist.name}'? "
-                f"It contains {track_count} tracks. "
-                "The tracks will remain in your library.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-
-            if response != QMessageBox.StandardButton.Yes:
-                return False
-
+        # Delete the playlist
         try:
-            # Delete the playlist
             self.playlist_repo.delete(playlist_id)
-
-            # Refresh the UI
-            self.refresh()
-            return True
-        except Exception as e:
-            logger.exception(f"Error removing playlist: {e}")
-            QMessageBox.critical(parent, "Remove Error", f"Failed to remove playlist: {str(e)}")
-            return False
-
-    def create_new_playlist(self, parent: QWidget | None = None) -> bool:
-        """Create a new playlist or folder.
-
-        Args:
-            parent: Parent widget for the dialog
-
-        Returns:
-            True if successful, False otherwise
-        """
-        # Import here to avoid circular imports
-        from selecta.ui.create_playlist_dialog import CreatePlaylistDialog
-
-        # Get all folder playlists for parent selection
-        folders = []
-        try:
-            all_playlists = self.playlist_repo.get_all()
-            for pl in all_playlists:
-                if pl.is_folder:
-                    folders.append((pl.id, pl.name))
-        except Exception as e:
-            logger.warning(f"Failed to fetch folders for playlist creation: {e}")
-
-        # Show create playlist dialog
-        dialog = CreatePlaylistDialog(parent, available_folders=folders)
-
-        if dialog.exec() != CreatePlaylistDialog.DialogCode.Accepted:
-            return False
-
-        values = dialog.get_values()
-        name = values["name"]
-        is_folder = values["is_folder"]
-        parent_id = values["parent_id"]
-
-        if not name:
-            QMessageBox.warning(
-                parent, "Missing Information", "Please enter a name for the playlist."
-            )
-            return False
-
-        try:
-            # Import here to avoid circular imports
-            from selecta.core.data.models.db import Playlist
-
-            # Create the new playlist or folder
-            new_playlist = Playlist(
-                name=name,
-                is_folder=is_folder,
-                is_local=True,
-                parent_id=parent_id,
-                description="",
-            )
-
-            self.playlist_repo.session.add(new_playlist)
-            self.playlist_repo.session.commit()
-
-            # Refresh the UI
-            self.refresh()
-
             QMessageBox.information(
-                parent,
-                "Playlist Created",
-                f"The {'folder' if is_folder else 'playlist'} '{name}' was created successfully.",
+                parent, "Delete Successful", f"Playlist '{playlist.name}' was deleted."
             )
-
-            return True
+            self.refresh()  # Refresh the UI
         except Exception as e:
-            logger.exception(f"Error creating playlist: {e}")
-            QMessageBox.critical(parent, "Creation Error", f"Failed to create playlist: {str(e)}")
-            return False
+            logger.exception(f"Error deleting playlist: {e}")
+            QMessageBox.critical(parent, "Delete Error", f"Failed to delete playlist: {str(e)}")
 
     def _init_spotify_client(self) -> SpotifyClient | None:
         """Initialize the Spotify client if not already done.
@@ -474,6 +324,26 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             return None
         except Exception as e:
             logger.exception(f"Failed to initialize Rekordbox client: {e}")
+            return None
+
+    def _init_discogs_client(self) -> DiscogsClient | None:
+        """Initialize the Discogs client if not already done.
+
+        Returns:
+            DiscogsClient if successfully initialized, None otherwise
+        """
+        if self._discogs_client is not None:
+            return self._discogs_client
+
+        try:
+            settings_repo = SettingsRepository()
+            client = PlatformFactory.create("discogs", settings_repo)
+            if isinstance(client, DiscogsClient):
+                self._discogs_client = client
+                return self._discogs_client
+            return None
+        except Exception as e:
+            logger.exception(f"Failed to initialize Discogs client: {e}")
             return None
 
     def _sync_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
@@ -544,6 +414,55 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             except Exception:
                 # If we can't check for Rekordbox, just continue
                 pass
+        elif playlist.source_platform == "discogs":
+            client = self._init_discogs_client()
+
+            # For Discogs, show a dialog to select collection or wantlist since the platform_id
+            # in the database doesn't necessarily differentiate between them
+            dialog = QDialog(parent)
+            dialog.setWindowTitle("Sync with Discogs")
+            dialog.setMinimumWidth(400)
+
+            layout = QVBoxLayout(dialog)
+
+            # Description
+            description_label = QLabel(
+                "Choose whether to sync with your Discogs collection or wantlist."
+            )
+            description_label.setWordWrap(True)
+            layout.addWidget(description_label)
+
+            # Radio buttons for collection or wantlist
+            collection_radio = QRadioButton("Sync with Collection")
+            wantlist_radio = QRadioButton("Sync with Wantlist")
+
+            # Try to determine which was used previously based on platform_id
+            if playlist.platform_id == "wantlist":
+                wantlist_radio.setChecked(True)
+            else:
+                collection_radio.setChecked(True)  # Default or if platform_id is "collection"
+
+            layout.addWidget(collection_radio)
+            layout.addWidget(wantlist_radio)
+
+            # Button box
+            button_box = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            )
+            button_box.accepted.connect(dialog.accept)
+            button_box.rejected.connect(dialog.reject)
+            layout.addWidget(button_box)
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return False
+
+            # Update the platform_id based on user selection
+            target = "collection" if collection_radio.isChecked() else "wantlist"
+
+            # Update playlist if the target changed
+            if playlist.platform_id != target:
+                self.playlist_repo.update(playlist.id, {"platform_id": target})
+                playlist.platform_id = target
         else:
             QMessageBox.warning(
                 parent,
@@ -562,469 +481,48 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             return False
 
         try:
-            # Get the latest tracks from the platform
-            if playlist.source_platform == "spotify" or playlist.source_platform == "rekordbox":
-                platform_tracks, platform_playlist = client.import_playlist_to_local(
-                    playlist.platform_id
-                )
-            else:
-                return False  # Shouldn't reach here due to earlier check
+            # Create a PlatformSyncManager to handle the sync
+            from selecta.core.platform.sync_manager import PlatformSyncManager
 
-            # Get repositories
-            track_repo = self.track_repo
-            playlist_repo = self.playlist_repo
+            sync_manager = PlatformSyncManager(client)
 
-            # Update playlist name if it changed on the platform
-            if platform_playlist.name != playlist.name:
-                response = QMessageBox.question(
-                    parent,
-                    "Update Playlist Name",
-                    f"The playlist name has changed on {playlist.source_platform.capitalize()} "
-                    f"from '{playlist.name}' to '{platform_playlist.name}'. "
-                    "Do you want to update it?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-
-                if response == QMessageBox.StandardButton.Yes:
-                    playlist.name = platform_playlist.name
-                    playlist_repo.session.commit()
-
-            # Track updates
-            tracks_added = 0
-            tracks_updated = 0
-
-            # STEP 1: Import tracks from platform to local playlist
-
-            # Get existing tracks in the playlist
-            current_tracks = playlist_repo.get_playlist_tracks(playlist_id)
-
-            # Create a mapping of platform tracks by ID
-            # and collect IDs in the remote platform playlist
-            platform_tracks_by_id = {}
-            platform_playlist_ids = set()  # Track IDs in the remote platform playlist
-
-            for platform_track in platform_tracks:
-                if playlist.source_platform == "spotify":
-                    platform_id = platform_track.id
-                elif playlist.source_platform == "rekordbox":
-                    platform_id = str(platform_track.id)
-                else:
-                    continue
-                platform_tracks_by_id[platform_id] = platform_track
-                platform_playlist_ids.add(platform_id)
-
-            # Track what's already in our local playlist
-            local_playlist_platform_ids = set()  # Platform IDs already in our local playlist
-            tracks_with_this_platform_info = {}  # Map of platform_id -> Track
-            tracks_with_other_platform_info = []  # Tracks with metadata from other platforms
-            tracks_without_platform_info = []  # Tracks without any platform metadata
-
-            for track in current_tracks:
-                has_this_platform_info = False
-                has_other_platform_info = False
-
-                # Check each platform info associated with this track
-                for platform_info in track.platform_info:
-                    if platform_info.platform == playlist.source_platform:
-                        # This track has metadata from our source platform
-                        has_this_platform_info = True
-                        tracks_with_this_platform_info[platform_info.platform_id] = track
-                        local_playlist_platform_ids.add(platform_info.platform_id)
-                    else:
-                        # This track has metadata from another platform
-                        has_other_platform_info = True
-
-                if not has_this_platform_info and has_other_platform_info:
-                    tracks_with_other_platform_info.append(track)
-                elif not has_this_platform_info and not has_other_platform_info:
-                    tracks_without_platform_info.append(track)
-
-            # Add new tracks from the platform to our local playlist
-            for platform_id, platform_track in platform_tracks_by_id.items():
-                if platform_id in local_playlist_platform_ids:
-                    # Track exists, nothing to do
-                    tracks_updated += 1
-                else:
-                    # Add new track from platform
-                    if playlist.source_platform == "spotify":
-                        # Create a new track
-                        track = Track(
-                            title=platform_track.name,
-                            artist=", ".join(platform_track.artist_names),
-                            duration_ms=platform_track.duration_ms,
-                            year=platform_track.album_release_date[:4]
-                            if platform_track.album_release_date
-                            else None,
-                            is_available_locally=False,  # Spotify tracks aren't local files
-                        )
-                        track_repo.session.add(track)
-                        track_repo.session.flush()  # Get the ID
-
-                        # Add Spotify platform info
-                        import json
-
-                        platform_data = json.dumps(platform_track.to_dict())
-                        track_info = TrackPlatformInfo(
-                            track_id=track.id,
-                            platform="spotify",
-                            platform_id=platform_track.id,
-                            uri=platform_track.uri,
-                            platform_data=platform_data,
-                        )
-                        track_repo.session.add(track_info)
-                        track_repo.session.flush()
-
-                    elif playlist.source_platform == "rekordbox":
-                        # Create a new track
-                        track = Track(
-                            title=platform_track.title,
-                            artist=platform_track.artist_name,
-                            duration_ms=platform_track.duration_ms,
-                            bpm=platform_track.bpm,
-                            year=None,  # Rekordbox doesn't provide year directly
-                            is_available_locally=False,  # Will update if file exists
-                        )
-
-                        # Check if the file exists (if path is provided)
-                        if platform_track.folder_path and os.path.exists(
-                            platform_track.folder_path
-                        ):
-                            track.local_path = platform_track.folder_path
-                            track.is_available_locally = True
-
-                        track_repo.session.add(track)
-                        track_repo.session.flush()  # Get the ID
-
-                        # Add Rekordbox platform info
-                        import json
-
-                        platform_data = json.dumps(platform_track.to_dict())
-                        track_info = TrackPlatformInfo(
-                            track_id=track.id,
-                            platform="rekordbox",
-                            platform_id=str(platform_track.id),
-                            uri=None,
-                            platform_data=platform_data,
-                        )
-                        track_repo.session.add(track_info)
-                        track_repo.session.flush()
-
-                    # Add to playlist
-                    playlist_repo.add_track(playlist.id, track.id)
-                    tracks_added += 1
-
-            # STEP 2: Find tracks in local playlist that need to be exported to the platform
-            # Track IDs to send to platform (already in platform collection)
-            tracks_to_export = []
-            # Local file tracks that need to be added to platform collection first
-            tracks_to_add_and_export = []
-            # Tracks that can't be exported (no platform metadata and no local file)
-
-            tracks_not_exportable = []
-            # Check each track with metadata from this platform
-            for platform_id, track in tracks_with_this_platform_info.items():
-                if platform_id not in platform_playlist_ids:
-                    # This track has platform metadata but isn't in the platform playlist yet
-                    # This is a track the user added locally that should be exported
-                    if playlist.source_platform == "spotify":
-                        # Find the URI for Spotify
-                        for platform_info in track.platform_info:
-                            if platform_info.platform == "spotify" and platform_info.uri:
-                                tracks_to_export.append(platform_info.uri)
-                                break
-                    elif playlist.source_platform == "rekordbox":
-                        # Use the ID directly for Rekordbox
-                        tracks_to_export.append(int(platform_id))
-
-            # For tracks with other platform metadata or no metadata, check if they have local files
-            # that could be added to the platform collection first
-            if playlist.source_platform == "rekordbox":  # Only applicable for Rekordbox right now
-                for track in tracks_with_other_platform_info + tracks_without_platform_info:
-                    if (
-                        track.is_available_locally
-                        and track.local_path
-                        and os.path.exists(track.local_path)
-                    ):
-                        # This track has a local audio file that could be added to Rekordbox first
-                        tracks_to_add_and_export.append(track)
-                    else:
-                        tracks_not_exportable.append(track)
-            else:
-                # For Spotify, we can't add local tracks to the collection
-                tracks_not_exportable.extend(
-                    tracks_with_other_platform_info + tracks_without_platform_info
-                )
-
-            # Count tracks that can't be exported
-            non_exportable_count = len(tracks_not_exportable)
-
-            # STEP 3: Export tracks to platform if needed
-            exports_successful = 0
-            adds_successful = 0
-
-            # First handle tracks that are already in the platform collection
-            if tracks_to_export:
+            # For Rekordbox, determine if we need to use force option
+            force = False
+            if playlist.source_platform == "rekordbox":
                 try:
-                    if playlist.source_platform == "spotify":
-                        # Export to Spotify
-                        response = QMessageBox.question(
-                            parent,
-                            "Export to Spotify",
-                            f"Found {len(tracks_to_export)} tracks in the local playlist that are "
-                            "not in the Spotify playlist. "
-                            f"Do you want to add them to the Spotify playlist?",
-                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        )
+                    import psutil
+                    from pyrekordbox.config import get_rekordbox_pid
 
-                        if response == QMessageBox.StandardButton.Yes:
-                            client.export_tracks_to_playlist(
-                                playlist_name=platform_playlist.name,
-                                track_uris=tracks_to_export,
-                                existing_playlist_id=playlist.platform_id,
-                            )
-                            exports_successful = len(tracks_to_export)
+                    pid = get_rekordbox_pid()
+                    if pid and psutil.Process(pid).status() in ["running", "sleeping"]:
+                        force = True
+                except:
+                    pass
 
-                    elif playlist.source_platform == "rekordbox":
-                        # Export to Rekordbox
-                        response = QMessageBox.question(
-                            parent,
-                            "Export to Rekordbox",
-                            f"Found {len(tracks_to_export)} tracks in the local playlist that are "
-                            "not in the Rekordbox playlist. "
-                            f"Do you want to add them to the Rekordbox playlist?",
-                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        )
+            # For Discogs, we need to use the target (collection/wantlist) from the platform_id
+            extra_args = {}
+            if playlist.source_platform == "rekordbox" and force:
+                extra_args["force"] = force
 
-                        if response == QMessageBox.StandardButton.Yes:
-                            # Add each track to the playlist in Rekordbox
-                            for track_id in tracks_to_export:
-                                try:
-                                    # First try without force option
-                                    client.add_track_to_playlist(playlist.platform_id, track_id)
-                                except RuntimeError as re:
-                                    error_msg = str(re)
-                                    # Handle Rekordbox running error specifically
-                                    if "Rekordbox is running" in error_msg:
-                                        # Ask user if they want to continue with force option
-                                        response = QMessageBox.question(
-                                            parent,
-                                            "Rekordbox Running",
-                                            "Rekordbox is currently running. This might cause "
-                                            "database conflicts.\n\n"
-                                            "Do you want to continue anyway?",
-                                            QMessageBox.StandardButton.Yes
-                                            | QMessageBox.StandardButton.No,
-                                        )
+            # Perform the sync using the sync manager
+            tracks_added, tracks_exported = sync_manager.sync_playlist(playlist.id)
 
-                                        if response == QMessageBox.StandardButton.Yes:
-                                            # User wants to continue, use force=True for this and
-                                            # all remaining operations
-                                            client.add_track_to_playlist(
-                                                playlist.platform_id, track_id, force=True
-                                            )
-                                        else:
-                                            # User doesn't want to continue, stop the operation
-                                            raise RuntimeError(
-                                                "Operation cancelled by user because "
-                                                "Rekordbox is running"
-                                            ) from re
-                                    else:
-                                        # Some other runtime error, just re-raise it
-                                        raise
-                            exports_successful = len(tracks_to_export)
-
-                except Exception as e:
-                    logger.exception(f"Error exporting tracks to {playlist.source_platform}: {e}")
-                    QMessageBox.warning(
-                        parent,
-                        "Export Warning",
-                        "Some tracks could not be exported to "
-                        f"{playlist.source_platform.capitalize()}: {str(e)}",
-                    )
-
-            # Now handle local tracks that need to be added to the platform collection first
-            if tracks_to_add_and_export and playlist.source_platform == "rekordbox":
-                try:
-                    # Ask user if they want to add the local files to Rekordbox
-                    response = QMessageBox.question(
-                        parent,
-                        "Add Local Files to Rekordbox",
-                        f"Found {len(tracks_to_add_and_export)} local "
-                        "audio files that aren't in Rekordbox yet. "
-                        f"Do you want to add them to Rekordbox and include them in the playlist?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
-
-                    if response == QMessageBox.StandardButton.Yes:
-                        # We need to add each track to Rekordbox collection first,
-                        # then to the playlist
-                        # This is a placeholder - the actual implementation would depend on how your
-                        # Rekordbox client allows adding local files to the collection
-                        for track in tracks_to_add_and_export:
-                            # Add the track to Rekordbox collection and then to the playlist
-                            try:
-                                if not track.local_path:
-                                    continue
-
-                                force_mode = False
-                                try:
-                                    # First try without force option
-                                    rekordbox_track_id = client.add_track_to_collection(
-                                        track.local_path
-                                    )
-                                except RuntimeError as re:
-                                    error_msg = str(re)
-                                    # Handle Rekordbox running error specifically
-                                    if "Rekordbox is running" in error_msg:
-                                        # Ask user if they want to continue with force option
-                                        if not force_mode:
-                                            response = QMessageBox.question(
-                                                parent,
-                                                "Rekordbox Running",
-                                                "Rekordbox is currently running. This might cause "
-                                                "database conflicts.\n\n"
-                                                "Do you want to continue anyway?",
-                                                QMessageBox.StandardButton.Yes
-                                                | QMessageBox.StandardButton.No,
-                                            )
-
-                                            if response == QMessageBox.StandardButton.Yes:
-                                                # User wants to continue, enable force mode
-                                                # for this and all remaining operations
-                                                force_mode = True
-                                                rekordbox_track_id = client.add_track_to_collection(
-                                                    track.local_path, force=True
-                                                )
-                                            else:
-                                                # User doesn't want to continue, stop the operation
-                                                raise RuntimeError(  # noqa: B904
-                                                    "Operation cancelled by user because "
-                                                    "Rekordbox is running"
-                                                )
-                                    else:
-                                        # Some other runtime error, just re-raise it
-                                        raise
-
-                                if rekordbox_track_id:
-                                    # Add to playlist, using force_mode if needed
-                                    try:
-                                        client.add_track_to_playlist(
-                                            playlist.platform_id,
-                                            rekordbox_track_id,
-                                            force=force_mode,
-                                        )
-                                    except RuntimeError as re:
-                                        error_msg = str(re)
-                                        # Handle Rekordbox running error specifically
-                                        if "Rekordbox is running" in error_msg and not force_mode:
-                                            # Ask user if they want to continue with force option
-                                            response = QMessageBox.question(
-                                                parent,
-                                                "Rekordbox Running",
-                                                "Rekordbox is currently running. This might cause "
-                                                "database conflicts.\n\n"
-                                                "Do you want to continue anyway?",
-                                                QMessageBox.StandardButton.Yes
-                                                | QMessageBox.StandardButton.No,
-                                            )
-
-                                            if response == QMessageBox.StandardButton.Yes:
-                                                # User wants to continue, enable force mode for this
-                                                # and all remaining operations
-                                                force_mode = True
-                                                client.add_track_to_playlist(
-                                                    playlist.platform_id,
-                                                    rekordbox_track_id,
-                                                    force=True,
-                                                )
-                                            else:
-                                                # User doesn't want to continue, stop the operation
-                                                raise RuntimeError(  # noqa: B904
-                                                    "Operation cancelled by user because "
-                                                    "Rekordbox is running"
-                                                )
-                                        else:
-                                            # Some other runtime error, just re-raise it
-                                            raise
-
-                                    adds_successful += 1
-
-                                    # Update local track with new Rekordbox metadata
-                                    import json
-
-                                    track_info = TrackPlatformInfo(
-                                        track_id=track.id,
-                                        platform="rekordbox",
-                                        platform_id=str(rekordbox_track_id),
-                                        uri=None,
-                                        platform_data="{}",
-                                    )
-                                    track_repo.session.add(track_info)
-                                    track_repo.session.flush()
-                            except Exception as track_e:
-                                logger.exception(
-                                    f"Failed to add track {track.local_path} to "
-                                    f"Rekordbox: {track_e}"
-                                )
-
-                        track_repo.session.commit()
-
-                except Exception as e:
-                    logger.exception(f"Error adding local files to Rekordbox: {e}")
-                    QMessageBox.warning(
-                        parent,
-                        "Export Warning",
-                        f"Some local files could not be added to Rekordbox: {str(e)}",
-                    )
-
-            # Update sync timestamp
-            playlist.last_synced = datetime.now(UTC)
-            playlist_repo.session.commit()
-
-            # Show success message with detailed sync info
-            import_message = (
-                f"Playlist '{playlist.name}' synced successfully with "
-                f"{playlist.source_platform.capitalize()}.\n\n"
-                f"Import: {tracks_added} new tracks added from "
-                f"{playlist.source_platform.capitalize()}, "
-                f"{tracks_updated} tracks already existed."
-            )
-
-            export_message = ""
-            if tracks_to_export:
-                export_message = (
-                    f"\n\nExport: {exports_successful} of {len(tracks_to_export)} "
-                    "tracks were exported to {playlist.source_platform.capitalize()}."
+            # Show success message with stats
+            message = f"Playlist '{playlist.name}' synced successfully.\n\n"
+            if tracks_added > 0:
+                message += f"- {tracks_added} new tracks were imported from {playlist.source_platform.capitalize()}.\n"
+            if tracks_exported > 0:
+                message += (
+                    f"- {tracks_exported} tracks were exported to "
+                    f"{playlist.source_platform.capitalize()}.\n"
                 )
+            if tracks_added == 0 and tracks_exported == 0:
+                message += "The playlist is already in sync; no changes were made."
 
-            local_files_message = ""
-            if tracks_to_add_and_export:
-                local_files_message = (
-                    f"\n\nLocal Files: {adds_successful} of"
-                    f" {len(tracks_to_add_and_export)} local audio files were added to "
-                    f"{playlist.source_platform.capitalize()}."
-                )
-                if adds_successful == 0:
-                    local_files_message += (
-                        "\nAdding local files to Rekordbox will be supported in a future update."
-                    )
-
-            info_message = ""
-            if non_exportable_count > 0:
-                info_message = (
-                    f"\n\nNote: {non_exportable_count} track(s) in the local playlist "
-                    "couldn't be exported "
-                    "(no local file or {playlist.source_platform.capitalize()} metadata)."
-                )
-
-            QMessageBox.information(
-                parent,
-                "Sync Successful",
-                import_message + export_message + local_files_message + info_message,
-            )
+            QMessageBox.information(parent, "Sync Successful", message)
 
             # Refresh the UI
-            self.refresh()
+            self.notify_refresh_needed()
 
             return True
 
@@ -1065,12 +563,14 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             return self._export_to_spotify(playlist, tracks, parent)
         elif target_platform == "rekordbox":
             return self._export_to_rekordbox(playlist, tracks, parent)
+        elif target_platform == "discogs":
+            return self._export_to_discogs(playlist, tracks, parent)
         else:
             QMessageBox.critical(parent, "Export Error", f"Unsupported platform: {target_platform}")
             return False
 
     def _export_to_spotify(self, playlist: Any, tracks: list[Any], parent: QWidget | None) -> bool:
-        """Export a playlist to Spotify.
+        """Export a playlist to Spotify using the PlatformSyncManager.
 
         Args:
             playlist: The playlist to export
@@ -1102,16 +602,20 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         dialog_values = dialog.get_values()
         playlist_name = dialog_values["name"]
 
-        # Collect tracks with Spotify metadata
-        spotify_track_uris = []
+        # Create PlatformSyncManager for Spotify
+        from selecta.core.platform.sync_manager import PlatformSyncManager
+
+        sync_manager = PlatformSyncManager(spotify_client)
+
+        # Check which tracks have Spotify metadata
+        spotify_track_count = 0
         skipped_tracks = []
 
         for track in tracks:
-            # Look for Spotify platform info
             has_spotify = False
             for platform_info in track.platform_info:
-                if platform_info.platform == "spotify" and platform_info.uri:
-                    spotify_track_uris.append(platform_info.uri)
+                if platform_info.platform == "spotify" and platform_info.platform_id:
+                    spotify_track_count += 1
                     has_spotify = True
                     break
 
@@ -1119,7 +623,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                 skipped_tracks.append(f"{track.artist} - {track.title}")
 
         # If no tracks have Spotify info, show error
-        if not spotify_track_uris:
+        if spotify_track_count == 0:
             QMessageBox.critical(
                 parent,
                 "Export Error",
@@ -1128,15 +632,48 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             )
             return False
 
+        # Warn about skipped tracks if any
+        if skipped_tracks:
+            warning_message = (
+                f"{len(skipped_tracks)} of {len(tracks)} tracks will be skipped because they don't "
+                "have Spotify metadata.\n\n"
+                "Do you want to continue with the export?"
+            )
+            response = QMessageBox.question(
+                parent,
+                "Some Tracks Will Be Skipped",
+                warning_message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if response != QMessageBox.StandardButton.Yes:
+                return False
+
         try:
-            # Create the playlist on Spotify
-            spotify_client.export_tracks_to_playlist(playlist_name, spotify_track_uris)
+            # Update the playlist name if it was changed in the dialog
+            if playlist_name != playlist.name:
+                self.playlist_repo.update(playlist.id, {"name": playlist_name})
+
+            # Export the playlist using the sync manager
+            platform_playlist_id = sync_manager.export_playlist(
+                local_playlist_id=playlist.id,
+            )
+
+            # Update the local playlist with the platform connection
+            if platform_playlist_id and not playlist.platform_id:
+                self.playlist_repo.update(
+                    playlist.id,
+                    {
+                        "source_platform": "spotify",
+                        "platform_id": platform_playlist_id,
+                        "is_local": False,
+                    },
+                )
 
             # Show success message with skipped tracks info
             if skipped_tracks:
                 message = (
                     f"Playlist '{playlist_name}' exported to Spotify with "
-                    f"{len(spotify_track_uris)} tracks.\n\n"
+                    f"{spotify_track_count} tracks.\n\n"
                     f"{len(skipped_tracks)} tracks were skipped because they don't "
                     f"have Spotify metadata:"
                 )
@@ -1148,12 +685,14 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     message += f"\n- ... and {len(skipped_tracks) - 5} more"
             else:
                 message = (
-                    f"Playlist '{playlist_name}' exported to Spotify with all"
-                    f" {len(spotify_track_uris)} tracks."
+                    f"Playlist '{playlist_name}' exported to Spotify with all "
+                    f"{spotify_track_count} tracks."
                 )
 
             QMessageBox.information(parent, "Export Successful", message)
 
+            # Refresh the UI
+            self.notify_refresh_needed()
             return True
 
         except Exception as e:
@@ -1166,7 +705,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
     def _export_to_rekordbox(
         self, playlist: Any, tracks: list[Any], parent: QWidget | None
     ) -> bool:
-        """Export a playlist to Rekordbox.
+        """Export a playlist to Rekordbox using the PlatformSyncManager.
 
         Args:
             playlist: The playlist to export
@@ -1180,6 +719,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         rekordbox_client = self._init_rekordbox_client()
 
         # Check for running Rekordbox process but allow the user to continue if they want
+        force = False  # Default setting for operations
         try:
             import psutil
             from pyrekordbox.config import get_rekordbox_pid
@@ -1205,42 +745,27 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                         if response != QMessageBox.StandardButton.Yes:
                             return False  # User doesn't want to continue
                         else:
-                            # User wants to continue - we'll use force=True in operations later
+                            # User wants to continue - we'll use force=True in operations
+                            force = True
                             logger.warning(
                                 "User chose to continue exporting playlist while "
                                 "Rekordbox is running"
                             )
-                    else:
-                        # Process exists but is suspended or in another non-active state
-                        logger.info(
-                            f"Rekordbox process exists with PID {pid} but status is {status}, "
-                            "proceeding anyway"
-                        )
-                except psutil.NoSuchProcess:
-                    # Process doesn't exist anymore despite the PID being found
-                    logger.info(
-                        f"Rekordbox process with PID {pid} no longer exists, proceeding anyway"
-                    )
-            # If no PID or process is suspended, we can continue
-        except Exception as e:
-            logger.debug(f"Failed to check if Rekordbox is running: {e}")
-            # Continue anyway
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Process not running or can't access it, so continue
+                    pass
+        except (ImportError, Exception) as e:
+            # Could not check if Rekordbox is running, just continue
+            logger.warning(f"Failed to check if Rekordbox is running: {e}")
 
         if not rekordbox_client or not rekordbox_client.is_authenticated():
             QMessageBox.warning(
                 parent,
                 "Authentication Required",
-                "You need to be authenticated with Rekordbox to export playlists. "
-                "Please go to the Rekordbox section and authenticate first.",
+                "You need to be connected to Rekordbox to export playlists. "
+                "Please go to the Rekordbox section and connect first.",
             )
             return False
-
-        # Get available folder list for the dialog
-        try:
-            available_folders = rekordbox_client.get_all_folders()
-        except Exception as e:
-            logger.warning(f"Error getting Rekordbox folders: {e}")
-            available_folders = []
 
         # Show export dialog
         dialog = ImportExportPlaylistDialog(
@@ -1249,7 +774,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             platform="rekordbox",
             default_name=playlist.name,
             enable_folder_selection=True,
-            available_folders=available_folders,
+            available_folders=rekordbox_client.get_all_folders(),
         )
 
         if dialog.exec() != ImportExportPlaylistDialog.DialogCode.Accepted:
@@ -1259,194 +784,308 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         playlist_name = dialog_values["name"]
         parent_folder_id = dialog_values.get("parent_folder_id")
 
-        # Collect tracks with Rekordbox metadata or local files
-        rekordbox_track_ids = []
-        local_file_tracks = []
+        # Create PlatformSyncManager for Rekordbox
+        from selecta.core.platform.sync_manager import PlatformSyncManager
+
+        sync_manager = PlatformSyncManager(rekordbox_client)
+
+        # Check which tracks have Rekordbox metadata or can be added
+        rekordbox_track_count = 0
+        local_files_to_add = []
         skipped_tracks = []
 
         for track in tracks:
-            # First check if track has Rekordbox platform info
+            # First check if it has Rekordbox metadata
             has_rekordbox = False
             for platform_info in track.platform_info:
-                if platform_info.platform == "rekordbox":
-                    rekordbox_track_ids.append(int(platform_info.platform_id))
-                    has_rekordbox = True
-                    break
+                if platform_info.platform == "rekordbox" and platform_info.platform_id:
+                    try:
+                        # Validate ID format
+                        int(platform_info.platform_id)  # Just to check if it's a valid integer
+                        rekordbox_track_count += 1
+                        has_rekordbox = True
+                        break
+                    except (ValueError, TypeError):
+                        logger.warning(
+                            f"Invalid Rekordbox ID for track {track.id}: {platform_info.platform_id}"
+                        )
 
-            # If no Rekordbox info, check if it has a local file
-            if not has_rekordbox and track.local_path and track.is_available_locally:
-                local_file_tracks.append(track)
-                continue
-
-            # If neither, add to skipped tracks
-            if not has_rekordbox:
+            # If no Rekordbox metadata, check if it's a local file that can be added
+            if not has_rekordbox and track.is_available_locally and track.local_path:
+                if os.path.exists(track.local_path):
+                    local_files_to_add.append(track)
+                else:
+                    skipped_tracks.append(f"{track.artist} - {track.title} (missing file)")
+            elif not has_rekordbox:
                 skipped_tracks.append(f"{track.artist} - {track.title}")
 
-        # If no tracks have Rekordbox info or local files, show error
-        if not rekordbox_track_ids and not local_file_tracks:
+        # If no tracks can be exported, show error
+        if rekordbox_track_count == 0 and not local_files_to_add:
             QMessageBox.critical(
                 parent,
                 "Export Error",
-                "None of the tracks in this playlist have Rekordbox metadata or local files. "
-                "Cannot export to Rekordbox.",
+                "None of the tracks in this playlist have Rekordbox metadata "
+                "or local audio files. Cannot export to Rekordbox.",
             )
             return False
 
-        # Track whether we should use force mode
-        # (when Rekordbox is running but user wants to continue)
-        # This is handled on a per-operation basis
+        # Warn about tracks that will be skipped
+        if skipped_tracks and rekordbox_track_count > 0:
+            warning_message = (
+                f"{len(skipped_tracks)} of {len(tracks)} tracks will be skipped because they "
+                "don't have Rekordbox metadata or local audio files.\n\n"
+                "Do you want to continue with the export?"
+            )
+            response = QMessageBox.question(
+                parent,
+                "Some Tracks Will Be Skipped",
+                warning_message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if response != QMessageBox.StandardButton.Yes:
+                return False
 
-        try:
-            # First try without force, then with force if needed
-            try:
-                # Create the playlist on Rekordbox
-                _ = rekordbox_client.export_tracks_to_playlist(
-                    playlist_name, rekordbox_track_ids, parent_folder_id
+        # Add local files to Rekordbox if needed
+        if local_files_to_add:
+            response = QMessageBox.question(
+                parent,
+                "Add Local Files to Rekordbox",
+                f"Found {len(local_files_to_add)} local audio files that are not in your "
+                "Rekordbox collection. Do you want to add them first?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+
+            if response == QMessageBox.StandardButton.Yes:
+                # Add each local file to Rekordbox
+                track_repo = TrackRepository()
+                progress_dialog = QProgressDialog(
+                    "Adding files to Rekordbox...", "Cancel", 0, len(local_files_to_add), parent
                 )
-            except RuntimeError as re:
-                error_msg = str(re)
-                # Handle Rekordbox running error specifically
-                if "Rekordbox is running" in error_msg:
-                    # Ask user if they want to continue with force option
-                    response = QMessageBox.question(
-                        parent,
-                        "Rekordbox Running",
-                        "Rekordbox is currently running. This might cause database conflicts.\n\n"
-                        "Do you want to continue anyway?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
+                progress_dialog.setWindowTitle("Adding Files")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setValue(0)
+                progress_dialog.show()
 
-                    if response == QMessageBox.StandardButton.Yes:
-                        # User wants to continue - we need a manual approach since
-                        # export_tracks_to_playlist doesn't have a force parameter
-                        # Create the playlist with force mode
+                for i, track in enumerate(local_files_to_add):
+                    # Check if user cancelled
+                    if progress_dialog.wasCanceled():
+                        break
 
-                        # Create the playlist with force=True
-                        playlist_obj = rekordbox_client.create_playlist(
-                            playlist_name, parent_folder_id, force=True
-                        )
+                    progress_dialog.setValue(i)
+                    progress_dialog.setLabelText(f"Adding: {os.path.basename(track.local_path)}")
+                    QApplication.processEvents()  # Allow UI to update
 
-                        # Add each track individually with force=True
-                        for track_id in rekordbox_track_ids:
-                            rekordbox_client.add_track_to_playlist(
-                                playlist_obj.id, track_id, force=True
+                    try:
+                        # Import the track to Rekordbox
+                        rb_track = rekordbox_client.import_track(track.local_path, force=force)
+                        if rb_track and rb_track.id:
+                            # Save the Rekordbox ID to our database
+                            platform_data = json.dumps(
+                                {
+                                    "id": rb_track.id,
+                                    "title": rb_track.title,
+                                    "artist": rb_track.artist_name,
+                                    "bpm": rb_track.bpm,
+                                }
                             )
 
-                    else:
-                        # User doesn't want to continue, stop the operation
-                        raise RuntimeError(  # noqa: B904
-                            "Operation cancelled by user because Rekordbox is running"
-                        )
-                else:
-                    # Some other runtime error, just re-raise it
-                    raise
+                            track_repo.add_platform_info(
+                                track_id=track.id,
+                                platform="rekordbox",
+                                platform_id=str(rb_track.id),
+                                uri=None,
+                                metadata=platform_data,
+                            )
 
-            # For local files, we would need to add them to Rekordbox first
-            # This is a complex process that would require more implementation
-            # For now, let's just count them as skipped
-            all_skipped = skipped_tracks + [
-                f"{t.artist} - {t.title} (local file)" for t in local_file_tracks
-            ]
+                            rekordbox_track_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to add file {track.local_path} to Rekordbox: {e}")
 
-            # Show success message with skipped tracks info
-            if all_skipped:
-                message = (
-                    f"Playlist '{playlist_name}' exported to Rekordbox with "
-                    f"{len(rekordbox_track_ids)} tracks.\n\n"
-                    f"{len(all_skipped)} tracks were skipped:"
+                # Close progress dialog
+                progress_dialog.setValue(len(local_files_to_add))
+
+        # Update playlist name if changed
+        if playlist_name != playlist.name:
+            self.playlist_repo.update(playlist.id, {"name": playlist_name})
+
+        try:
+            # Export the playlist using the sync manager
+            platform_playlist_id = sync_manager.export_playlist(
+                local_playlist_id=playlist.id,
+                parent_folder_id=parent_folder_id,
+                force=force,
+            )
+
+            # Update the local playlist with the platform connection
+            if platform_playlist_id and not playlist.platform_id:
+                self.playlist_repo.update(
+                    playlist.id,
+                    {
+                        "source_platform": "rekordbox",
+                        "platform_id": platform_playlist_id,
+                        "is_local": False,
+                    },
                 )
-                # Add up to 5 skipped tracks to the message
-                for _, track_name in enumerate(all_skipped[:5]):
-                    message += f"\n- {track_name}"
 
-                if len(all_skipped) > 5:
-                    message += f"\n- ... and {len(all_skipped) - 5} more"
-            else:
-                message = (
-                    f"Playlist '{playlist_name}' exported to Rekordbox with all "
-                    f"{len(rekordbox_track_ids)} tracks."
-                )
+            # Show success message
+            message = (
+                f"Playlist '{playlist_name}' was successfully exported to Rekordbox "
+                f"with {rekordbox_track_count} tracks."
+            )
+
+            if skipped_tracks:
+                message += f"\n\n{len(skipped_tracks)} tracks were skipped because they don't "
+                message += "have Rekordbox metadata or local audio files."
 
             QMessageBox.information(parent, "Export Successful", message)
 
+            # Refresh the UI
+            self.notify_refresh_needed()
             return True
-
-        except RuntimeError as e:
-            error_msg = str(e)
-            logger.exception(f"Runtime error exporting playlist to Rekordbox: {error_msg}")
-
-            # Special handling for the "Rekordbox is running" error
-            if "Rekordbox is running" in error_msg:
-                # Don't show another error if user cancelled the operation
-                if "cancelled by user" in error_msg:
-                    logger.info("Export operation was cancelled by the user")
-                else:
-                    # Offer the user a choice to continue anyway
-                    response = QMessageBox.question(
-                        parent,
-                        "Rekordbox Running",
-                        "Rekordbox is currently running. This might cause database conflicts.\n\n"
-                        "Do you want to continue anyway?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
-
-                    if response == QMessageBox.StandardButton.Yes:
-                        # Try again with force=True
-                        try:
-                            # Create new playlist with force=True
-                            rekordbox_client.export_tracks_to_playlist(
-                                playlist_name, rekordbox_track_ids, parent_folder_id, force=True
-                            )
-
-                            # For local files, we would need to add them to Rekordbox first
-                            # This is a complex process that would require more implementation
-                            # For now, let's just count them as skipped
-                            all_skipped = skipped_tracks + [
-                                f"{t.artist} - {t.title} (local file)" for t in local_file_tracks
-                            ]
-
-                            # Show success message with skipped tracks info
-                            if all_skipped:
-                                message = (
-                                    f"Playlist '{playlist_name}' exported to Rekordbox with "
-                                    f"{len(rekordbox_track_ids)} tracks.\n\n"
-                                    f"{len(all_skipped)} tracks were skipped:"
-                                )
-                                # Add up to 5 skipped tracks to the message
-                                for _, track_name in enumerate(all_skipped[:5]):
-                                    message += f"\n- {track_name}"
-
-                                if len(all_skipped) > 5:
-                                    message += f"\n- ... and {len(all_skipped) - 5} more"
-                            else:
-                                message = (
-                                    f"Playlist '{playlist_name}' exported to Rekordbox with all "
-                                    f"{len(rekordbox_track_ids)} tracks."
-                                )
-
-                            QMessageBox.information(parent, "Export Successful", message)
-
-                            return True
-                        except Exception as force_error:
-                            logger.exception(
-                                f"Error exporting playlist with force=True: {force_error}"
-                            )
-                            QMessageBox.critical(
-                                parent,
-                                "Export Error",
-                                f"Failed to export playlist to Rekordbox even with force option: "
-                                f"{str(force_error)}",
-                            )
-                            return False
-            else:
-                QMessageBox.critical(
-                    parent, "Export Error", f"Failed to export playlist to Rekordbox: {error_msg}"
-                )
-            return False
 
         except Exception as e:
             logger.exception(f"Error exporting playlist to Rekordbox: {e}")
             QMessageBox.critical(
                 parent, "Export Error", f"Failed to export playlist to Rekordbox: {str(e)}"
+            )
+            return False
+
+    def _export_to_discogs(self, playlist: Any, tracks: list[Any], parent: QWidget | None) -> bool:
+        """Export a playlist to Discogs (collection or wantlist).
+
+        Args:
+            playlist: The playlist to export
+            tracks: The tracks in the playlist
+            parent: Parent widget for dialogs
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Initialize Discogs client
+        discogs_client = self._init_discogs_client()
+        if not discogs_client or not discogs_client.is_authenticated():
+            QMessageBox.warning(
+                parent,
+                "Authentication Required",
+                "You need to be authenticated with Discogs to export playlists. "
+                "Please go to the Discogs section and authenticate first.",
+            )
+            return False
+
+        # Show export dialog
+        dialog = QDialog(parent)
+        dialog.setWindowTitle("Export to Discogs")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Description
+        description_label = QLabel(
+            "Choose whether to add these records to your Discogs collection or wantlist."
+        )
+        description_label.setWordWrap(True)
+        layout.addWidget(description_label)
+
+        # Radio buttons for collection or wantlist
+        collection_radio = QRadioButton("Add to Collection")
+        wantlist_radio = QRadioButton("Add to Wantlist")
+        collection_radio.setChecked(True)  # Default to collection
+
+        layout.addWidget(collection_radio)
+        layout.addWidget(wantlist_radio)
+
+        # Button box
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        # Determine target: collection or wantlist
+        target = "collection" if collection_radio.isChecked() else "wantlist"
+
+        # Create PlatformSyncManager for Discogs
+        from selecta.core.platform.sync_manager import PlatformSyncManager
+
+        sync_manager = PlatformSyncManager(discogs_client)
+
+        # Check which tracks have Discogs metadata
+        discogs_track_count = 0
+        skipped_tracks = []
+
+        for track in tracks:
+            has_discogs = False
+            for platform_info in track.platform_info:
+                if platform_info.platform == "discogs" and platform_info.platform_id:
+                    discogs_track_count += 1
+                    has_discogs = True
+                    break
+
+            if not has_discogs:
+                skipped_tracks.append(f"{track.artist} - {track.title}")
+
+        # If no tracks have Discogs info, show error
+        if discogs_track_count == 0:
+            QMessageBox.critical(
+                parent,
+                "Export Error",
+                "None of the tracks in this playlist have Discogs metadata. "
+                "Cannot export to Discogs.",
+            )
+            return False
+
+        # Warn about skipped tracks if any
+        if skipped_tracks:
+            warning_message = (
+                f"{len(skipped_tracks)} of {len(tracks)} tracks will be skipped because they don't "
+                "have Discogs metadata.\n\n"
+                "Do you want to continue with the export?"
+            )
+            response = QMessageBox.question(
+                parent,
+                "Some Tracks Will Be Skipped",
+                warning_message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if response != QMessageBox.StandardButton.Yes:
+                return False
+
+        try:
+            # Export the playlist using the sync manager with the target as existing_playlist_id
+            sync_manager.export_playlist(
+                local_playlist_id=playlist.id,
+                platform_playlist_id=target,
+            )
+
+            # Show success message with skipped tracks info
+            if skipped_tracks:
+                message = (
+                    f"{discogs_track_count} records were added to your Discogs {target}.\n\n"
+                    f"{len(skipped_tracks)} tracks were skipped because they don't "
+                    f"have Discogs metadata:"
+                )
+                # Add up to 5 skipped tracks to the message
+                for _, track_name in enumerate(skipped_tracks[:5]):
+                    message += f"\n- {track_name}"
+
+                if len(skipped_tracks) > 5:
+                    message += f"\n- ... and {len(skipped_tracks) - 5} more"
+            else:
+                message = (
+                    f"All {discogs_track_count} records were successfully added to your "
+                    f"Discogs {target}."
+                )
+
+            QMessageBox.information(parent, "Export Successful", message)
+            return True
+
+        except Exception as e:
+            logger.exception(f"Error exporting playlist to Discogs: {e}")
+            QMessageBox.critical(
+                parent, "Export Error", f"Failed to export to Discogs {target}: {str(e)}"
             )
             return False

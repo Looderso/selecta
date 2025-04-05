@@ -10,7 +10,11 @@ from selecta.ui.components.playlist.track_item import TrackItem
 
 
 class PlaylistDataProvider(ABC):
-    """Interface for providing playlist data to the playlist component."""
+    """Interface for providing playlist data to the playlist component.
+
+    This interface defines the standard methods for accessing and manipulating
+    playlists across different platforms (local, Spotify, Rekordbox, etc.).
+    """
 
     def __init__(self):
         """Initialize the playlist data provider."""
@@ -57,6 +61,20 @@ class PlaylistDataProvider(ABC):
         # This method should be implemented by subclasses
         pass
 
+    @abstractmethod
+    def refresh(self) -> None:
+        """Refresh all cached data and notify listeners."""
+        pass
+
+    def refresh_playlist(self, playlist_id: Any) -> None:
+        """Refresh a specific playlist's tracks.
+
+        Args:
+            playlist_id: ID of the playlist to refresh
+        """
+        # Default implementation just calls refresh for all playlists
+        self.refresh()
+
     def import_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
         """Import a platform playlist to the local database.
 
@@ -86,6 +104,35 @@ class PlaylistDataProvider(ABC):
         """
         # Default implementation does nothing
         # The local playlist provider should override this
+        return False
+
+    def sync_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
+        """Synchronize a playlist bidirectionally between local and platform.
+
+        This performs both import (platform to local) and export (local to platform)
+        operations to ensure both sides are in sync.
+
+        Args:
+            playlist_id: ID of the playlist to sync
+            parent: Parent widget for dialogs
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Default implementation does nothing
+        # The local playlist provider should override this for imported playlists
+        return False
+
+    def create_new_playlist(self, parent: QWidget | None = None) -> bool:
+        """Create a new playlist.
+
+        Args:
+            parent: Parent widget for the dialog
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Default implementation does nothing
         return False
 
     def register_refresh_callback(self, callback: Callable[[], None]) -> None:

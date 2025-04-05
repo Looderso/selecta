@@ -9,11 +9,47 @@ Selecta synchronizes your music libraries and playlists between:
 - **Spotify**: Your streaming playlists
 - **Discogs**: Your vinyl collection
 
+## Quick Start
+
+```bash
+# Run the application
+selecta-gui
+
+# Initialize database
+selecta database init --force
+
+# Show available commands
+selecta --help
+```
+
+### Database Management
+
+The application includes utilities to help manage the database:
+
+```bash
+# Database commands
+selecta database init    # Initialize a new database
+selecta database remove  # Remove the database
+```
+
+Advanced operations with development tools:
+
+```bash
+# Development database commands (with sample data)
+selecta database dev init      # Initialize database with sample data
+selecta database dev verify    # Verify database contents
+selecta database dev add-quality-column  # Add quality column to tracks
+```
+
+The database is stored in your user application data directory by default.
+
+For detailed documentation on database management, schema issues, and troubleshooting, see [DATABASE.md](DATABASE.md).
+
 Key features:
 - Cross-platform playlist management and synchronization
 - Intelligent track matching between different platforms
 - Vinyl collection tracking with Discogs integration
-- Modern, user-friendly interface built with Kivy
+- Modern, user-friendly interface built with PyQt6
 
 ## Requirements
 
@@ -92,6 +128,11 @@ selecta-gui
 # Show available commands
 selecta --help
 
+# Platform-specific commands
+selecta spotify --help
+selecta discogs --help
+selecta rekordbox --help
+
 # Environment management
 selecta env --help
 ```
@@ -147,11 +188,8 @@ pytest -m discogs
 ### Code Quality
 
 ```bash
-# Run linters
+# Run linters and type checking
 ruff check src
-
-# Run type checking
-mypy src
 ```
 
 ### Type Safety
@@ -181,6 +219,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgements
 
-- [Kivy](https://kivy.org/) - Open source UI framework
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - Qt bindings for Python
 - [Spotipy](https://spotipy.readthedocs.io/) - Spotify API client for Python
 - [python3-discogs-client](https://github.com/discogs/discogs_client) - Discogs API client for Python
+- [SQLAlchemy](https://www.sqlalchemy.org/) - SQL toolkit and ORM

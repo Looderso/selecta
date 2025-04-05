@@ -34,16 +34,7 @@ def get_db_path() -> Path:
     Returns:
         Path: The database file path
     """
-    # Check for dev mode
-    if os.environ.get("SELECTA_DEV_MODE") == "true":
-        dev_db_path = os.environ.get("SELECTA_DEV_DB_PATH")
-        if dev_db_path:
-            logger.info(f"Using development database at {dev_db_path}")
-            return Path(dev_db_path)
-        else:
-            logger.warning("Dev mode enabled but no database path specified.")
-
-    # Default path for production
+    # Use the user's app data directory for the database
     return get_app_data_path() / "selecta.db"
 
 
@@ -217,9 +208,46 @@ def init_database(db_path: Path | str | None = None) -> None:
     engine = get_engine(db_path)
 
     # Import models here to avoid circular imports
+    # Force import all models to ensure they're registered
+
+    logger.info(f"Creating database schema at {db_path}")
 
     # Create all tables
     Base.metadata.create_all(engine)
+
+    # Verify the TrackPlatformInfo table has the correct columns
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+
+    # Check if the TrackPlatformInfo table exists and has all required columns
+    if "track_platform_info" in tables:
+        columns = [col["name"] for col in inspector.get_columns("track_platform_info")]
+        required_columns = [
+            "id",
+            "track_id",
+            "platform",
+            "platform_id",
+            "uri",
+            "platform_data",
+            "last_synced",
+            "needs_update",
+        ]
+
+        missing_columns = [col for col in required_columns if col not in columns]
+        if missing_columns:
+            logger.warning(f"TrackPlatformInfo table is missing columns: {missing_columns}")
+            logger.warning("Database schema may need to be upgraded.")
+            logger.warning("Run 'python upgrade_db.py' to fix schema issues.")
+        else:
+            logger.info("TrackPlatformInfo table has all required columns.")
+    else:
+        logger.error("TrackPlatformInfo table not found in the database!")
+
+    logger.info(
+        f"Created track_platform_info with columns: {columns if 'track_platform_info' in tables else 'TABLE NOT FOUND'}"  # noqa: E501
+    )
     logger.info("Database schema created")
 
 

@@ -1,6 +1,7 @@
 # src/selecta/ui/components/playlist/rekordbox/rekordbox_playlist_data_provider.py
 """Rekordbox playlist data provider implementation."""
 
+import datetime
 import json
 import os
 from typing import Any
@@ -283,6 +284,8 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
                         platform_id=str(rb_track.id),
                         uri=None,
                         platform_data=platform_data,
+                        last_synced=datetime.datetime.now(datetime.UTC),
+                        needs_update=False,
                     )
                     track_repo.session.add(track_info)
                     track_repo.session.flush()

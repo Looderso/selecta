@@ -395,16 +395,17 @@ class SpotifyClient(AbstractPlatform):
         return tracks, playlist
 
     def export_tracks_to_playlist(
-        self, playlist_name: str, track_uris: list[str]
-    ) -> SpotifyPlaylist:
-        """Export tracks to a new Spotify playlist.
+        self, playlist_name: str, track_ids: list[str], existing_playlist_id: str | None = None
+    ) -> str:
+        """Export tracks to a Spotify playlist.
 
         Args:
-            playlist_name: Name for the new Spotify playlist
-            track_uris: List of Spotify track URIs to add
+            playlist_name: Name for the Spotify playlist
+            track_ids: List of Spotify track URIs or IDs to add
+            existing_playlist_id: Optional ID of an existing playlist to update
 
         Returns:
-            The created SpotifyPlaylist
+            The Spotify playlist ID
 
         Raises:
             ValueError: If the client is not authenticated
@@ -412,11 +413,34 @@ class SpotifyClient(AbstractPlatform):
         if not self.client:
             raise ValueError("Spotify client not authenticated")
 
-        # Create a new playlist
-        playlist = self.create_playlist(name=playlist_name, public=False)
+        # Ensure we have URI format for all tracks
+        track_uris = []
+        for track_id in track_ids:
+            # If it's already a URI (spotify:track:xxx), use it as is
+            if track_id.startswith("spotify:track:"):
+                track_uris.append(track_id)
+            # If it's just an ID, convert to URI
+            else:
+                track_uris.append(f"spotify:track:{track_id}")
 
-        # Add tracks to the playlist
-        if track_uris:
-            self.add_tracks_to_playlist(playlist.id, track_uris)
+        if existing_playlist_id:
+            # Update existing playlist
+            # First verify the playlist exists
+            try:
+                existing_playlist = self.get_playlist(existing_playlist_id)
+                # Add tracks to the existing playlist
+                if track_uris:
+                    self.add_tracks_to_playlist(existing_playlist_id, track_uris)
+                return existing_playlist_id
+            except Exception as e:
+                logger.error(f"Error updating existing playlist: {e}")
+                raise ValueError(f"Could not update playlist: {str(e)}")
+        else:
+            # Create a new playlist
+            playlist = self.create_playlist(name=playlist_name, public=False)
 
-        return playlist
+            # Add tracks to the playlist
+            if track_uris:
+                self.add_tracks_to_playlist(playlist.id, track_uris)
+
+            return playlist.id

@@ -1,17 +1,13 @@
 # src/selecta/ui/components/playlist/spotify/spotify_playlist_data_provider.py
 """Spotify playlist data provider implementation."""
 
-import json
-from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
 from PyQt6.QtWidgets import QMenu, QMessageBox, QTreeView, QWidget
 
-from selecta.core.data.models.db import Playlist, PlaylistTrack, Track, TrackPlatformInfo
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
-from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.spotify.client import SpotifyClient
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
@@ -171,10 +167,8 @@ class SpotifyPlaylistDataProvider(AbstractPlaylistDataProvider):
             return False
 
         try:
-            # First, get the playlist details from Spotify
-            spotify_tracks, spotify_playlist = self.client.import_playlist_to_local(
-                str(playlist_id)
-            )
+            # Get basic playlist info for the dialog
+            spotify_playlist = self.client.get_playlist(str(playlist_id))
 
             # Show the import dialog to let the user set the playlist name
             dialog = ImportExportPlaylistDialog(
@@ -187,12 +181,15 @@ class SpotifyPlaylistDataProvider(AbstractPlaylistDataProvider):
             dialog_values = dialog.get_values()
             playlist_name = dialog_values["name"]
 
-            # Create repositories
-            track_repo = TrackRepository()
-            playlist_repo = PlaylistRepository()
+            # Create a sync manager for handling the import
+            from selecta.core.platform.sync_manager import PlatformSyncManager
 
-            # First check if a playlist with the same Spotify ID already exists
+            sync_manager = PlatformSyncManager(self.client)
+
+            # Check if playlist already exists
+            playlist_repo = PlaylistRepository()
             existing_playlist = playlist_repo.get_by_platform_id("spotify", str(playlist_id))
+
             if existing_playlist:
                 response = QMessageBox.question(
                     parent,
@@ -206,187 +203,55 @@ class SpotifyPlaylistDataProvider(AbstractPlaylistDataProvider):
                 if response != QMessageBox.StandardButton.Yes:
                     return False
 
-                # Use the existing playlist
-                local_playlist = existing_playlist
-                # But update the name if it changed
-                if playlist_name != local_playlist.name:
-                    local_playlist.name = playlist_name
-                    playlist_repo.session.commit()
+                # Use sync manager to update the existing playlist
+                try:
+                    # Sync the playlist with existing one
+                    tracks_added, tracks_exported = sync_manager.sync_playlist(existing_playlist.id)
+
+                    # Update name if changed
+                    if playlist_name != existing_playlist.name:
+                        playlist_repo.update(existing_playlist.id, {"name": playlist_name})
+
+                    QMessageBox.information(
+                        parent,
+                        "Sync Successful",
+                        f"Playlist '{playlist_name}' synced successfully.\n"
+                        f"{tracks_added} new tracks added from Spotify.",
+                    )
+
+                    # Refresh the UI to show the imported playlist
+                    self.notify_refresh_needed()
+                    return True
+                except Exception as e:
+                    logger.exception(f"Error syncing Spotify playlist: {e}")
+                    QMessageBox.critical(parent, "Sync Error", f"Failed to sync playlist: {str(e)}")
+                    return False
             else:
-                # Create a new local playlist linked to Spotify
-                local_playlist = Playlist(
-                    name=playlist_name,
-                    description=spotify_playlist.description,
-                    is_local=False,
-                    source_platform="spotify",
-                    platform_id=str(playlist_id),
-                )
-                playlist_repo.session.add(local_playlist)
-                playlist_repo.session.commit()
+                # Import new playlist using the sync manager
+                try:
+                    # Import the playlist
+                    local_playlist, local_tracks = sync_manager.import_playlist(str(playlist_id))
 
-            # Counter for tracks added/updated
-            tracks_added = 0
-            tracks_updated = 0
+                    # Update name if different from what was imported
+                    if playlist_name != local_playlist.name:
+                        playlist_repo.update(local_playlist.id, {"name": playlist_name})
 
-            # First fetch all existing Spotify tracks in one query to avoid repeated DB lookups
-            # Get all Spotify IDs for the tracks we're importing
-            spotify_ids = [track.id for track in spotify_tracks]
-
-            # Get all tracks that already exist in the database in a single query
-            existing_tracks_info = {}
-            with track_repo.session.no_autoflush:
-                # Only select id, track_id and platform_id to avoid querying missing columns
-                track_infos = (
-                    track_repo.session.query(
-                        TrackPlatformInfo.id,
-                        TrackPlatformInfo.track_id,
-                        TrackPlatformInfo.platform_id,
-                    )
-                    .filter(
-                        TrackPlatformInfo.platform == "spotify",
-                        TrackPlatformInfo.platform_id.in_(spotify_ids),
-                    )
-                    .all()
-                )
-
-                for info in track_infos:
-                    # Result is now a tuple with (id, track_id, platform_id)
-                    existing_tracks_info[info[2]] = info[1]
-
-            # Also get all tracks already in the playlist to avoid duplication checks
-            existing_playlist_tracks = set()
-            with playlist_repo.session.no_autoflush:
-                if existing_tracks_info:
-                    # Only get existing tracks if we have any
-                    track_ids = list(existing_tracks_info.values())
-                    playlist_tracks = (
-                        playlist_repo.session.query(PlaylistTrack)
-                        .filter(
-                            PlaylistTrack.playlist_id == local_playlist.id,
-                            PlaylistTrack.track_id.in_(track_ids),
-                        )
-                        .all()
+                    QMessageBox.information(
+                        parent,
+                        "Import Successful",
+                        f"Playlist '{playlist_name}' imported successfully.\n"
+                        f"{len(local_tracks)} tracks imported.",
                     )
 
-                    for pt in playlist_tracks:
-                        existing_playlist_tracks.add(pt.track_id)
-
-            # Find next position in playlist once instead of for each track
-            next_position = 0
-            with playlist_repo.session.no_autoflush:
-                position = (
-                    playlist_repo.session.query(PlaylistTrack.position)
-                    .filter(PlaylistTrack.playlist_id == local_playlist.id)
-                    .order_by(PlaylistTrack.position.desc())
-                    .first()
-                )
-                next_position = (position[0] + 1) if position else 0
-
-            # Batch process all tracks
-            now = datetime.now(UTC)
-            new_tracks_to_add = []
-            new_platform_infos = []
-            new_playlist_tracks = []
-
-            # Process each track
-            for sp_track in spotify_tracks:
-                if sp_track.id in existing_tracks_info:
-                    # Track exists, make sure it's in the playlist
-                    track_id = existing_tracks_info[sp_track.id]
-
-                    # Check if it's already in the playlist
-                    if track_id in existing_playlist_tracks:
-                        # Already in the playlist, nothing to do
-                        tracks_updated += 1
-                        continue
-
-                    # Need to add existing track to playlist
-                    new_playlist_tracks.append(
-                        PlaylistTrack(
-                            playlist_id=local_playlist.id,
-                            track_id=track_id,
-                            position=next_position,
-                            added_at=now,
-                        )
+                    # Refresh the UI to show the imported playlist
+                    self.notify_refresh_needed()
+                    return True
+                except Exception as e:
+                    logger.exception(f"Error importing Spotify playlist: {e}")
+                    QMessageBox.critical(
+                        parent, "Import Error", f"Failed to import playlist: {str(e)}"
                     )
-                    next_position += 1
-                    tracks_updated += 1
-                else:
-                    # Create a new track
-                    track = Track(
-                        title=sp_track.name,
-                        artist=", ".join(sp_track.artist_names),
-                        duration_ms=sp_track.duration_ms,
-                        year=sp_track.album_release_date[:4]
-                        if sp_track.album_release_date
-                        else None,
-                        is_available_locally=False,  # Spotify tracks aren't local files
-                    )
-                    new_tracks_to_add.append(track)
-
-                    # Add to batch for adding platform info once we have track IDs
-                    new_platform_infos.append((track, sp_track))
-                    tracks_added += 1
-
-            # Add all new tracks in a batch
-            if new_tracks_to_add:
-                track_repo.session.add_all(new_tracks_to_add)
-                track_repo.session.flush()  # Get the IDs
-
-                # Now create platform infos
-                platform_infos_to_add = []
-                for track, sp_track in new_platform_infos:
-                    platform_data = json.dumps(sp_track.to_dict())
-                    platform_infos_to_add.append(
-                        TrackPlatformInfo(
-                            track_id=track.id,
-                            platform="spotify",
-                            platform_id=sp_track.id,
-                            uri=sp_track.uri,
-                            platform_data=platform_data,
-                        )
-                    )
-
-                track_repo.session.add_all(platform_infos_to_add)
-
-                # Create playlist tracks for new tracks
-                for track in new_tracks_to_add:
-                    new_playlist_tracks.append(
-                        PlaylistTrack(
-                            playlist_id=local_playlist.id,
-                            track_id=track.id,
-                            position=next_position,
-                            added_at=now,
-                        )
-                    )
-                    next_position += 1
-
-            # Add all playlist tracks in a batch
-            if new_playlist_tracks:
-                playlist_repo.session.add_all(new_playlist_tracks)
-
-            # Perform a single commit for all changes using the centralized session handling
-            try:
-                # Just commit with our improved session handling
-                playlist_repo.session.commit()
-                logger.debug("Playlist import committed successfully")
-            except Exception as e:
-                logger.error(f"Failed to commit playlist import: {e}")
-                playlist_repo.session.rollback()
-                raise
-
-            # Show success message
-            QMessageBox.information(
-                parent,
-                "Import Successful",
-                f"Playlist '{playlist_name}' imported successfully.\n"
-                f"{tracks_added} new tracks added, {tracks_updated} existing tracks found.",
-            )
-
-            # Refresh the UI to show the imported playlist
-            self.notify_refresh_needed()
-
-            return True
+                    return False
 
         except Exception as e:
             logger.exception(f"Error importing Spotify playlist: {e}")

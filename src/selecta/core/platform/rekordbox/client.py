@@ -772,20 +772,22 @@ class RekordboxClient(AbstractPlatform):
     def export_tracks_to_playlist(
         self,
         playlist_name: str,
-        track_ids: list[int],
+        track_ids: list[str],
+        existing_playlist_id: str | None = None,
         parent_folder_id: str | None = None,
         force: bool = False,
-    ) -> RekordboxPlaylist:
-        """Export tracks to a new Rekordbox playlist.
+    ) -> str:
+        """Export tracks to a Rekordbox playlist.
 
         Args:
-            playlist_name: Name for the new Rekordbox playlist
-            track_ids: List of Rekordbox track IDs to add
-            parent_folder_id: Optional parent folder ID
-            force: If True, attempts to commit even if Rekordbox is running
+            playlist_name: Name for the Rekordbox playlist
+            track_ids: List of Rekordbox track IDs to add (as strings)
+            existing_playlist_id: Optional ID of an existing playlist to update
+            parent_folder_id: Optional parent folder ID (Rekordbox-specific)
+            force: If True, attempts to commit even if Rekordbox is running (Rekordbox-specific)
 
         Returns:
-            The created RekordboxPlaylist
+            The Rekordbox playlist ID
 
         Raises:
             ValueError: If the client is not authenticated
@@ -794,17 +796,45 @@ class RekordboxClient(AbstractPlatform):
         if not self.db:
             raise ValueError("Rekordbox client not authenticated")
 
-        # Create a new playlist
-        playlist = self.create_playlist(name=playlist_name, parent_id=parent_folder_id, force=force)
-
-        # Add tracks to the playlist
+        # Convert string IDs to integers
+        int_track_ids = []
         for track_id in track_ids:
             try:
-                self.add_track_to_playlist(playlist.id, track_id, force=force)
-            except Exception as e:
-                logger.warning(f"Failed to add track {track_id} to playlist: {e}")
+                int_track_ids.append(int(track_id))
+            except ValueError:
+                logger.warning(f"Invalid track ID (non-integer): {track_id}")
 
-        return playlist
+        if existing_playlist_id:
+            # Update existing playlist
+            try:
+                # Verify the playlist exists
+                existing_playlist = self.get_playlist(existing_playlist_id)
+
+                # Add tracks to the existing playlist
+                for track_id in int_track_ids:
+                    try:
+                        self.add_track_to_playlist(existing_playlist_id, track_id, force=force)
+                    except Exception as e:
+                        logger.warning(f"Failed to add track {track_id} to playlist: {e}")
+
+                return existing_playlist_id
+            except Exception as e:
+                logger.error(f"Error updating existing playlist: {e}")
+                raise ValueError(f"Could not update playlist: {str(e)}")
+        else:
+            # Create a new playlist
+            playlist = self.create_playlist(
+                name=playlist_name, parent_id=parent_folder_id, force=force
+            )
+
+            # Add tracks to the playlist
+            for track_id in int_track_ids:
+                try:
+                    self.add_track_to_playlist(playlist.id, track_id, force=force)
+                except Exception as e:
+                    logger.warning(f"Failed to add track {track_id} to playlist: {e}")
+
+            return playlist.id
 
     def get_all_folders(self) -> list[tuple[str, str]]:
         """Get all playlist folders in the Rekordbox database.

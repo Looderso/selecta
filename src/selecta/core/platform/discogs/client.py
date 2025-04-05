@@ -262,3 +262,254 @@ class DiscogsClient(AbstractPlatform):
             raise ValueError(f"Failed to get release {release_id}")
 
         return DiscogsRelease.from_discogs_dict(release_data)
+
+    def get_all_playlists(self) -> list[Any]:
+        """Get all playlists from this platform.
+
+        For Discogs, collection and wantlist are considered as 'playlists'
+
+        Returns:
+            A list of 'playlist' objects (collection and wantlist)
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        # For Discogs, we'll represent the user's collection and wantlist as 'playlists'
+        # Create fake playlist objects for Collection and Wantlist
+        username = self.get_user_profile().get("username", "User")
+
+        # Get counts
+        success, collection_count = self.client.get_collection_count()
+        if not success:
+            collection_count = 0
+
+        success, wantlist_count = self.client.get_wantlist_count()
+        if not success:
+            wantlist_count = 0
+
+        return [
+            {
+                "id": "collection",
+                "name": f"{username}'s Collection",
+                "count": collection_count,
+                "description": "Your vinyl record collection from Discogs",
+                "type": "collection",
+                "is_owned": True,
+                "is_wanted": False,
+            },
+            {
+                "id": "wantlist",
+                "name": f"{username}'s Wantlist",
+                "count": wantlist_count,
+                "description": "Your vinyl wantlist from Discogs",
+                "type": "wantlist",
+                "is_owned": False,
+                "is_wanted": True,
+            },
+        ]
+
+    def get_playlist_tracks(self, playlist_id: str) -> list[DiscogsVinyl]:
+        """Get all tracks in a specific playlist.
+
+        For Discogs, this retrieves either collection or wantlist
+
+        Args:
+            playlist_id: Either 'collection' or 'wantlist'
+
+        Returns:
+            A list of DiscogsVinyl objects
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        if playlist_id == "collection":
+            return self.get_collection()
+        elif playlist_id == "wantlist":
+            return self.get_wantlist()
+        else:
+            raise ValueError(
+                f"Invalid playlist_id for Discogs: {playlist_id}. Must be 'collection' or 'wantlist'"
+            )
+
+    def search_tracks(self, query: str, limit: int = 10) -> list[DiscogsRelease]:
+        """Search for tracks on this platform.
+
+        For Discogs, this searches for releases
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results to return
+
+        Returns:
+            A list of DiscogsRelease objects matching the query
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        return self.search_release(query=query, limit=limit)
+
+    def create_playlist(self, name: str, description: str = "") -> Any:
+        """Create a new playlist on this platform.
+
+        Discogs doesn't support custom playlist creation, so this raises an error
+
+        Args:
+            name: Name of the playlist
+            description: Optional description
+
+        Raises:
+            NotImplementedError: Discogs doesn't support playlist creation
+        """
+        raise NotImplementedError("Discogs doesn't support creating custom playlists")
+
+    def add_tracks_to_playlist(self, playlist_id: str, track_ids: list[str]) -> bool:
+        """Add tracks to a playlist on this platform.
+
+        For Discogs, this adds releases to collection or wantlist
+
+        Args:
+            playlist_id: Either 'collection' or 'wantlist'
+            track_ids: List of Discogs release IDs
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+            NotImplementedError: For unsupported operations
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        if playlist_id == "collection":
+            # Add to collection
+            for release_id in track_ids:
+                try:
+                    success, _ = self.client.add_to_collection(int(release_id))
+                    if not success:
+                        logger.warning(f"Failed to add release {release_id} to collection")
+                except Exception as e:
+                    logger.error(f"Error adding release {release_id} to collection: {e}")
+            return True
+        elif playlist_id == "wantlist":
+            # Add to wantlist
+            for release_id in track_ids:
+                try:
+                    success, _ = self.client.add_to_wantlist(int(release_id))
+                    if not success:
+                        logger.warning(f"Failed to add release {release_id} to wantlist")
+                except Exception as e:
+                    logger.error(f"Error adding release {release_id} to wantlist: {e}")
+            return True
+        else:
+            raise ValueError(f"Invalid playlist_id for Discogs: {playlist_id}")
+
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: list[str]) -> bool:
+        """Remove tracks from a playlist on this platform.
+
+        For Discogs, this removes releases from collection or wantlist
+
+        Args:
+            playlist_id: Either 'collection' or 'wantlist'
+            track_ids: List of Discogs release IDs
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        if playlist_id == "collection":
+            # Remove from collection
+            for release_id in track_ids:
+                try:
+                    success, _ = self.client.remove_from_collection(int(release_id))
+                    if not success:
+                        logger.warning(f"Failed to remove release {release_id} from collection")
+                except Exception as e:
+                    logger.error(f"Error removing release {release_id} from collection: {e}")
+            return True
+        elif playlist_id == "wantlist":
+            # Remove from wantlist
+            for release_id in track_ids:
+                try:
+                    success, _ = self.client.remove_from_wantlist(int(release_id))
+                    if not success:
+                        logger.warning(f"Failed to remove release {release_id} from wantlist")
+                except Exception as e:
+                    logger.error(f"Error removing release {release_id} from wantlist: {e}")
+            return True
+        else:
+            raise ValueError(f"Invalid playlist_id for Discogs: {playlist_id}")
+
+    def import_playlist_to_local(self, platform_playlist_id: str) -> tuple[list[DiscogsVinyl], Any]:
+        """Import a platform playlist to the local database.
+
+        Args:
+            platform_playlist_id: 'collection' or 'wantlist'
+
+        Returns:
+            A tuple of (list of DiscogsVinyl objects, playlist object)
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        # Get the 'playlist' representation
+        playlists = self.get_all_playlists()
+        playlist = None
+        for p in playlists:
+            if p["id"] == platform_playlist_id:
+                playlist = p
+                break
+
+        if not playlist:
+            raise ValueError(f"Invalid Discogs playlist ID: {platform_playlist_id}")
+
+        # Get all the tracks
+        tracks = self.get_playlist_tracks(platform_playlist_id)
+
+        return tracks, playlist
+
+    def export_tracks_to_playlist(
+        self, playlist_name: str, track_ids: list[str], existing_playlist_id: str | None = None
+    ) -> str:
+        """Export tracks to a playlist on this platform.
+
+        Args:
+            playlist_name: Name to use for the playlist (ignored for Discogs)
+            track_ids: List of Discogs release IDs
+            existing_playlist_id: Optional ID of an existing 'playlist' to update
+
+        Returns:
+            The platform-specific playlist ID
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        if not self.client:
+            raise ValueError("Discogs client not authenticated")
+
+        # For Discogs, we can only add to collection or wantlist
+        playlist_id = existing_playlist_id or "collection"  # Default to collection
+
+        if playlist_id not in ["collection", "wantlist"]:
+            raise ValueError(
+                f"Invalid Discogs playlist ID: {playlist_id}. Must be 'collection' or 'wantlist'"
+            )
+
+        # Add tracks to the specified 'playlist'
+        self.add_tracks_to_playlist(playlist_id, track_ids)
+
+        return playlist_id
