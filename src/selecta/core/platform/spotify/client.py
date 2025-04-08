@@ -95,6 +95,17 @@ class SpotifyClient(AbstractPlatform):
 
         return current_user
 
+    def get_all_playlists(self) -> list[Any]:
+        """Get all playlists from this platform.
+
+        Returns:
+            A list of platform-specific playlist objects
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        return self.get_playlists()
+
     def get_playlists(self) -> list[dict[str, Any]]:
         """Get all playlists for the current user.
 
@@ -368,3 +379,80 @@ class SpotifyClient(AbstractPlatform):
             tracks.append(item)
 
         return tracks
+
+    def import_playlist_to_local(
+        self, spotify_playlist_id: str
+    ) -> tuple[list[SpotifyTrack], SpotifyPlaylist]:
+        """Import a Spotify playlist to the local database.
+
+        Args:
+            spotify_playlist_id: The Spotify playlist ID
+
+        Returns:
+            Tuple of (list of tracks, playlist object)
+
+        Raises:
+            ValueError: If the client is not authenticated
+        """
+        if not self.client:
+            raise ValueError("Spotify client not authenticated")
+
+        # Get the playlist details
+        playlist = self.get_playlist(spotify_playlist_id)
+
+        # Get all tracks in the playlist
+        tracks = self.get_playlist_tracks(spotify_playlist_id)
+
+        return tracks, playlist
+
+    def export_tracks_to_playlist(
+        self, playlist_name: str, track_ids: list[str], existing_playlist_id: str | None = None
+    ) -> str:
+        """Export tracks to a Spotify playlist.
+
+        Args:
+            playlist_name: Name for the Spotify playlist
+            track_ids: List of Spotify track URIs or IDs to add
+            existing_playlist_id: Optional ID of an existing playlist to update
+
+        Returns:
+            The Spotify playlist ID
+
+        Raises:
+            ValueError: If the client is not authenticated
+        """
+        if not self.client:
+            raise ValueError("Spotify client not authenticated")
+
+        # Ensure we have URI format for all tracks
+        track_uris = []
+        for track_id in track_ids:
+            # If it's already a URI (spotify:track:xxx), use it as is
+            if track_id.startswith("spotify:track:"):
+                track_uris.append(track_id)
+            # If it's just an ID, convert to URI
+            else:
+                track_uris.append(f"spotify:track:{track_id}")
+
+        if existing_playlist_id:
+            # Update existing playlist
+            # First verify the playlist exists
+            try:
+                # Check if playlist exists
+                self.get_playlist(existing_playlist_id)
+                # Add tracks to the existing playlist
+                if track_uris:
+                    self.add_tracks_to_playlist(existing_playlist_id, track_uris)
+                return existing_playlist_id
+            except Exception as e:
+                logger.error(f"Error updating existing playlist: {e}")
+                raise ValueError(f"Could not update playlist: {str(e)}") from e
+        else:
+            # Create a new playlist
+            playlist = self.create_playlist(name=playlist_name, public=False)
+
+            # Add tracks to the playlist
+            if track_uris:
+                self.add_tracks_to_playlist(playlist.id, track_uris)
+
+            return playlist.id

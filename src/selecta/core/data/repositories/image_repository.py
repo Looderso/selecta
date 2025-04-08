@@ -1,7 +1,7 @@
 """Repository for image storage and retrieval."""
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 
 from PIL import Image as PILImage
 from sqlalchemy.orm import Session, joinedload
@@ -148,7 +148,7 @@ class ImageRepository(BaseRepository[Image]):
             track_id=track_id,
             source=source,
             source_url=source_url,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         self.session.add(image)
@@ -203,7 +203,7 @@ class ImageRepository(BaseRepository[Image]):
             album_id=album_id,
             source=source,
             source_url=source_url,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         self.session.add(image)

@@ -165,6 +165,26 @@ class RekordboxTrack:
     rating: int | None = None
     created_at: datetime | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert track to dictionary for serialization.
+
+        Returns:
+            Dictionary representation of the track
+        """
+        return {
+            "id": self.id,
+            "title": self.title,
+            "artist_name": self.artist_name,
+            "album_name": self.album_name,
+            "genre": self.genre,
+            "duration_ms": self.duration_ms,
+            "bpm": self.bpm,
+            "key": self.key,
+            "folder_path": self.folder_path,
+            "rating": self.rating,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
     @classmethod
     def from_rekordbox_content(cls, content: Any) -> "RekordboxTrack":
         """Create a RekordboxTrack from a DjmdContent object.

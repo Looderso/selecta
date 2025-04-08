@@ -2,7 +2,7 @@
 
 import random
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import click
@@ -177,18 +177,18 @@ def add_quality_column(path: str | None) -> None:
         click.echo(f"Error adding quality column: {e}")
 
 
-@dev_database.command(name="init", help="Initialize a development database with sample data")
+@dev_database.command(name="init", help="Initialize a database with sample data")
 @click.option(
     "--db-path",
     type=click.Path(),
-    default="./dev-database/dev_selecta.db",
-    help="Path for the development database",
+    default=None,
+    help="Path for the database (default: application data directory)",
 )
 @click.option(
     "--audio-path",
     type=click.Path(),
-    default="./dev-database/",
-    help="Path for sample audio files (default: audio_files in project root)",
+    default="./sample-audio/",
+    help="Path for sample audio files",
 )
 @click.option(
     "--num-files",
@@ -202,7 +202,7 @@ def add_quality_column(path: str | None) -> None:
     help="Force initialization even if database already exists",
 )
 def init_dev_database(
-    db_path: str,
+    db_path: str | None,
     audio_path: str | None,
     num_files: int,
     force: bool,
@@ -215,7 +215,14 @@ def init_dev_database(
         num_files: Number of sample audio files to create
         force: Whether to force initialization if database already exists
     """
-    db_path_pathlib = Path(db_path)
+    # Use the application data directory if db_path is not specified
+    from selecta.core.data.database import get_db_path
+
+    if db_path is None:
+        db_path_pathlib = get_db_path()
+    else:
+        db_path_pathlib = Path(db_path)
+
     # Check if database already exists
     if (
         db_path_pathlib.exists()
@@ -249,27 +256,33 @@ def init_dev_database(
     click.echo("Run 'selecta database dev verify' to check the database contents")
 
 
-@dev_database.command(name="verify", help="Verify development database contents")
+@dev_database.command(name="verify", help="Verify database contents")
 @click.option(
     "--db-path",
     type=click.Path(exists=True),
-    default="./dev-database/dev_selecta.db",
-    help="Path to the development database",
+    default=None,
+    help="Path to the database (default: application data directory)",
 )
 @click.option(
     "--audio-path",
     type=click.Path(exists=True),
-    default="./dev-database/",
-    help="Path to sample audio files (default: audio_files in project root)",
+    default="./sample-audio/",
+    help="Path to sample audio files",
 )
-def verify_dev_database(db_path: str, audio_path: str | None) -> None:
-    """Verify the contents of a development database.
+def verify_dev_database(db_path: str | None, audio_path: str | None) -> None:
+    """Verify the contents of a database.
 
     Args:
         db_path: Path to the database file
         audio_path: Path to the audio files
     """
-    db_path_pathlib = Path(db_path)
+    # Use the application data directory if db_path is not specified
+    from selecta.core.data.database import get_db_path
+
+    if db_path is None:
+        db_path_pathlib = get_db_path()
+    else:
+        db_path_pathlib = Path(db_path)
 
     # Determine audio path
     if audio_path is None:
@@ -288,33 +301,39 @@ def verify_dev_database(db_path: str, audio_path: str | None) -> None:
     click.secho("Development database verification completed", fg="green")
 
 
-@dev_database.command(name="clean", help="Remove development database and sample files")
+@dev_database.command(name="clean", help="Remove database and sample files")
 @click.option(
     "--db-path",
     type=click.Path(exists=True),
-    default="./dev_selecta.db",
-    help="Path to the development database",
+    default=None,
+    help="Path to the database (default: application data directory)",
 )
 @click.option(
     "--audio-path",
     type=click.Path(exists=True),
-    default=None,
-    help="Path to sample audio files (default: audio_files in project root)",
+    default="./sample-audio/",
+    help="Path to sample audio files",
 )
 @click.option(
     "--yes",
     is_flag=True,
     help="Skip confirmation prompt",
 )
-def clean_dev_database(db_path: str, audio_path: str | None, yes: bool) -> None:
-    """Remove development database and sample files.
+def clean_dev_database(db_path: str | None, audio_path: str | None, yes: bool) -> None:
+    """Remove database and sample files.
 
     Args:
         db_path: Path to the database file
         audio_path: Path to the audio files
         yes: Skip confirmation prompt
     """
-    db_path_pathlib = Path(db_path)
+    # Use the application data directory if db_path is not specified
+    from selecta.core.data.database import get_db_path
+
+    if db_path is None:
+        db_path_pathlib = get_db_path()
+    else:
+        db_path_pathlib = Path(db_path)
 
     # Determine audio path
     if audio_path is None:
@@ -576,13 +595,20 @@ def _seed_tracks_and_albums(
         # 50% chance to have Spotify
         if random.random() > 0.5:
             spotify_id = f"spotify{random.randint(10000000, 99999999)}"
-            track_repo.add_platform_info(
-                column_to_int(track.id),
-                "spotify",
-                spotify_id,
-                f"spotify:track:{spotify_id}",
-                f'{{"popularity": {random.randint(20, 80)}, "explicit": false, "preview_url": "https://spotify-preview/{spotify_id}"}}',
+
+            # Create platform info directly to ensure last_synced and needs_update are set
+            spotify_info = TrackPlatformInfo(
+                track_id=column_to_int(track.id),
+                platform="spotify",
+                platform_id=spotify_id,
+                uri=f"spotify:track:{spotify_id}",
+                platform_data=f'{{"popularity": {random.randint(20, 80)}, "explicit": false,'
+                f' "preview_url": "https://spotify-preview/{spotify_id}"}}',
+                last_synced=datetime.now(UTC),
+                needs_update=False,
             )
+            session.add(spotify_info)
+            session.flush()
 
             # Add Spotify audio features
             _add_spotify_audio_features(track_repo, column_to_int(track.id))
@@ -590,13 +616,19 @@ def _seed_tracks_and_albums(
         # 70% chance to have Rekordbox
         if random.random() > 0.3:
             rekordbox_id = random.randint(10000, 99999)
-            track_repo.add_platform_info(
-                column_to_int(track.id),
-                "rekordbox",
-                str(rekordbox_id),
-                None,
-                f'{{"bpm": {round(random.uniform(80, 140), 1)}, "key": "{random.choice(["1A", "2A", "3A", "4A", "5A", "6A", "7A", "8A", "9A", "10A", "11A", "12A"])}", "rating": {random.randint(1, 5)}}}',  # noqa: E501
+
+            # Create platform info directly to ensure last_synced and needs_update are set
+            rekordbox_info = TrackPlatformInfo(
+                track_id=column_to_int(track.id),
+                platform="rekordbox",
+                platform_id=str(rekordbox_id),
+                uri=None,
+                platform_data=f'{{"bpm": {round(random.uniform(80, 140), 1)}, "key": "{random.choice(["1A", "2A", "3A", "4A", "5A", "6A", "7A", "8A", "9A", "10A", "11A", "12A"])}", "rating": {random.randint(1, 5)}}}',  # noqa: E501
+                last_synced=datetime.now(UTC),
+                needs_update=False,
             )
+            session.add(rekordbox_info)
+            session.flush()
 
         tracks.append(track)
 
@@ -696,7 +728,7 @@ def _seed_playlists(session) -> list[Playlist]:
                 playlist_id=playlist_id,
                 track_id=track_id,
                 position=position,
-                added_at=datetime.now(),
+                added_at=datetime.now(UTC),
             )
             session.add(playlist_track)
 
@@ -728,7 +760,7 @@ def _seed_playlists(session) -> list[Playlist]:
                 playlist_id=playlist_id,
                 track_id=track_id,
                 position=position,
-                added_at=datetime.now(),
+                added_at=datetime.now(UTC),
             )
             session.add(playlist_track)
 
@@ -755,7 +787,7 @@ def _seed_playlists(session) -> list[Playlist]:
             playlist_id=spotify_playlist_id,
             track_id=track_id,
             position=position,
-            added_at=datetime.now(),
+            added_at=datetime.now(UTC),
         )
         session.add(playlist_track)
 
@@ -782,7 +814,7 @@ def _seed_playlists(session) -> list[Playlist]:
             playlist_id=rekordbox_playlist_id,
             track_id=track_id,
             position=position,
-            added_at=datetime.now(),
+            added_at=datetime.now(UTC),
         )
         session.add(playlist_track)
 
@@ -823,7 +855,7 @@ def _seed_vinyl_records(session) -> list[Vinyl]:
                 "is_wanted": False,
                 "media_condition": random.choice(VINYL_CONDITIONS),
                 "sleeve_condition": random.choice(VINYL_CONDITIONS),
-                "purchase_date": datetime.now() - timedelta(days=random.randint(1, 730)),
+                "purchase_date": datetime.now(UTC) - timedelta(days=random.randint(1, 730)),
                 "purchase_price": round(random.uniform(10, 50), 2),
                 "purchase_currency": "USD",
                 "notes": "This is a great pressing with excellent sound quality.",
@@ -879,7 +911,7 @@ def _seed_platform_credentials(session) -> None:
             "client_secret": "dummy_spotify_client_secret",
             "access_token": "dummy_spotify_access_token",
             "refresh_token": "dummy_spotify_refresh_token",
-            "token_expiry": datetime.now() + timedelta(hours=1),
+            "token_expiry": datetime.now(UTC) + timedelta(hours=1),
         },
     )
 
@@ -931,7 +963,7 @@ def _seed_user_settings(session) -> None:
         "Default folder for importing music",
     )
     settings_repo.set_setting(
-        "last_sync_time", datetime.now().isoformat(), "string", "Last time data was synchronized"
+        "last_sync_time", datetime.now(UTC).isoformat(), "string", "Last time data was synchronized"
     )
 
     # Add some playlist display preferences

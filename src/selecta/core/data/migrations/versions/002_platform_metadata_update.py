@@ -28,7 +28,10 @@ def upgrade() -> None:
     )
 
     # Add new fields to TrackPlatformInfo
-    op.add_column("track_platform_info", sa.Column("last_synced", sa.DateTime(), nullable=True))
+    op.add_column(
+        "track_platform_info",
+        sa.Column("last_synced", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+    )
     op.add_column(
         "track_platform_info",
         sa.Column("needs_update", sa.Boolean(), server_default="0", nullable=False),

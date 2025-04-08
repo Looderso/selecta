@@ -287,8 +287,14 @@ class FolderSelectionWidget(QWidget):
 
         # Check Rekordbox authentication
         rekordbox_client = PlatformFactory.create("rekordbox", self.settings_repo)
-        rekordbox_authenticated = rekordbox_client and rekordbox_client.is_authenticated()
-        assert rekordbox_authenticated is not None
+        rekordbox_authenticated = False
+        if rekordbox_client:
+            # Use contextlib.suppress to handle exceptions cleanly
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                rekordbox_authenticated = bool(rekordbox_client.is_authenticated())
+
         # Enable/disable buttons
         self.import_rekordbox_button.setEnabled(has_folder and rekordbox_authenticated)
         self.import_covers_button.setEnabled(has_folder)
