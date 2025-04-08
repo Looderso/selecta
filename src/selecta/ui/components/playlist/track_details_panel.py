@@ -198,12 +198,11 @@ class TrackDetailsPanel(QWidget):
         # Clear existing cards
         self._clear_cards()
 
+        # Reset image to placeholder before processing
+        self._reset_image_to_placeholder()
+
         if not track:
             self.header_label.setText("No Track Selected")
-            # Reset image
-            placeholder = QPixmap(200, 200)
-            placeholder.fill(Qt.GlobalColor.darkGray)
-            self.image_label.setPixmap(placeholder)
             self._current_track_id = None
             self._current_album_id = None
 
@@ -282,12 +281,26 @@ class TrackDetailsPanel(QWidget):
         self.quality_combo.blockSignals(False)
         self.quality_combo.setEnabled(True)
 
+        # Check if this track actually has an image before trying to load it
+        has_track_image = hasattr(track, "has_image") and track.has_image
+        has_album_id = hasattr(track, "album_id") and track.album_id is not None
+
+        # Only make the image container visible if the track has an image or album ID
+        if not (has_track_image or has_album_id):
+            # No image available, keep placeholder
+            logger.debug(f"Track {track.track_id} has no image and no album ID")
+            self.image_container.setVisible(False)
+            return
+
+        # Make the image container visible
+        self.image_container.setVisible(True)
+
         # Load track image from database if available
-        if hasattr(track, "has_image") and track.has_image and TrackDetailsPanel._db_image_loader:
+        if has_track_image and TrackDetailsPanel._db_image_loader:
             TrackDetailsPanel._db_image_loader.load_track_image(track.track_id, ImageSize.MEDIUM)
 
         # Also try to load the album image as a fallback
-        if hasattr(track, "album_id") and track.album_id and TrackDetailsPanel._db_image_loader:
+        if has_album_id and TrackDetailsPanel._db_image_loader:
             TrackDetailsPanel._db_image_loader.load_album_image(track.album_id, ImageSize.MEDIUM)
 
     def _on_track_image_loaded(self, track_id: int, pixmap: QPixmap):
@@ -300,6 +313,8 @@ class TrackDetailsPanel(QWidget):
         # Check if this image belongs to the current track
         if track_id == self._current_track_id:
             self.image_label.setPixmap(pixmap)
+            self.image_container.setVisible(True)
+            logger.debug(f"Displayed track image for track {track_id}")
 
     def _on_album_image_loaded(self, album_id: int, pixmap: QPixmap):
         """Handle loaded image from database for an album.
@@ -309,8 +324,16 @@ class TrackDetailsPanel(QWidget):
             pixmap: The loaded image pixmap
         """
         # Check if this image belongs to the current album and we don't already have a track image
-        if album_id == self._current_album_id and self.image_label.pixmap().width() <= 200:
-            self.image_label.setPixmap(pixmap)
+        if album_id == self._current_album_id and self._current_track_id is not None:
+            # Only use album image if we don't already have a track image
+            # Check if the current pixmap is just our placeholder
+            current_pixmap = self.image_label.pixmap()
+            is_placeholder = current_pixmap.width() <= 200 and current_pixmap.height() <= 200
+
+            if is_placeholder:
+                self.image_label.setPixmap(pixmap)
+                self.image_container.setVisible(True)
+                logger.debug(f"Displayed album image for album {album_id}")
 
     @pyqtSlot(int)
     def _on_quality_changed(self, index: int):
@@ -358,11 +381,10 @@ class TrackDetailsPanel(QWidget):
                 # Still emit the signal for any listeners that want to know about the change
                 self.quality_changed.emit(self._current_track_id, quality)
 
-                # Force a refresh of the parent component
-                # This is a hack, but we need to refresh the UI
-                from PyQt6.QtCore import QTimer
+                # Notify the global selection state that this track was updated
+                from selecta.ui.components.selection_state import SelectionState
 
-                QTimer.singleShot(100, self._notify_parent_of_change)
+                SelectionState().notify_track_updated(self._current_track_id)
             else:
                 logger.error(f"Failed to update quality for track {self._current_track_id}")
                 from PyQt6.QtWidgets import QMessageBox
@@ -375,16 +397,6 @@ class TrackDetailsPanel(QWidget):
         else:
             logger.debug(f"Quality unchanged from {self._current_quality}, not updating")
 
-    def _notify_parent_of_change(self):
-        """Notify the parent component that a change has occurred."""
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, "refresh"):
-                logger.debug("Found parent with refresh method, calling it")
-                parent.refresh()
-                break
-            parent = parent.parent()
-
     def _clear_cards(self):
         """Clear all platform cards."""
         # Remove all widgets except the stretch at the end
@@ -394,3 +406,14 @@ class TrackDetailsPanel(QWidget):
                 widget = item.widget()
                 if widget:
                     widget.deleteLater()
+
+    def _reset_image_to_placeholder(self):
+        """Reset the image display to a placeholder."""
+        # Create a gray placeholder
+        placeholder = QPixmap(200, 200)
+        placeholder.fill(Qt.GlobalColor.darkGray)
+        self.image_label.setPixmap(placeholder)
+
+        # Hide the image container by default
+        # It will be shown only if a valid image is loaded
+        self.image_container.setVisible(False)

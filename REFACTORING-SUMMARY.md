@@ -1,8 +1,100 @@
-# Platform Integration Refactoring Summary
+# Refactoring Summary
 
-This document summarizes the refactoring of the platform integration components in Selecta.
+This document summarizes the refactoring of various components in Selecta.
 
-## Key Changes
+## GUI Refactoring Plan
+
+### Current Issues
+
+1. **UI Responsiveness**
+   - Draggable separators become slow and unresponsive when right components (search/track info) are filled with content
+   - Overall UI feels sluggish during data-heavy operations
+
+2. **Cover Image Display**
+   - Cover images don't properly clear when selecting tracks without covers
+   - Previous cover remains displayed when no cover is available
+
+3. **Playlist Update Issues**
+   - Playlists don't automatically refresh when tracks are updated
+   - Manual switching between playlists required to see changes
+
+4. **Playlist Loading Problems**
+   - Some playlists (e.g., collection) get stuck in perpetual loading state
+   - Requires switching to another platform and back to fix
+
+### Refactoring Approach
+
+#### 1. Background Processing
+
+- Move all data-intensive operations to background threads:
+  - Data loading/parsing
+  - Database operations
+  - Network requests
+  - Image processing
+
+- Implement a robust worker thread system:
+  - Use Qt's `QThreadPool` and `QRunnable` for thread management
+  - Add proper cancellation handling for aborted operations
+  - Implement thread-safe result delivery mechanism
+
+#### 2. UI Component Optimization
+
+- Optimize heavy UI components:
+  - Virtualize large list/table views to render only visible items
+  - Implement lazy loading for images and complex content
+  - Use Qt's model/view architecture more effectively
+
+- Improve separator/splitter performance:
+  - Consider lower frequency updates during resize operations
+  - Implement delayed content rendering during active dragging
+  - Use simplified placeholder content during resize operations
+
+#### 3. Smart Content Loading
+
+- Implement proper cover image handling:
+  - Add null-state checking before displaying covers
+  - Clear image display when no cover is available
+  - Add fade transitions between cover states
+
+- Optimize content loading:
+  - Implement caching for frequently accessed data
+  - Use placeholder content during loading operations
+  - Add visual loading indicators
+
+#### 4. Reactive UI Updates
+
+- Implement proper signal/slot connections:
+  - Create a central event system for data changes
+  - Connect all UI components to relevant data change events
+  - Ensure playlist views listen for track update events
+
+- Add targeted refresh mechanisms:
+  - Implement partial updates instead of full refreshes
+  - Use playlist-specific update signals
+  - Track dirty state for components needing refresh
+
+#### 5. Debugging Support
+
+- Add performance monitoring:
+  - Implement timing for critical operations
+  - Log slow operations for further optimization
+  - Consider adding an optional debug overlay
+
+- Improve error handling:
+  - Add better error reporting for failed operations
+  - Implement automatic recovery from common failures
+  - Ensure loading states resolve properly even on error
+
+### Implementation Priority
+
+1. Fix cover image display issues (quick win)
+2. Implement background thread system for heavy operations
+3. Add reactive UI updates for playlist changes
+4. Fix playlist loading issues
+5. Optimize separator/splitter performance
+6. Add performance monitoring and debugging support
+
+## Platform Integration Refactoring
 
 ### 1. PlatformSyncManager Implementation
 

@@ -19,6 +19,7 @@ class SelectionState(QObject):
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
     data_changed = pyqtSignal()  # Emitted when underlying data changes (after add/sync)
+    track_updated = pyqtSignal(int)  # Emitted when a track is updated (pass track_id)
 
     # Singleton instance
     _instance = None
@@ -80,6 +81,15 @@ class SelectionState(QObject):
         """Notify all observers that the underlying data has changed."""
         logger.debug("Data change notification sent")
         self.data_changed.emit()
+
+    def notify_track_updated(self, track_id: int) -> None:
+        """Notify all observers that a specific track has been updated.
+
+        Args:
+            track_id: The ID of the track that was updated
+        """
+        logger.debug(f"Track update notification sent for track_id={track_id}")
+        self.track_updated.emit(track_id)
 
     def get_selected_playlist_id(self) -> Any:
         """Get the ID of the currently selected playlist.

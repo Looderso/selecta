@@ -69,9 +69,19 @@ class AbstractPlaylistDataProvider(PlaylistDataProvider):
         # Generate cache key for this playlist's tracks
         cache_key = f"{self.get_platform_name().lower()}_tracks_{playlist_id}"
 
-        # Try to get from cache first
+        # Try to get from cache first - show cached data immediately if available
+        # to prevent UI locking while data is being fetched
         if self.cache.has_valid(cache_key):
-            return self.cache.get(cache_key, [])
+            cached_data = self.cache.get(cache_key, [])
+
+            # Only trigger background refresh if we have data to show
+            # This ensures we don't have empty loading states while refreshing
+            if cached_data:
+                # Trigger a background refresh after returning cached data
+                # This ensures our cache stays fresh without blocking the UI
+                self._trigger_background_refresh(playlist_id, cache_key)
+                return cached_data
+            # If cache is empty, continue to fetch new data
 
         # Check authentication
         if not self._ensure_authenticated():
@@ -110,6 +120,41 @@ class AbstractPlaylistDataProvider(PlaylistDataProvider):
 
         # Notify listeners
         self.notify_refresh_needed()
+
+    def _trigger_background_refresh(self, playlist_id: Any, cache_key: str) -> None:
+        """Trigger a background refresh of a playlist's tracks.
+
+        This ensures the cache stays fresh without blocking the UI,
+        addressing the issue of playlists appearing to be stuck while loading.
+
+        Args:
+            playlist_id: The playlist ID
+            cache_key: Cache key for the playlist's tracks
+        """
+        # Skip for non-authenticated clients (will be handled in main method)
+        if not self._ensure_authenticated():
+            return
+
+        # Use ThreadManager to run the refresh in background
+        from selecta.core.utils.worker import ThreadManager
+
+        def background_refresh_task() -> None:
+            try:
+                # Fetch fresh data directly from source
+                fresh_tracks = self._fetch_playlist_tracks(playlist_id)
+
+                # Update cache with fresh data
+                self.cache.set(cache_key, fresh_tracks)
+
+                platform = self.get_platform_name()
+                logger.debug(f"Background refresh completed for {platform} playlist {playlist_id}")
+            except Exception as e:
+                # Just log errors, don't interrupt the UI
+                logger.error(f"Error in background refresh for {playlist_id}: {e}")
+
+        # Run the task in background with low priority
+        thread_manager = ThreadManager()
+        thread_manager.run_task(background_refresh_task)
 
     def _ensure_authenticated(self) -> bool:
         """Ensure the client is authenticated.

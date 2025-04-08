@@ -206,18 +206,34 @@ class TracksTableModel(QAbstractTableModel):
             }
         return {}
 
-    def update_track_quality(self, track_id: Any, quality: int) -> bool:
+    def update_track_quality(self, track_id: Any, quality: int | None = None) -> bool:
         """Update a specific track's quality rating.
 
         Args:
             track_id: The track ID to update
-            quality: The new quality rating
+            quality: The new quality rating, or None to fetch from database
 
         Returns:
             True if track was found and updated, False otherwise
         """
         for row, track in enumerate(self.tracks):
             if track.track_id == track_id:
+                # If quality is None, fetch from database
+                if quality is None:
+                    from selecta.core.data.database import get_session
+                    from selecta.core.data.repositories.track_repository import TrackRepository
+
+                    session = get_session()
+                    track_repo = TrackRepository(session)
+
+                    # Get the track from the database
+                    db_track = track_repo.get_by_id(track_id)
+                    if db_track:
+                        quality = db_track.quality
+                    else:
+                        # If track not found in DB, don't update
+                        return False
+
                 # Update the track's quality
                 track.quality = quality
 

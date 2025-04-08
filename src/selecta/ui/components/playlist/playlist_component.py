@@ -310,6 +310,7 @@ class PlaylistComponent(QWidget):
 
         self.selection_state = SelectionState()
         self.selection_state.data_changed.connect(self._on_data_changed)
+        self.selection_state.track_updated.connect(self._on_track_updated)
 
         # Set up the UI
         self._setup_ui()
@@ -625,6 +626,17 @@ class PlaylistComponent(QWidget):
             playlist_item: The playlist item that was selected
             tracks: List of track items to display
         """
+        # Make sure the tracks view is in the right state to prevent UI freezes
+        # It's important to check that we're still on the same playlist before updating
+        # This prevents race conditions when switching quickly between playlists
+        if playlist_item.item_id != self.current_playlist_id:
+            name = playlist_item.name
+            logger.debug(f"Track loading finished for {name} but another playlist is now selected")
+            return
+
+        # Clear the loading state (fixes collection loading forever bug)
+        self.track_container.hide_loading()
+
         self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
         self.playlist_header.setText(f"Playlist: {playlist_item.name} ({len(tracks)} tracks)")
@@ -1068,6 +1080,66 @@ class PlaylistComponent(QWidget):
         # Only refresh if we have a selected playlist
         if self.data_provider is not None and self.current_playlist_id is not None:
             self.refresh()
+
+    def _on_track_updated(self, track_id: int) -> None:
+        """Handle notification that a specific track has been updated.
+
+        Args:
+            track_id: The ID of the track that was updated
+        """
+        logger.debug(f"Playlist component handling track update for track_id={track_id}")
+
+        # Check if we need to update our view
+        if self.tracks_model:
+            # Try to update just this track in the model
+            updated = self.tracks_model.update_track_quality(track_id, None)
+
+            if not updated and self.current_playlist_id is not None:
+                # If the track isn't in our current view, we'll do a targeted refresh
+                # of the current playlist's tracks instead of a full refresh
+                self._refresh_current_playlist_tracks()
+
+    def _refresh_current_playlist_tracks(self) -> None:
+        """Refresh only the tracks for the current playlist."""
+        if not self.data_provider or self.current_playlist_id is None:
+            return
+
+        # Show loading state for tracks
+        self.track_container.show_loading("Refreshing tracks...")
+
+        # Run the refresh in a background thread
+        def refresh_tracks_task() -> list[Any]:
+            if self.data_provider is None:
+                return []
+
+            # Just reload the tracks for the current playlist
+            return self.data_provider.get_playlist_tracks(self.current_playlist_id)
+
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(refresh_tracks_task)
+
+        worker.signals.result.connect(self._handle_tracks_refreshed)
+        worker.signals.error.connect(
+            lambda err: self._handle_loading_error("Failed to refresh tracks", err)
+        )
+        worker.signals.finished.connect(lambda: self.track_container.hide_loading())
+
+    def _handle_tracks_refreshed(self, tracks: list[Any]) -> None:
+        """Handle refreshed tracks for the current playlist.
+
+        Args:
+            tracks: The refreshed list of tracks
+        """
+        if not tracks:
+            self.track_container.show_message("This playlist is empty.")
+            return
+
+        # Update our model with the refreshed tracks
+        self.current_tracks = tracks
+        self.tracks_model.set_tracks(self.current_tracks)
+
+        # Update search suggestions
+        self._update_search_suggestions()
 
     def _add_tracks_to_playlist(self, playlist_id: int, tracks: list[Any]) -> None:
         """Add selected tracks to a playlist.

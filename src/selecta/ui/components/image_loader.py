@@ -1,7 +1,6 @@
 """Utility for asynchronously loading images from the database."""
 
 import time
-from threading import Thread
 
 from loguru import logger
 from PyQt6.QtCore import QByteArray, QObject, pyqtSignal
@@ -62,10 +61,17 @@ class DatabaseImageLoader(QObject):
         # Mark as loading
         self._loading.add(cache_key)
 
-        # Start a thread to load the image
-        thread = Thread(target=self._load_track_image_thread, args=(track_id, size, cache_key))
-        thread.daemon = True
-        thread.start()
+        # Use ThreadManager instead of raw Thread for better performance
+        from selecta.core.utils.worker import ThreadManager
+
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(self._load_track_image_task, track_id, size, cache_key)
+
+        # Connect signals
+        worker.signals.error.connect(
+            lambda err: self._handle_track_image_error(track_id, err, cache_key)
+        )
+        worker.signals.finished.connect(lambda: self._loading.discard(cache_key))
 
     def load_album_image(self, album_id: int, size: ImageSize = ImageSize.THUMBNAIL) -> None:
         """Load an album's image from the database.
@@ -89,90 +95,114 @@ class DatabaseImageLoader(QObject):
         # Mark as loading
         self._loading.add(cache_key)
 
-        # Start a thread to load the image
-        thread = Thread(target=self._load_album_image_thread, args=(album_id, size, cache_key))
-        thread.daemon = True
-        thread.start()
+        # Use ThreadManager instead of raw Thread for better performance
+        from selecta.core.utils.worker import ThreadManager
 
-    def _load_track_image_thread(self, track_id: int, size: ImageSize, cache_key: str) -> None:
-        """Background thread for loading a track's image.
+        thread_manager = ThreadManager()
+        worker = thread_manager.run_task(self._load_album_image_task, album_id, size, cache_key)
+
+        # Connect signals
+        worker.signals.error.connect(
+            lambda err: self._handle_album_image_error(album_id, err, cache_key)
+        )
+        worker.signals.finished.connect(lambda: self._loading.discard(cache_key))
+
+    def _load_track_image_task(
+        self, track_id: int, size: ImageSize, cache_key: str
+    ) -> QPixmap | None:
+        """Task function for loading a track's image using ThreadManager.
 
         Args:
             track_id: The track ID
             size: Desired image size
             cache_key: Unique cache key for this request
+
+        Returns:
+            QPixmap if successful, None otherwise
         """
-        try:
-            start_time = time.time()
+        start_time = time.time()
 
-            # Get image from repository
-            image = self._image_repo.get_track_image(track_id, size)
+        # Get image from repository
+        image = self._image_repo.get_track_image(track_id, size)
 
-            if not image or not image.data:
-                self.track_image_failed.emit(track_id, "Image not found")
-                return
+        if not image or not image.data:
+            return None
 
-            # Convert to QPixmap
-            pixmap = self._create_pixmap_from_image_data(image.data)
+        # Convert to QPixmap
+        pixmap = self._create_pixmap_from_image_data(image.data)
 
-            if pixmap is None:
-                self.track_image_failed.emit(track_id, "Failed to create pixmap")
-                return
+        if pixmap is None:
+            return None
 
-            # Cache the pixmap
-            self._cache[cache_key] = pixmap
+        # Cache the pixmap
+        self._cache[cache_key] = pixmap
 
-            # Emit signal with the loaded image
-            self.track_image_loaded.emit(track_id, pixmap)
+        # Emit signal with result - will be handled by the main thread
+        logger.debug(f"Loaded track image {track_id} in {time.time() - start_time:.2f}s")
 
-            logger.debug(f"Loaded track image {track_id} in {time.time() - start_time:.2f}s")
+        # We return the pixmap, and the Worker will pass it to the result signal
+        # We'll connect to the signal in the load method
+        self.track_image_loaded.emit(track_id, pixmap)
+        return pixmap
 
-        except Exception as e:
-            logger.error(f"Error loading track image {track_id}: {e}")
-            self.track_image_failed.emit(track_id, str(e))
-        finally:
-            # Remove from loading set
-            self._loading.discard(cache_key)
+    def _handle_track_image_error(self, track_id: int, error: str, cache_key: str) -> None:
+        """Handle errors from track image loading.
 
-    def _load_album_image_thread(self, album_id: int, size: ImageSize, cache_key: str) -> None:
-        """Background thread for loading an album's image.
+        Args:
+            track_id: The track ID
+            error: Error message
+            cache_key: Cache key to clean up
+        """
+        logger.error(f"Error loading track image {track_id}: {error}")
+        self.track_image_failed.emit(track_id, error)
+
+    def _load_album_image_task(
+        self, album_id: int, size: ImageSize, cache_key: str
+    ) -> QPixmap | None:
+        """Task function for loading an album's image using ThreadManager.
 
         Args:
             album_id: The album ID
             size: Desired image size
             cache_key: Unique cache key for this request
+
+        Returns:
+            QPixmap if successful, None otherwise
         """
-        try:
-            start_time = time.time()
+        start_time = time.time()
 
-            # Get image from repository
-            image = self._image_repo.get_album_image(album_id, size)
+        # Get image from repository
+        image = self._image_repo.get_album_image(album_id, size)
 
-            if not image or not image.data:
-                self.album_image_failed.emit(album_id, "Image not found")
-                return
+        if not image or not image.data:
+            return None
 
-            # Convert to QPixmap
-            pixmap = self._create_pixmap_from_image_data(image.data)
+        # Convert to QPixmap
+        pixmap = self._create_pixmap_from_image_data(image.data)
 
-            if pixmap is None:
-                self.album_image_failed.emit(album_id, "Failed to create pixmap")
-                return
+        if pixmap is None:
+            return None
 
-            # Cache the pixmap
-            self._cache[cache_key] = pixmap
+        # Cache the pixmap
+        self._cache[cache_key] = pixmap
 
-            # Emit signal with the loaded image
-            self.album_image_loaded.emit(album_id, pixmap)
+        # Log performance
+        logger.debug(f"Loaded album image {album_id} in {time.time() - start_time:.2f}s")
 
-            logger.debug(f"Loaded album image {album_id} in {time.time() - start_time:.2f}s")
+        # Emit signal with the loaded image
+        self.album_image_loaded.emit(album_id, pixmap)
+        return pixmap
 
-        except Exception as e:
-            logger.error(f"Error loading album image {album_id}: {e}")
-            self.album_image_failed.emit(album_id, str(e))
-        finally:
-            # Remove from loading set
-            self._loading.discard(cache_key)
+    def _handle_album_image_error(self, album_id: int, error: str, cache_key: str) -> None:
+        """Handle errors from album image loading.
+
+        Args:
+            album_id: The album ID
+            error: Error message
+            cache_key: Cache key to clean up
+        """
+        logger.error(f"Error loading album image {album_id}: {error}")
+        self.album_image_failed.emit(album_id, error)
 
     def _create_pixmap_from_image_data(self, image_data: bytes) -> QPixmap | None:
         """Create a QPixmap from image binary data.
