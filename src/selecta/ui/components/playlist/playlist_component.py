@@ -279,6 +279,7 @@ class PlaylistComponent(QWidget):
 
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
+    play_track = pyqtSignal(object)  # Emits when track should be played
 
     def __init__(
         self, data_provider: PlaylistDataProvider | None = None, parent: QWidget | None = None
@@ -381,6 +382,9 @@ class PlaylistComponent(QWidget):
         # Set context menu for tracks table
         self.tracks_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tracks_table.customContextMenuRequested.connect(self._show_track_context_menu)
+
+        # Enable double-click on tracks to play them
+        self.tracks_table.doubleClicked.connect(self._on_track_double_clicked)
 
         # Add containers to splitter
         self.splitter.addWidget(self.playlist_container)
@@ -1068,6 +1072,18 @@ class PlaylistComponent(QWidget):
         # Only refresh if we have a selected playlist
         if self.data_provider is not None and self.current_playlist_id is not None:
             self.refresh()
+
+    def _on_track_double_clicked(self, index) -> None:
+        """Handle double-click on a track to play it.
+
+        Args:
+            index: The index of the clicked item
+        """
+        row = index.row()
+        track = self.tracks_model.get_track(row)
+        if track:
+            # Emit signal to play the track
+            self.play_track.emit(track)
 
     def _add_tracks_to_playlist(self, playlist_id: int, tracks: list[Any]) -> None:
         """Add selected tracks to a playlist.
