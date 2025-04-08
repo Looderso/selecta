@@ -30,13 +30,24 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             client: YouTube client instance
             cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
+        # Initialize with client first so that our self.client will be set
         super().__init__(client=client, cache_timeout=cache_timeout)
+        
+        # Store as youtube_client as well for convenience
         if client is None:
-            self.youtube_client = cast(YouTubeClient, PlatformFactory.create("youtube"))
+            youtube_client = cast(YouTubeClient, PlatformFactory.create("youtube"))
+            self.youtube_client = youtube_client
+            # Ensure our base client is also set
+            self.client = youtube_client
         else:
             self.youtube_client = client
+            
         self._playlists: list[YouTubePlaylist] = []
         self._playlist_tracks: dict[str, list[dict[str, Any]]] = {}
+        
+        # Log initialization state
+        logger.debug(f"YouTube provider initialized with client: {self.youtube_client}")
+        logger.debug(f"Authentication status: {self.is_connected()}")
 
     def get_platform_name(self) -> str:
         """Get the name of this platform.
@@ -106,16 +117,25 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         """
         playlist_items = []
 
-        if not self.is_connected() and not self.connect_platform():
-            logger.warning("Not connected to YouTube")
-            return []
-
+        logger.debug("Fetching YouTube playlists...")
+        
+        # If not connected, try to connect
+        if not self.is_connected():
+            logger.info("Not connected to YouTube, attempting connection...")
+            if not self.connect_platform():
+                logger.warning("Failed to connect to YouTube")
+                return []
+            logger.info("Successfully connected to YouTube")
+        
         try:
             # Fetch playlists from YouTube
+            logger.debug("Calling get_playlists()")
             self._playlists = self.youtube_client.get_playlists()
+            logger.info(f"Fetched {len(self._playlists)} playlists from YouTube")
 
             # Convert to UI playlist items
             for playlist in self._playlists:
+                logger.debug(f"Processing playlist: {playlist.id} - {playlist.title}")
                 playlist_item = YouTubePlaylistItem(
                     id=playlist.id,
                     title=playlist.title,
@@ -125,6 +145,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
                 )
                 playlist_items.append(playlist_item)
 
+            logger.debug(f"Returning {len(playlist_items)} playlist items")
             return playlist_items
         except Exception as e:
             logger.exception(f"Error fetching YouTube playlists: {e}")
@@ -140,29 +161,42 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             List of track items
         """
         track_items = []
+        logger.debug(f"Fetching tracks for YouTube playlist: {playlist_id}")
 
+        # If not connected, try to connect
         if not self.is_connected():
-            logger.warning("Not connected to YouTube")
-            return []
+            logger.info("Not connected to YouTube, attempting connection...")
+            if not self.connect_platform():
+                logger.warning("Failed to connect to YouTube")
+                return []
+            logger.info("Successfully connected to YouTube")
 
         try:
             # Fetch tracks from YouTube
+            logger.debug(f"Calling get_playlist_tracks() for {playlist_id}")
             videos = self.youtube_client.get_playlist_tracks(playlist_id)
-
+            logger.info(f"Fetched {len(videos)} videos from YouTube playlist")
+            
             # Convert to raw data for caching
             self._playlist_tracks[playlist_id] = [video.__dict__ for video in videos]
+            logger.debug(f"Cached data for {len(videos)} videos")
 
             # Convert to UI track items
             for video_data in self._playlist_tracks[playlist_id]:
+                video_id = video_data.get("id", "")
+                video_title = video_data.get("title", "")
+                logger.debug(f"Processing video: {video_id} - {video_title}")
+                
                 track_item = YouTubeTrackItem(
-                    id=video_data.get("id", ""),
-                    title=video_data.get("title", ""),
+                    id=video_id,
+                    title=video_title,
                     artist=video_data.get("channel_title", ""),
                     duration=video_data.get("duration_seconds", 0),
                     thumbnail_url=video_data.get("thumbnail_url"),
                 )
                 track_items.append(track_item)
 
+            logger.debug(f"Returning {len(track_items)} track items")
             return track_items
         except Exception as e:
             logger.exception(f"Error fetching YouTube playlist tracks: {e}")

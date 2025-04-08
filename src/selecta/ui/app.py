@@ -346,8 +346,10 @@ class SelectaMainWindow(QMainWindow):
                     data_provider = youtube_provider
                     if has_is_authenticated(youtube_provider.client):
                         authenticated = youtube_provider.client.is_authenticated()
+                        logger.debug(f"YouTube client authenticated: {authenticated}")
                     else:
                         authenticated = False
+                        logger.debug("YouTube client doesn't have is_authenticated method")
 
             else:
                 return  # Invalid platform
