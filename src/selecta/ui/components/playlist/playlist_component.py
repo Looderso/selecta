@@ -626,6 +626,17 @@ class PlaylistComponent(QWidget):
             playlist_item: The playlist item that was selected
             tracks: List of track items to display
         """
+        # Make sure the tracks view is in the right state to prevent UI freezes
+        # It's important to check that we're still on the same playlist before updating
+        # This prevents race conditions when switching quickly between playlists
+        if playlist_item.item_id != self.current_playlist_id:
+            name = playlist_item.name
+            logger.debug(f"Track loading finished for {name} but another playlist is now selected")
+            return
+
+        # Clear the loading state (fixes collection loading forever bug)
+        self.track_container.hide_loading()
+
         self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
         self.playlist_header.setText(f"Playlist: {playlist_item.name} ({len(tracks)} tracks)")
