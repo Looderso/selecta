@@ -936,7 +936,7 @@ class PlaylistComponent(QWidget):
         discogs_search_action = menu.addAction("Search on Discogs")
         discogs_search_action.setEnabled(is_single_track)
         discogs_search_action.triggered.connect(lambda: self._search_on_discogs(first_track))  # type: ignore
-        
+
         # Add search on YouTube action
         youtube_search_action = menu.addAction("Search on YouTube")
         youtube_search_action.setEnabled(is_single_track)
@@ -993,7 +993,7 @@ class PlaylistComponent(QWidget):
         # Call the show_discogs_search method on the main window
         if hasattr(main_window, "show_discogs_search"):
             main_window.show_discogs_search(search_query)
-            
+
     def _search_on_youtube(self, track: Any) -> None:
         """Search for a track on YouTube.
 

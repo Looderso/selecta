@@ -221,7 +221,7 @@ class YouTubeAuthManager:
             if credentials.expired:
                 logger.info("YouTube access token expired, refreshing...")
                 credentials.refresh(Request())
-                
+
                 # Update token info with refreshed token
                 token_info = {
                     "access_token": credentials.token,

@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from loguru import logger
 
@@ -91,10 +90,11 @@ class YouTubeClient(AbstractPlatform):
             raise ValueError("YouTube client not authenticated")
 
         try:
-            response = self.client.channels().list(
-                part="snippet,contentDetails,statistics",
-                mine=True
-            ).execute()
+            response = (
+                self.client.channels()
+                .list(part="snippet,contentDetails,statistics", mine=True)
+                .execute()
+            )
 
             if not response or "items" not in response or not response["items"]:
                 raise ValueError("YouTube: channel information not available")
@@ -136,7 +136,7 @@ class YouTubeClient(AbstractPlatform):
                     part="snippet,contentDetails,status",
                     mine=True,
                     maxResults=50,
-                    pageToken=next_page_token
+                    pageToken=next_page_token,
                 )
                 response = request.execute()
 
@@ -178,7 +178,7 @@ class YouTubeClient(AbstractPlatform):
                     part="snippet,contentDetails",
                     playlistId=playlist_id,
                     maxResults=50,
-                    pageToken=next_page_token
+                    pageToken=next_page_token,
                 )
                 playlist_items_response = playlist_items_request.execute()
 
@@ -194,15 +194,14 @@ class YouTubeClient(AbstractPlatform):
                 # Get detailed video information in batches of 50
                 if video_ids:
                     videos_request = self.client.videos().list(
-                        part="snippet,contentDetails,statistics",
-                        id=",".join(video_ids)
+                        part="snippet,contentDetails,statistics", id=",".join(video_ids)
                     )
                     videos_response = videos_request.execute()
 
                     # Create YouTubeVideo objects with added_at information
                     for video_item in videos_response.get("items", []):
                         video_id = video_item.get("id")
-                        
+
                         # Find the matching playlist item to get added_at
                         added_at = None
                         for playlist_item in playlist_items:
@@ -210,6 +209,7 @@ class YouTubeClient(AbstractPlatform):
                                 snippet = playlist_item.get("snippet", {})
                                 if "publishedAt" in snippet:
                                     from datetime import datetime
+
                                     try:
                                         added_at = datetime.fromisoformat(
                                             snippet["publishedAt"].replace("Z", "+00:00")
@@ -217,7 +217,7 @@ class YouTubeClient(AbstractPlatform):
                                     except (ValueError, TypeError):
                                         pass
                                 break
-                                
+
                         video = YouTubeVideo.from_youtube_dict(video_item, added_at=added_at)
                         videos.append(video)
 
@@ -248,8 +248,7 @@ class YouTubeClient(AbstractPlatform):
 
         try:
             request = self.client.playlists().list(
-                part="snippet,contentDetails,status",
-                id=playlist_id
+                part="snippet,contentDetails,status", id=playlist_id
             )
             response = request.execute()
 
@@ -289,14 +288,9 @@ class YouTubeClient(AbstractPlatform):
             request = self.client.playlists().insert(
                 part="snippet,status",
                 body={
-                    "snippet": {
-                        "title": name,
-                        "description": description
-                    },
-                    "status": {
-                        "privacyStatus": privacy_status
-                    }
-                }
+                    "snippet": {"title": name, "description": description},
+                    "status": {"privacyStatus": privacy_status},
+                },
             )
             response = request.execute()
 
@@ -334,12 +328,9 @@ class YouTubeClient(AbstractPlatform):
                     body={
                         "snippet": {
                             "playlistId": playlist_id,
-                            "resourceId": {
-                                "kind": "youtube#video",
-                                "videoId": video_id
-                            }
+                            "resourceId": {"kind": "youtube#video", "videoId": video_id},
                         }
-                    }
+                    },
                 )
                 request.execute()
 
@@ -412,15 +403,10 @@ class YouTubeClient(AbstractPlatform):
                     "title": title or playlist.title,
                     "description": description if description is not None else playlist.description,
                 },
-                "status": {
-                    "privacyStatus": privacy_status or playlist.privacy_status
-                }
+                "status": {"privacyStatus": privacy_status or playlist.privacy_status},
             }
 
-            request = self.client.playlists().update(
-                part="snippet,status",
-                body=body
-            )
+            request = self.client.playlists().update(part="snippet,status", body=body)
             request.execute()
 
             return True
@@ -447,10 +433,7 @@ class YouTubeClient(AbstractPlatform):
 
         try:
             request = self.client.search().list(
-                part="snippet",
-                q=query,
-                type="video",
-                maxResults=limit
+                part="snippet", q=query, type="video", maxResults=limit
             )
             response = request.execute()
 
@@ -459,7 +442,7 @@ class YouTubeClient(AbstractPlatform):
 
             videos = []
             video_ids = []
-            
+
             # Get video IDs from search results
             for item in response.get("items", []):
                 if item.get("id", {}).get("kind") == "youtube#video":
@@ -469,11 +452,10 @@ class YouTubeClient(AbstractPlatform):
             # If we have video IDs, get additional details
             if video_ids:
                 details_request = self.client.videos().list(
-                    part="contentDetails,statistics",
-                    id=",".join(video_ids)
+                    part="contentDetails,statistics", id=",".join(video_ids)
                 )
                 details_response = details_request.execute()
-                
+
                 # Merge the detailed data with search results
                 for item in videos:
                     video_id = item.get("id", {}).get("videoId")

@@ -3,7 +3,7 @@
 from typing import Any, cast
 
 from loguru import logger
-from PyQt6.QtCore import QObject, Qt
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMenu, QMessageBox, QTreeView, QWidget
 
 from selecta.core.platform.platform_factory import PlatformFactory
@@ -148,11 +148,9 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         try:
             # Fetch tracks from YouTube
             videos = self.youtube_client.get_playlist_tracks(playlist_id)
-            
+
             # Convert to raw data for caching
-            self._playlist_tracks[playlist_id] = [
-                video.__dict__ for video in videos
-            ]
+            self._playlist_tracks[playlist_id] = [video.__dict__ for video in videos]
 
             # Convert to UI track items
             for video_data in self._playlist_tracks[playlist_id]:

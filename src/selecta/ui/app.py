@@ -328,7 +328,7 @@ class SelectaMainWindow(QMainWindow):
                         authenticated = discogs_provider.client.is_authenticated()
                     else:
                         authenticated = False
-                        
+
             elif platform == "youtube":
                 from selecta.core.platform.platform_factory import PlatformFactory
                 from selecta.ui.components.playlist.youtube.youtube_playlist_data_provider import (
@@ -523,7 +523,7 @@ class SelectaMainWindow(QMainWindow):
         # Show discogs search panel
         if hasattr(self, "dynamic_content"):
             self.dynamic_content.show_search_panel("discogs", initial_search)
-            
+
     def show_youtube_search(self, initial_search=None):
         """Show YouTube search panel in the right area."""
         # Make sure dynamic content is set up

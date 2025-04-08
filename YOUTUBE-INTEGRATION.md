@@ -19,7 +19,7 @@ This document outlines the process of integrating YouTube as a new platform in S
    - Type definitions with TypedDict for API responses
 
 3. **API Client (client.py)**
-   - Implementation of `AbstractPlatform` interface 
+   - Implementation of `AbstractPlatform` interface
    - Methods for playlist operations
    - Methods for video operations
    - Search functionality
@@ -61,7 +61,7 @@ This document outlines the process of integrating YouTube as a new platform in S
   - [x] Get playlists
   - [x] Get videos from playlist
 
-### Phase 2: Core Platform Integration  
+### Phase 2: Core Platform Integration
 
 - [x] Complete `client.py` implementation
   - [x] Create playlists

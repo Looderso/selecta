@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 
 class YouTubeChannelDict(TypedDict, total=False):
@@ -236,7 +236,7 @@ class YouTubeVideo:
 
         # Get video snippet
         snippet = video_dict.get("snippet", {})
-        
+
         # Get thumbnail URL (prefer high resolution if available)
         thumbnails = snippet.get("thumbnails", {})
         thumbnail_url = None
@@ -265,13 +265,13 @@ class YouTubeVideo:
         statistics = video_dict.get("statistics", {})
         view_count = None
         like_count = None
-        
+
         if "viewCount" in statistics:
             try:
                 view_count = int(statistics["viewCount"])
             except (ValueError, TypeError):
                 pass
-                
+
         if "likeCount" in statistics:
             try:
                 like_count = int(statistics["likeCount"])
@@ -321,7 +321,7 @@ class YouTubePlaylist:
         """
         # Get playlist snippet
         snippet = playlist_dict.get("snippet", {})
-        
+
         # Get thumbnail URL (prefer high resolution if available)
         thumbnails = snippet.get("thumbnails", {})
         thumbnail_url = None
@@ -370,19 +370,19 @@ def _parse_iso8601_duration(duration_str: str) -> int | None:
         Duration in seconds or None if parsing fails
     """
     import re
-    
+
     if not duration_str or not duration_str.startswith("PT"):
         return None
-        
+
     try:
         # Remove the PT prefix
         duration_str = duration_str[2:]
-        
+
         # Use regex to extract hours, minutes, seconds
-        hours = re.search(r'(\d+)H', duration_str)
-        minutes = re.search(r'(\d+)M', duration_str)
-        seconds = re.search(r'(\d+)S', duration_str)
-        
+        hours = re.search(r"(\d+)H", duration_str)
+        minutes = re.search(r"(\d+)M", duration_str)
+        seconds = re.search(r"(\d+)S", duration_str)
+
         # Convert to seconds
         total_seconds = 0
         if hours:
@@ -391,7 +391,7 @@ def _parse_iso8601_duration(duration_str: str) -> int | None:
             total_seconds += int(minutes.group(1)) * 60
         if seconds:
             total_seconds += int(seconds.group(1))
-            
+
         return total_seconds
     except Exception:
         return None

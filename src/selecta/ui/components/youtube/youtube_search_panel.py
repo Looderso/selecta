@@ -58,7 +58,9 @@ class YouTubeSearchPanel(LoadableWidget):
         self.results_table = QTableView()
         self.results_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.results_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
-        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.results_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         self.results_table.horizontalHeader().setStretchLastSection(True)
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setAlternatingRowColors(True)
@@ -79,7 +81,7 @@ class YouTubeSearchPanel(LoadableWidget):
         # Set up loading functionality
         self._create_loading_widget("Ready to search YouTube...")
         self.hide_loading()
-        
+
         # Update the auth status
         self._update_auth_status()
 
@@ -108,6 +110,7 @@ class YouTubeSearchPanel(LoadableWidget):
 
             # Process events to ensure loading widget is displayed
             from PyQt6.QtWidgets import QApplication
+
             QApplication.processEvents()
 
             # Authenticate
@@ -138,9 +141,7 @@ class YouTubeSearchPanel(LoadableWidget):
             limit: Maximum number of results to return
         """
         if not self.youtube_client or not self.youtube_client.is_authenticated():
-            QMessageBox.warning(
-                self, "Not Connected", "Please connect to YouTube first"
-            )
+            QMessageBox.warning(self, "Not Connected", "Please connect to YouTube first")
             return
 
         try:
@@ -149,6 +150,7 @@ class YouTubeSearchPanel(LoadableWidget):
 
             # Process events to ensure loading widget is displayed
             from PyQt6.QtWidgets import QApplication
+
             QApplication.processEvents()
 
             # Perform search
@@ -166,37 +168,38 @@ class YouTubeSearchPanel(LoadableWidget):
                 snippet = result.get("snippet", {})
                 title = snippet.get("title", "")
                 channel = snippet.get("channelTitle", "")
-                
+
                 # Get duration if available
                 duration_str = "N/A"
                 if "contentDetails" in result and "duration" in result["contentDetails"]:
                     from selecta.core.platform.youtube.models import _parse_iso8601_duration
+
                     duration_seconds = _parse_iso8601_duration(result["contentDetails"]["duration"])
                     if duration_seconds:
                         minutes, seconds = divmod(duration_seconds, 60)
                         duration_str = f"{minutes}:{seconds:02d}"
-                
+
                 # Create row
                 title_item = QStandardItem(title)
                 channel_item = QStandardItem(channel)
                 duration_item = QStandardItem(duration_str)
-                
+
                 model.appendRow([title_item, channel_item, duration_item])
-            
+
             # Set model to table
             self.results_table.setModel(model)
             self.results_table.resizeColumnsToContents()
-            
+
             # Update status
             count = len(self.search_results)
             self.status_label.setText(f"Found {count} results for '{query}'")
-            
+
             # Enable/disable add button
             self.add_button.setEnabled(count > 0)
-            
+
             # Hide loading widget
             self.hide_loading()
-            
+
         except Exception as e:
             self.hide_loading()
             logger.exception(f"Error searching YouTube: {e}")
@@ -219,31 +222,32 @@ class YouTubeSearchPanel(LoadableWidget):
         """Select the currently highlighted search result."""
         if not self.results_table.selectionModel().hasSelection():
             return
-            
+
         index = self.results_table.selectionModel().currentIndex()
         if not index.isValid():
             return
-            
+
         row = index.row()
         if 0 <= row < len(self.search_results):
             result = self.search_results[row]
-            
+
             # Extract video info
             video_id = result.get("id", {}).get("videoId", "")
             if not video_id:
                 return
-                
+
             snippet = result.get("snippet", {})
             title = snippet.get("title", "")
             channel = snippet.get("channelTitle", "")
-            
+
             # Get duration if available
             duration_seconds = 0
             if "contentDetails" in result and "duration" in result["contentDetails"]:
                 from selecta.core.platform.youtube.models import _parse_iso8601_duration
+
                 duration_str = result["contentDetails"]["duration"]
                 duration_seconds = _parse_iso8601_duration(duration_str) or 0
-            
+
             # Get thumbnail URL
             thumbnail_url = None
             if "thumbnails" in snippet:
@@ -252,7 +256,7 @@ class YouTubeSearchPanel(LoadableWidget):
                     if size in thumbnails and "url" in thumbnails[size]:
                         thumbnail_url = thumbnails[size]["url"]
                         break
-            
+
             # Create a track item
             track_item = YouTubeTrackItem(
                 id=video_id,
@@ -261,6 +265,6 @@ class YouTubeSearchPanel(LoadableWidget):
                 duration=duration_seconds,
                 thumbnail_url=thumbnail_url,
             )
-            
+
             # Emit signal
             self.video_selected.emit(track_item)
