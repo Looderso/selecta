@@ -633,6 +633,71 @@ class RekordboxClient(AbstractPlatform):
             logger.exception(f"Error during commit: {e}")
             raise
 
+    def get_playlist_tracks(self, playlist_id: str) -> list[RekordboxTrack]:
+        """Get all tracks in a specific playlist.
+
+        Args:
+            playlist_id: The platform-specific playlist ID
+
+        Returns:
+            A list of platform-specific track objects
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        playlist = self.get_playlist_by_id(playlist_id)
+        if not playlist:
+            raise ValueError(f"Playlist with ID {playlist_id} not found")
+        return playlist.tracks
+
+    def add_tracks_to_playlist(self, playlist_id: str, track_ids: list[str]) -> bool:
+        """Add tracks to a playlist on this platform.
+
+        Args:
+            playlist_id: The platform-specific playlist ID
+            track_ids: List of track IDs to add
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        success = True
+        for track_id in track_ids:
+            try:
+                # Convert string ID to integer for Rekordbox
+                track_id_int = int(track_id)
+                if not self.add_track_to_playlist(playlist_id, track_id_int):
+                    success = False
+            except (ValueError, TypeError):
+                success = False
+        return success
+
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: list[str]) -> bool:
+        """Remove tracks from a playlist on this platform.
+
+        Args:
+            playlist_id: The platform-specific playlist ID
+            track_ids: List of track IDs to remove
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        success = True
+        for track_id in track_ids:
+            try:
+                # Convert string ID to integer for Rekordbox
+                track_id_int = int(track_id)
+                if not self.remove_track_from_playlist(playlist_id, track_id_int):
+                    success = False
+            except (ValueError, TypeError):
+                success = False
+        return success
+
     def add_track_to_playlist(self, playlist_id: str, track_id: int, force: bool = False) -> bool:
         """Add a track to a playlist.
 
@@ -808,7 +873,9 @@ class RekordboxClient(AbstractPlatform):
             # Update existing playlist
             try:
                 # Verify the playlist exists
-                existing_playlist = self.get_playlist(existing_playlist_id)
+                existing_playlist = self.get_playlist_by_id(existing_playlist_id)
+                if not existing_playlist:
+                    raise ValueError(f"Playlist with ID {existing_playlist_id} not found")
 
                 # Add tracks to the existing playlist
                 for track_id in int_track_ids:
@@ -820,7 +887,7 @@ class RekordboxClient(AbstractPlatform):
                 return existing_playlist_id
             except Exception as e:
                 logger.error(f"Error updating existing playlist: {e}")
-                raise ValueError(f"Could not update playlist: {str(e)}")
+                raise ValueError(f"Could not update playlist: {str(e)}") from e
         else:
             # Create a new playlist
             playlist = self.create_playlist(

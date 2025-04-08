@@ -95,6 +95,17 @@ class SpotifyClient(AbstractPlatform):
 
         return current_user
 
+    def get_all_playlists(self) -> list[Any]:
+        """Get all playlists from this platform.
+
+        Returns:
+            A list of platform-specific playlist objects
+
+        Raises:
+            ValueError: If not authenticated or API error occurs
+        """
+        return self.get_playlists()
+
     def get_playlists(self) -> list[dict[str, Any]]:
         """Get all playlists for the current user.
 
@@ -427,14 +438,15 @@ class SpotifyClient(AbstractPlatform):
             # Update existing playlist
             # First verify the playlist exists
             try:
-                existing_playlist = self.get_playlist(existing_playlist_id)
+                # Check if playlist exists
+                self.get_playlist(existing_playlist_id)
                 # Add tracks to the existing playlist
                 if track_uris:
                     self.add_tracks_to_playlist(existing_playlist_id, track_uris)
                 return existing_playlist_id
             except Exception as e:
                 logger.error(f"Error updating existing playlist: {e}")
-                raise ValueError(f"Could not update playlist: {str(e)}")
+                raise ValueError(f"Could not update playlist: {str(e)}") from e
         else:
             # Create a new playlist
             playlist = self.create_playlist(name=playlist_name, public=False)

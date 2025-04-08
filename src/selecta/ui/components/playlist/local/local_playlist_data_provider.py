@@ -28,7 +28,6 @@ from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.client import RekordboxClient
 from selecta.core.platform.spotify.client import SpotifyClient
-from selecta.core.utils.type_helpers import column_to_bool
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
@@ -78,12 +77,8 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                 # Get counts, checking for None values
                 track_count = self.playlist_repo.get_track_count(playlist.id)
 
-                # Get platform name if this is an imported playlist
-                platform_name = None
-                platform_icon = None  # Will be used in the future for platform icons
-
-                if not playlist.is_local and playlist.source_platform:
-                    platform_name = playlist.source_platform.upper()
+                # Check if this is an imported playlist - we don't use the platform name
+                # in the UI yet, but it's available in the model if needed later
 
                 # Create a folder or playlist item
                 if playlist.is_folder:
@@ -97,16 +92,10 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                             name=playlist.name,
                             item_id=playlist.id,
                             track_count=track_count,
-                            is_folder=False,
-                            is_imported=not playlist.is_local,
-                            platform_name=platform_name,
-                            platform_icon=platform_icon,
+                            is_folder_flag=False,
                             description=playlist.description,
                             source_platform=playlist.source_platform,
                             platform_id=playlist.platform_id,
-                            last_synced=playlist.last_synced.isoformat()
-                            if playlist.last_synced
-                            else None,
                         )
                     )
 
@@ -144,12 +133,6 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     if platform_info.uri:  # Store URI if available (for Spotify)
                         platform_uris[platform_info.platform] = platform_info.uri
 
-                # Format duration
-                duration_s = track.duration_ms / 1000 if track.duration_ms else 0
-                minutes = int(duration_s // 60)
-                seconds = int(duration_s % 60)
-                duration_str = f"{minutes}:{seconds:02d}"
-
                 # Check if the audio quality attribute exists
                 has_audio_quality = True
                 try:
@@ -158,22 +141,29 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     has_audio_quality = False
                     quality = None
 
+                # Get genre names if available
+                genre_str = ""
+                if hasattr(track, "genres") and track.genres:
+                    genre_str = ", ".join([g.name for g in track.genres])
+
+                # Create platform info list for the track item
+                platform_info_list = []
+                for info in track.platform_info:
+                    platform_info_list.append({"platform": info.platform, "id": info.platform_id})
+
                 track_items.append(
                     LocalTrackItem(
                         track_id=track.id,
                         title=track.title,
                         artist=track.artist,
                         album=track.album or "",
-                        genre=track.genre or "",
+                        genre=genre_str,
                         duration_ms=track.duration_ms,
-                        duration_str=duration_str,
-                        year=track.year or "",
-                        is_locally_available=column_to_bool(track.is_available_locally),
                         local_path=track.local_path or "",
-                        available_platforms=available_platforms,
-                        platform_uris=platform_uris,
                         bpm=track.bpm or 0,
-                        quality=quality if has_audio_quality else 0,
+                        quality=quality if has_audio_quality else -1,
+                        platform_info=platform_info_list,
+                        has_image=bool(track.images),
                     )
                 )
 
@@ -190,6 +180,16 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             Platform name
         """
         return "Local"
+
+    def _ensure_authenticated(self) -> bool:
+        """Override to ensure we always return True for local provider.
+
+        The local provider doesn't need authentication for basic operations.
+
+        Returns:
+            Always True for local provider
+        """
+        return True
 
     def show_playlist_context_menu(self, tree_view: QTreeView, position: Any) -> None:
         """Show a context menu for a local playlist.
@@ -510,12 +510,11 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             # Show success message with stats
             message = f"Playlist '{playlist.name}' synced successfully.\n\n"
             if tracks_added > 0:
-                message += f"- {tracks_added} new tracks were imported from {playlist.source_platform.capitalize()}.\n"
+                platform_name = playlist.source_platform.capitalize()
+                message += f"- {tracks_added} new tracks were imported from {platform_name}.\n"
             if tracks_exported > 0:
-                message += (
-                    f"- {tracks_exported} tracks were exported to "
-                    f"{playlist.source_platform.capitalize()}.\n"
-                )
+                platform_name = playlist.source_platform.capitalize()
+                message += f"- {tracks_exported} tracks were exported to {platform_name}.\n"
             if tracks_added == 0 and tracks_exported == 0:
                 message += "The playlist is already in sync; no changes were made."
 
@@ -806,9 +805,8 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                         has_rekordbox = True
                         break
                     except (ValueError, TypeError):
-                        logger.warning(
-                            f"Invalid Rekordbox ID for track {track.id}: {platform_info.platform_id}"
-                        )
+                        track_id = platform_info.platform_id
+                        logger.warning(f"Invalid Rekordbox ID for track {track.id}: {track_id}")
 
             # If no Rekordbox metadata, check if it's a local file that can be added
             if not has_rekordbox and track.is_available_locally and track.local_path:
