@@ -135,6 +135,7 @@ class SelectaMainWindow(QMainWindow):
         self.nav_bar.spotify_button_clicked.connect(lambda: self.switch_platform("spotify"))
         self.nav_bar.rekordbox_button_clicked.connect(lambda: self.switch_platform("rekordbox"))
         self.nav_bar.discogs_button_clicked.connect(lambda: self.switch_platform("discogs"))
+        self.nav_bar.youtube_button_clicked.connect(lambda: self.switch_platform("youtube"))
 
         # Track the current platform
         self.current_platform = "local"
@@ -328,6 +329,28 @@ class SelectaMainWindow(QMainWindow):
                     else:
                         authenticated = False
 
+            elif platform == "youtube":
+                from selecta.core.platform.platform_factory import PlatformFactory
+                from selecta.ui.components.playlist.youtube.youtube_playlist_data_provider import (
+                    YouTubePlaylistDataProvider,
+                )
+
+                # Recreate client to get fresh auth status
+                self._platform_clients["youtube"] = PlatformFactory.create("youtube", settings_repo)
+                youtube_client = self._platform_clients["youtube"]
+
+                if youtube_client is None:
+                    authenticated = False
+                else:
+                    youtube_provider = YouTubePlaylistDataProvider(client=youtube_client)
+                    data_provider = youtube_provider
+                    if has_is_authenticated(youtube_provider.client):
+                        authenticated = youtube_provider.client.is_authenticated()
+                        logger.debug(f"YouTube client authenticated: {authenticated}")
+                    else:
+                        authenticated = False
+                        logger.debug("YouTube client doesn't have is_authenticated method")
+
             else:
                 return  # Invalid platform
 
@@ -444,6 +467,10 @@ class SelectaMainWindow(QMainWindow):
                 self.side_drawer.auth_panel._authenticate_discogs()
                 # Refresh the UI after authentication
                 self.switch_platform("discogs")
+            elif platform == "youtube":
+                self.side_drawer.auth_panel._authenticate_youtube()
+                # Refresh the UI after authentication
+                self.switch_platform("youtube")
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
@@ -498,6 +525,15 @@ class SelectaMainWindow(QMainWindow):
         # Show discogs search panel
         if hasattr(self, "dynamic_content"):
             self.dynamic_content.show_search_panel("discogs", initial_search)
+
+    def show_youtube_search(self, initial_search=None):
+        """Show YouTube search panel in the right area."""
+        # Make sure dynamic content is set up
+        self._setup_search_panels()
+
+        # Show YouTube search panel
+        if hasattr(self, "dynamic_content"):
+            self.dynamic_content.show_search_panel("youtube", initial_search)
 
     def show_tracks(self):
         """Show tracks content."""

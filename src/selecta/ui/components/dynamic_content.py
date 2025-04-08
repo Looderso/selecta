@@ -25,6 +25,7 @@ from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPane
 from selecta.ui.components.loading_widget import LoadableWidget
 from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
 from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
+from selecta.ui.components.youtube.youtube_search_panel import YouTubeSearchPanel
 
 
 class DynamicContent(LoadableWidget):
@@ -53,6 +54,7 @@ class DynamicContent(LoadableWidget):
         self.spotify_search_panel.track_added.connect(self._handle_track_added)
         self.discogs_search_panel.track_synced.connect(self._handle_track_synced)
         self.discogs_search_panel.track_added.connect(self._handle_track_added)
+        self.youtube_search_panel.video_selected.connect(self._handle_track_added)
 
         # Import here to avoid circular imports
         from selecta.ui.components.selection_state import SelectionState
@@ -90,11 +92,13 @@ class DynamicContent(LoadableWidget):
         self.track_details_panel = TrackDetailsPanel()
         self.spotify_search_panel = SpotifySearchPanel()
         self.discogs_search_panel = DiscogsSearchPanel()
+        self.youtube_search_panel = YouTubeSearchPanel()
 
         # Add panels to stacked widget
         self.stacked_widget.addWidget(self.track_details_panel)
         self.stacked_widget.addWidget(self.spotify_search_panel)
         self.stacked_widget.addWidget(self.discogs_search_panel)
+        self.stacked_widget.addWidget(self.youtube_search_panel)
 
         # Create update button container (initially hidden)
         self.update_button_container = QWidget()
@@ -217,7 +221,7 @@ class DynamicContent(LoadableWidget):
         """Show search panel for the given platform.
 
         Args:
-            platform: Platform to search on ('spotify' or 'discogs')
+            platform: Platform to search on ('spotify', 'discogs', or 'youtube')
             query: Optional initial search query
         """
         # Store current platform
@@ -232,6 +236,10 @@ class DynamicContent(LoadableWidget):
             self.stacked_widget.setCurrentWidget(self.discogs_search_panel)
             if query:
                 self.discogs_search_panel.search(query)
+        elif platform == "youtube":
+            self.stacked_widget.setCurrentWidget(self.youtube_search_panel)
+            if query:
+                self.youtube_search_panel.search(query)
 
         # Hide update buttons when showing search panel
         self.update_button_container.setVisible(False)
