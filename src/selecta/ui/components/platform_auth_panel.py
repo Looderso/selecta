@@ -1,7 +1,8 @@
 """Platform authentication panel for all platforms."""
 
+from loguru import logger
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.platform_factory import PlatformFactory
@@ -16,7 +17,7 @@ class PlatformAuthPanel(QWidget):
     def __init__(self, parent: QWidget | None = None):
         """Initialize the platform authentication panel.
 
-        This panel contains authentication widgets for Spotify, Discogs, and Rekordbox.
+        This panel contains authentication widgets for Spotify, Discogs, Rekordbox, and YouTube.
         It checks the current authentication status for each platform and provides
         buttons to authenticate or disconnect.
 
@@ -39,11 +40,13 @@ class PlatformAuthPanel(QWidget):
         self.spotify_auth = self._create_spotify_widget()
         self.discogs_auth = self._create_discogs_widget()
         self.rekordbox_auth = self._create_rekordbox_widget()
+        self.youtube_auth = self._create_youtube_widget()
 
         # Add widgets to layout
         layout.addWidget(self.spotify_auth)
         layout.addWidget(self.discogs_auth)
         layout.addWidget(self.rekordbox_auth)
+        layout.addWidget(self.youtube_auth)
 
         # Add footer label
         footer_label = QLabel("Authenticate each platform to start syncing your music")
@@ -100,13 +103,25 @@ class PlatformAuthPanel(QWidget):
 
             widget.set_authenticated(is_authenticated)
         except Exception as e:
-            from loguru import logger
-
             logger.exception(f"Error checking Rekordbox authentication: {e}")
             widget.set_authenticated(False)
 
         # Connect authentication handler
         widget.auth_button_clicked.connect(lambda: self._authenticate_platform("rekordbox"))
+
+        return widget
+
+    def _create_youtube_widget(self) -> PlatformAuthWidget:
+        """Create YouTube authentication widget."""
+        widget = PlatformAuthWidget("YouTube")
+
+        # Check authentication status
+        youtube_client = PlatformFactory.create("youtube", self.settings_repo)
+        is_authenticated = youtube_client.is_authenticated() if youtube_client else False
+        widget.set_authenticated(is_authenticated)
+
+        # Connect authentication handler
+        widget.auth_button_clicked.connect(lambda: self._authenticate_platform("youtube"))
 
         return widget
 
@@ -118,6 +133,8 @@ class PlatformAuthPanel(QWidget):
             self._authenticate_discogs()
         elif platform == "rekordbox":
             self._authenticate_rekordbox()
+        elif platform == "youtube":
+            self._authenticate_youtube()
 
     def _authenticate_spotify(self) -> None:
         """Authenticate with Spotify."""
@@ -152,8 +169,6 @@ class PlatformAuthPanel(QWidget):
     def _authenticate_rekordbox(self) -> None:
         """Authenticate with Rekordbox."""
         widget = self.rekordbox_auth
-        from loguru import logger
-        from PyQt6.QtWidgets import QMessageBox
 
         # Check if Rekordbox is running
         try:
@@ -198,7 +213,6 @@ class PlatformAuthPanel(QWidget):
 
             # Force processing of events so message shows up
             from PyQt6.QtCore import QCoreApplication
-
             QCoreApplication.processEvents()
 
             try:
@@ -260,4 +274,80 @@ class PlatformAuthPanel(QWidget):
                     self,
                     "Rekordbox Authentication Error",
                     f"An error occurred during Rekordbox authentication:\n\n{str(e)}",
+                )
+
+    def _authenticate_youtube(self) -> None:
+        """Authenticate with YouTube."""
+        widget = self.youtube_auth
+
+        if widget.is_authenticated():
+            # Disconnect
+            self.settings_repo.delete_credentials("youtube")
+            widget.set_authenticated(False)
+        else:
+            # Show progress message
+            progress_msg = QMessageBox(self)
+            progress_msg.setWindowTitle("YouTube Authentication")
+            progress_msg.setText("Opening browser for YouTube authentication...")
+            progress_msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            progress_msg.show()
+
+            # Force processing of events so message shows up
+            from PyQt6.QtCore import QCoreApplication
+
+            QCoreApplication.processEvents()
+
+            try:
+                # Connect to YouTube
+                youtube_client = PlatformFactory.create("youtube", self.settings_repo)
+                if youtube_client:
+                    authenticated = youtube_client.authenticate()
+
+                    # Close progress message
+                    progress_msg.close()
+
+                    if authenticated:
+                        logger.info("YouTube authentication successful")
+                        widget.set_authenticated(True)
+
+                        # Update the main window
+                        main_window = self.window()
+                        if has_switch_platform(main_window):
+                            main_window.switch_platform("youtube")
+
+                        # Show success message
+                        QMessageBox.information(
+                            self,
+                            "YouTube Authentication Successful",
+                            "Successfully connected to YouTube!",
+                        )
+                    else:
+                        logger.warning("YouTube authentication failed")
+                        widget.set_authenticated(False)
+
+                        # Show error message
+                        QMessageBox.warning(
+                            self,
+                            "YouTube Authentication Failed",
+                            "Could not authenticate with YouTube.\n\n" "Please try again later.",
+                        )
+                else:
+                    # Close progress message
+                    progress_msg.close()
+
+                    logger.error("Failed to create YouTube client")
+                    QMessageBox.critical(
+                        self,
+                        "YouTube Client Error",
+                        "Failed to create YouTube client.",
+                    )
+            except Exception as e:
+                # Close progress message
+                progress_msg.close()
+
+                logger.exception(f"Error during YouTube authentication: {e}")
+                QMessageBox.critical(
+                    self,
+                    "YouTube Authentication Error",
+                    f"An error occurred during YouTube authentication:\n\n{str(e)}",
                 )

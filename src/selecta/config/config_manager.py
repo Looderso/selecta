@@ -43,6 +43,10 @@ def load_platform_credentials(platform: str) -> dict[str, str]:
             "client_id": "REKORDBOX_CLIENT_ID",
             "client_secret": "REKORDBOX_CLIENT_SECRET",
         },
+        "youtube": {
+            "client_id": "YOUTUBE_CLIENT_ID",
+            "client_secret": "YOUTUBE_CLIENT_SECRET",
+        },
     }
 
     # Collect credentials

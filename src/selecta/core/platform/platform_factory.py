@@ -4,9 +4,10 @@ from loguru import logger
 
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.abstract_platform import AbstractPlatform
-from selecta.core.platform.discogs.client import DiscogsClient  # Add this import
+from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.rekordbox.client import RekordboxClient
 from selecta.core.platform.spotify.client import SpotifyClient
+from selecta.core.platform.youtube.client import YouTubeClient
 
 
 class PlatformFactory:
@@ -15,8 +16,9 @@ class PlatformFactory:
     # Registry of platform types
     _platform_types: dict[str, type[AbstractPlatform]] = {
         "spotify": SpotifyClient,
-        "discogs": DiscogsClient,  # Add this line
-        "rekordbox": RekordboxClient,  # Add this once implemented
+        "discogs": DiscogsClient,
+        "rekordbox": RekordboxClient,
+        "youtube": YouTubeClient,
     }
 
     @classmethod

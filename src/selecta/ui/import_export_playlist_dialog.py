@@ -118,6 +118,11 @@ class ImportExportPlaylistDialog(QDialog):
                     "Note: Only tracks with Rekordbox metadata or tracks in your "
                     "local database folder will be exported. Other tracks will be skipped."
                 )
+            elif self.platform == "youtube":
+                warning_text = (
+                    "Note: Only tracks with YouTube metadata will be exported. "
+                    "Tracks without YouTube video IDs will be skipped."
+                )
 
             if warning_text:
                 warning_label = QLabel(warning_text)

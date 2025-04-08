@@ -936,6 +936,11 @@ class PlaylistComponent(QWidget):
         discogs_search_action = menu.addAction("Search on Discogs")
         discogs_search_action.setEnabled(is_single_track)
         discogs_search_action.triggered.connect(lambda: self._search_on_discogs(first_track))  # type: ignore
+        
+        # Add search on YouTube action
+        youtube_search_action = menu.addAction("Search on YouTube")
+        youtube_search_action.setEnabled(is_single_track)
+        youtube_search_action.triggered.connect(lambda: self._search_on_youtube(first_track))  # type: ignore
 
         # Show the menu at the cursor position
         menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
@@ -988,6 +993,25 @@ class PlaylistComponent(QWidget):
         # Call the show_discogs_search method on the main window
         if hasattr(main_window, "show_discogs_search"):
             main_window.show_discogs_search(search_query)
+            
+    def _search_on_youtube(self, track: Any) -> None:
+        """Search for a track on YouTube.
+
+        Args:
+            track: The track to search for
+        """
+        if not track:
+            return
+
+        # Create a search query using artist and title
+        search_query = f"{track.artist} {track.title}"
+
+        # Access the main window
+        main_window = self.window()
+
+        # Call the show_youtube_search method on the main window
+        if hasattr(main_window, "show_youtube_search"):
+            main_window.show_youtube_search(search_query)
 
     @pyqtSlot(int, int)
     def _on_track_quality_changed(self, track_id: int, quality: int) -> None:

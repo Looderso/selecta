@@ -34,6 +34,8 @@ dependencies = [
     # API clients
     "spotipy",     # Spotify API client
     "pyrekordbox", # Rekordbox API client
+    "google-api-python-client", # Google APIs client library
+    "google-auth-oauthlib",    # Google OAuth library
     # Database and data handling
     "sqlalchemy",   # ORM for database access
     "alembic",      # Database migrations
@@ -86,6 +88,8 @@ packages = ["src/selecta"]
 src = ["src"]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
@@ -108,27 +112,24 @@ ignore = [
     "UP008", # allow user of super().__new__(cls)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"src/selecta/core/utils/type_helpers.py" = ["D102"]
-
 fixable = ["ALL"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
+"src/selecta/core/utils/type_helpers.py" = ["D102"]
 "__init__.py" = ["F401"] # Unused imports
 "tests/**/*.py" = ["D", "ANN"] # Docstring and annotation requirements in tests
 "src/selecta/core/data/models/*.py" = [
     "ANN",
 ] # Ignore annotation requirements in SQLAlchemy models
-
 "src/selecta/ui/**/*.py" = [
     "ANN204",
     "ANN202",
 ] # Ignore return type annotations in UI code
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["selecta"]
 known-third-party = ["kivy", "spotipy", "python3-discogs_client", "sqlalchemy"]
 

@@ -14,6 +14,7 @@ class NavigationBar(QWidget):
     spotify_button_clicked = pyqtSignal()
     rekordbox_button_clicked = pyqtSignal()
     discogs_button_clicked = pyqtSignal()
+    youtube_button_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget):
         """Initialize the navigation bar."""
@@ -78,12 +79,14 @@ class NavigationBar(QWidget):
         self.spotify_button = QPushButton("Spotify")
         self.rekordbox_button = QPushButton("Rekordbox")
         self.discogs_button = QPushButton("Discogs")
+        self.youtube_button = QPushButton("YouTube")
 
         # Connect signals
         self.local_button.clicked.connect(self.local_button_clicked)
         self.spotify_button.clicked.connect(self.spotify_button_clicked)
         self.rekordbox_button.clicked.connect(self.rekordbox_button_clicked)
         self.discogs_button.clicked.connect(self.discogs_button_clicked)
+        self.youtube_button.clicked.connect(self.youtube_button_clicked)
 
         # Set cursor and add to layout
         for button in [
@@ -91,6 +94,7 @@ class NavigationBar(QWidget):
             self.spotify_button,
             self.rekordbox_button,
             self.discogs_button,
+            self.youtube_button,
         ]:
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(button)
@@ -107,6 +111,7 @@ class NavigationBar(QWidget):
             self.spotify_button,
             self.rekordbox_button,
             self.discogs_button,
+            self.youtube_button,
         ]:
             button.setProperty("class", "")
             button.setStyleSheet("")
@@ -130,5 +135,10 @@ class NavigationBar(QWidget):
         elif platform == "discogs":
             self.discogs_button.setProperty("class", "active")
             self.discogs_button.setStyleSheet(
+                "background-color: rgba(255, 255, 255, 0.2); color: white; font-weight: bold;"
+            )
+        elif platform == "youtube":
+            self.youtube_button.setProperty("class", "active")
+            self.youtube_button.setStyleSheet(
                 "background-color: rgba(255, 255, 255, 0.2); color: white; font-weight: bold;"
             )
