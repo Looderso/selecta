@@ -19,15 +19,27 @@ class PlatformIconDelegate(QStyledItemDelegate):
         self.spacing = 2
         # Cache platform icons
         self.platform_icons = {}
-        for platform in ["spotify", "rekordbox", "discogs"]:
-            icon_path = get_resource_path(f"icons/0.125x/{platform}@0.125x.png")
-            if icon_path.exists():
-                self.platform_icons[platform] = QPixmap(str(icon_path)).scaled(
-                    self.icon_size,
-                    self.icon_size,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
+        for platform in ["spotify", "rekordbox", "discogs", "youtube", "wantlist", "collection"]:
+            # Try different icon paths with scaling variations
+            icon_found = False
+            for icon_path_pattern in [
+                f"icons/0.125x/{platform}@0.125x.png",  # Scaled versions
+                f"icons/1x/{platform}.png",  # 1x version
+                f"icons/{platform}.png",  # Fallback to root
+            ]:
+                icon_path = get_resource_path(icon_path_pattern)
+                if icon_path.exists():
+                    self.platform_icons[platform] = QPixmap(str(icon_path)).scaled(
+                        self.icon_size,
+                        self.icon_size,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    icon_found = True
+                    break
+
+            if not icon_found:
+                print(f"Warning: Could not find icon for platform {platform}")
 
     def paint(self, painter: QPainter, option: "QStyleOptionViewItem", index: QModelIndex) -> None:
         """Paint the platform icons.

@@ -357,6 +357,32 @@ class PlaylistComponent(QWidget):
         self.tracks_model = TracksTableModel()
         self.tracks_table.setModel(self.tracks_model)
 
+        # Set context menu for tracks table
+        self.tracks_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tracks_table.customContextMenuRequested.connect(self._show_track_context_menu)
+
+        # Set up column delegates
+        self._update_column_delegates()
+
+        # Add containers to splitter
+        self.splitter.addWidget(self.playlist_container)
+        self.splitter.addWidget(self.track_container)
+
+        # Add the splitter to the main layout
+        layout.addWidget(self.splitter)
+
+        # Set the desired proportions once the widget is shown
+        QTimer.singleShot(0, self._apply_splitter_ratio)
+
+    def _update_column_delegates(self) -> None:
+        """Update the delegates for the columns in the table view.
+
+        This should be called whenever the columns change.
+        """
+        # Remove any existing delegates
+        for i in range(self.tracks_model.columnCount()):
+            self.tracks_table.setItemDelegateForColumn(i, None)
+
         # Set custom delegate for the platforms column
         platforms_column_index = (
             self.tracks_model.column_keys.index("platforms")
@@ -378,20 +404,6 @@ class PlaylistComponent(QWidget):
             self.tracks_table.setItemDelegateForColumn(
                 quality_column_index, TrackQualityDelegate(self.tracks_table)
             )
-
-        # Set context menu for tracks table
-        self.tracks_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tracks_table.customContextMenuRequested.connect(self._show_track_context_menu)
-
-        # Add containers to splitter
-        self.splitter.addWidget(self.playlist_container)
-        self.splitter.addWidget(self.track_container)
-
-        # Add the splitter to the main layout
-        layout.addWidget(self.splitter)
-
-        # Set the desired proportions once the widget is shown
-        QTimer.singleShot(0, self._apply_splitter_ratio)
 
     def _apply_splitter_ratio(self) -> None:
         """Apply the desired ratio to the splitter after widget initialization."""
@@ -637,6 +649,25 @@ class PlaylistComponent(QWidget):
         # Clear the loading state (fixes collection loading forever bug)
         self.track_container.hide_loading()
 
+        # Set appropriate columns based on playlist's platform type
+        platform_type = "default"
+
+        # Determine the platform type from the playlist item
+        if hasattr(playlist_item, "platform_type"):
+            platform_type = playlist_item.platform_type
+        elif hasattr(playlist_item, "platform"):
+            platform_type = playlist_item.platform
+        # Special case for data providers
+        elif self.data_provider and hasattr(self.data_provider, "get_platform_name"):
+            platform_type = self.data_provider.get_platform_name().lower()
+
+        # Update the table model with platform-specific columns
+        self.tracks_model.set_platform(platform_type)
+
+        # Update delegates after platform change (columns might have changed)
+        self._update_column_delegates()
+
+        # Now set the tracks
         self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
         self.playlist_header.setText(f"Playlist: {playlist_item.name} ({len(tracks)} tracks)")

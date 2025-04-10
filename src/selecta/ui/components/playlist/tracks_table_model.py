@@ -16,30 +16,40 @@ class TracksTableModel(QAbstractTableModel):
         """
         super().__init__(parent)
         self.tracks: list[TrackItem] = []
-        self.columns = [
-            "Title",
-            "Artist",
-            "Album",
-            "BPM",
-            "Genre",
-            "Tags",
-            "Platforms",
-            "Duration",
-            "Quality",
-        ]
-        self.column_keys = [
-            "title",
-            "artist",
-            "album",
-            "bpm",
-            "genre",
-            "tags",
-            "platforms",
-            "duration",
-            "quality",
-        ]
-        self.columns = ["Title", "Artist", "Tags", "Genre", "BPM", "Quality", "Platforms"]
-        self.column_keys = ["title", "artist", "tags", "genre", "bpm", "quality", "platforms"]
+
+        # Default column configurations
+        self._platform_columns = {
+            # Default/Local platform columns
+            "default": {
+                "columns": ["Title", "Artist", "Tags", "Genre", "BPM", "Quality", "Platforms"],
+                "column_keys": ["title", "artist", "tags", "genre", "bpm", "quality", "platforms"],
+            },
+            # Spotify platform columns
+            "spotify": {
+                "columns": ["Title", "Artist", "Album", "Duration", "Platforms"],
+                "column_keys": ["title", "artist", "album", "duration", "platforms"],
+            },
+            # YouTube platform columns
+            "youtube": {
+                "columns": ["Title", "Channel", "Duration", "Platforms"],
+                "column_keys": ["title", "artist", "duration", "platforms"],
+            },
+            # Discogs platform columns
+            "discogs": {
+                "columns": ["Title", "Artist", "Album", "Year", "Platforms"],
+                "column_keys": ["title", "artist", "album", "added_at", "platforms"],
+            },
+            # Rekordbox platform columns
+            "rekordbox": {
+                "columns": ["Title", "Artist", "BPM", "Genre", "Tags", "Quality", "Platforms"],
+                "column_keys": ["title", "artist", "bpm", "genre", "tags", "quality", "platforms"],
+            },
+        }
+
+        # Start with default columns
+        self.current_platform = "default"
+        self.columns = self._platform_columns["default"]["columns"]
+        self.column_keys = self._platform_columns["default"]["column_keys"]
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         """Get the number of rows.
@@ -205,6 +215,26 @@ class TracksTableModel(QAbstractTableModel):
                 "has_image": track.has_image,
             }
         return {}
+
+    def set_platform(self, platform: str) -> None:
+        """Set the current platform and update the columns accordingly.
+
+        Args:
+            platform: Platform name (default, spotify, youtube, discogs, rekordbox)
+        """
+        if platform in self._platform_columns:
+            self.beginResetModel()
+            self.current_platform = platform
+            self.columns = self._platform_columns[platform]["columns"]
+            self.column_keys = self._platform_columns[platform]["column_keys"]
+            self.endResetModel()
+        else:
+            # Fallback to default if platform not found
+            self.beginResetModel()
+            self.current_platform = "default"
+            self.columns = self._platform_columns["default"]["columns"]
+            self.column_keys = self._platform_columns["default"]["column_keys"]
+            self.endResetModel()
 
     def update_track_quality(self, track_id: Any, quality: int | None = None) -> bool:
         """Update a specific track's quality rating.

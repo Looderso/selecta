@@ -89,17 +89,27 @@ def get_resource_path(relative_path: str) -> Path:
     """
     root = get_project_root()
 
+    # Fix for repo structure: always check root/resources first for Selecta repository
+    direct_repo_path = Path("/Users/lorenzhausler/Documents/repos/selecta/resources")
+    if direct_repo_path.exists():
+        full_path = direct_repo_path / relative_path
+        if full_path.exists():
+            return full_path
+
     # First, check if running as a package (resources inside package)
-    if (root / "src" / "selecta" / "resources").exists():
-        return root / "src" / "selecta" / "resources" / relative_path
+    package_resources = root / "src" / "selecta" / "resources"
+    if package_resources.exists():
+        return package_resources / relative_path
 
     # Then check for resources at the project root level
-    if (root / "resources").exists():
-        return root / "resources" / relative_path
+    root_resources = root / "resources"
+    if root_resources.exists():
+        return root_resources / relative_path
 
     # Finally, check relative to the executable
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent / "resources" / relative_path
+        executable_resources = Path(sys.executable).parent / "resources"
+        return executable_resources / relative_path
 
     # Fallback
     return Path(relative_path)

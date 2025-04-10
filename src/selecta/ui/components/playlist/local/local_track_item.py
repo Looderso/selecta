@@ -59,6 +59,8 @@ class LocalTrackItem(TrackItem):
         platform_info: list[dict] | None = None,
         quality: int = -1,
         has_image: bool = False,
+        in_wantlist: bool = False,
+        in_collection: bool = False,
     ):
         """Initialize a local track item.
 
@@ -76,6 +78,8 @@ class LocalTrackItem(TrackItem):
             platform_info: List of platform information dictionaries
             quality: Track quality rating (-1=not rated, 1-5=star rating)
             has_image: Whether this track has an image in the database
+            in_wantlist: Whether this track is in the Discogs wantlist
+            in_collection: Whether this track is in the Discogs collection
         """
         super().__init__(
             track_id,
@@ -93,6 +97,8 @@ class LocalTrackItem(TrackItem):
         self.tags = tags or []
         self.platform_info = platform_info or []  # [{'platform': 'spotify', 'id': '...', ...}, ...]
         self.quality = quality
+        self.in_wantlist = in_wantlist
+        self.in_collection = in_collection
 
     def to_display_data(self) -> dict[str, Any]:
         """Convert the track to a dictionary for display in the UI.
@@ -108,6 +114,7 @@ class LocalTrackItem(TrackItem):
         has_spotify = any(info.get("platform") == "spotify" for info in self.platform_info)
         has_rekordbox = any(info.get("platform") == "rekordbox" for info in self.platform_info)
         has_discogs = any(info.get("platform") == "discogs" for info in self.platform_info)
+        has_youtube = any(info.get("platform") == "youtube" for info in self.platform_info)
 
         if has_spotify:
             platforms.append("spotify")
@@ -118,6 +125,18 @@ class LocalTrackItem(TrackItem):
         if has_discogs:
             platforms.append("discogs")
             platform_tooltips.append("Available on Discogs")
+        if has_youtube:
+            platforms.append("youtube")
+            platform_tooltips.append("Available on YouTube")
+
+        # Add wantlist and collection status
+        if self.in_wantlist:
+            platforms.append("wantlist")
+            platform_tooltips.append("In Discogs Wantlist")
+
+        if self.in_collection:
+            platforms.append("collection")
+            platform_tooltips.append("In Discogs Collection")
 
         # Format BPM value
         bpm_str = f"{self.bpm:.1f}" if self.bpm is not None else ""
@@ -145,6 +164,8 @@ class LocalTrackItem(TrackItem):
             "platforms": platforms,
             "platforms_tooltip": ", ".join(platform_tooltips),
             "platform_info": self.platform_info,
+            "in_wantlist": self.in_wantlist,
+            "in_collection": self.in_collection,
         }
 
     def _get_platform_icons(self, platforms: list[str]) -> QWidget:
