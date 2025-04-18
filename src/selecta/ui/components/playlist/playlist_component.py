@@ -451,6 +451,18 @@ class PlaylistComponent(QWidget):
         Args:
             data_provider: The new data provider to use
         """
+        # Store provider for later comparison to prevent race conditions
+        old_provider = self.data_provider
+
+        # If we had a previous provider, unregister our refresh callback
+        if self.data_provider:
+            with suppress(AttributeError):
+                # Some providers might not have this method
+                self.data_provider.unregister_refresh_callback(self.refresh)
+
+        # Set the new provider immediately to prevent race conditions
+        self.data_provider = data_provider
+
         # Clear current data
         self.playlist_model.clear()
         self.tracks_model.clear()
@@ -461,15 +473,6 @@ class PlaylistComponent(QWidget):
 
         # Show message in track area
         self.track_container.show_message("Select a playlist")
-
-        # If we had a previous provider, unregister our refresh callback
-        if self.data_provider:
-            with suppress(AttributeError):
-                # Some providers might not have this method
-                self.data_provider.unregister_refresh_callback(self.refresh)
-
-        # Set the new provider
-        self.data_provider = data_provider
 
         # Update the playlist tree header with platform name
         if self.data_provider:
@@ -571,6 +574,11 @@ class PlaylistComponent(QWidget):
         self.playlist_container.hide_loading()
         self.track_container.hide_loading()
 
+        # Reset the refreshing flag if it was set
+        if hasattr(self, "_is_refreshing"):
+            self._is_refreshing = False
+            logger.debug("Reset refresh flag after error")
+
     def _expand_all_folders(self) -> None:
         """Expand all folder items in the tree view."""
 
@@ -645,9 +653,23 @@ class PlaylistComponent(QWidget):
         # Make sure the tracks view is in the right state to prevent UI freezes
         # It's important to check that we're still on the same playlist before updating
         # This prevents race conditions when switching quickly between playlists
-        if playlist_item.item_id != self.current_playlist_id:
-            name = playlist_item.name
+        if (
+            not hasattr(playlist_item, "item_id")
+            or playlist_item.item_id != self.current_playlist_id
+        ):
+            name = getattr(playlist_item, "name", "Unknown")
             logger.debug(f"Track loading finished for {name} but another playlist is now selected")
+
+            # Explicitly hide loading to avoid stuck states
+            self.track_container.hide_loading()
+
+            # If necessary, force a view reset to prevent stuck state
+            if (
+                self.track_container.stacked_widget.currentWidget()
+                == self.track_container.loading_widget
+            ):
+                self.track_container.show_message("Select a playlist to view tracks.")
+
             return
 
         # Clear the loading state (fixes collection loading forever bug)
@@ -688,6 +710,14 @@ class PlaylistComponent(QWidget):
         # If no tracks found, show a message
         if not tracks:
             self.track_container.show_message("This playlist is empty.")
+        else:
+            # Ensure tracks table is visible if we have tracks
+            logger.debug(f"Showing {len(tracks)} tracks for playlist {playlist_item.name}")
+
+            # Force a final visual check to ensure track table is visible
+            from PyQt6.QtCore import QTimer
+
+            QTimer.singleShot(100, lambda: self._ensure_tracks_visible())
 
     def _update_search_suggestions(self) -> None:
         """Update search bar suggestions with current tracks."""
@@ -808,6 +838,24 @@ class PlaylistComponent(QWidget):
         if not self.data_provider:
             return
 
+        # Skip if already refreshing to prevent infinite loops
+        if hasattr(self, "_is_refreshing") and self._is_refreshing:
+            logger.debug("Skipping refresh - already in progress")
+            return
+
+        # Skip refresh if we're already in a loading state
+        if (
+            self.track_container.stacked_widget.currentWidget()
+            == self.track_container.loading_widget
+            or self.playlist_container.stacked_widget.currentWidget()
+            == self.playlist_container.loading_widget
+        ):
+            logger.debug("Skipping refresh - already in loading state")
+            return
+
+        # Set flag to prevent reentrant calls
+        self._is_refreshing = True
+
         # Remember current selections
         current_playlist_id = self.current_playlist_id
 
@@ -838,13 +886,40 @@ class PlaylistComponent(QWidget):
         worker.signals.error.connect(
             lambda err: self._handle_loading_error("Failed to refresh data", err)
         )
-        worker.signals.finished.connect(self._handle_refresh_finished)
+        worker.signals.finished.connect(self._handle_refresh_finished_with_cleanup)
 
     def _handle_refresh_finished(self) -> None:
         """Handle completion of refresh operation."""
         # Hide loading indicators
         self.playlist_container.hide_loading()
         self.track_container.hide_loading()
+
+    def _handle_refresh_finished_with_cleanup(self) -> None:
+        """Handle completion of refresh operation and reset refresh flag."""
+        # Hide loading indicators with a short delay to ensure UI updates properly
+        from PyQt6.QtCore import QTimer
+
+        # First reset the refreshing flag immediately
+        self._is_refreshing = False
+        logger.debug("Refresh completed and flag reset")
+
+        # Forcefully hide loading indicators immediately
+        self.playlist_container.hide_loading()
+        self.track_container.hide_loading()
+
+        # If we have tracks but the loading indicator is still shown, force show tracks table
+        if (
+            self.current_tracks
+            and self.track_container.stacked_widget.currentWidget()
+            != self.track_container.tracks_table
+        ):
+            self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
+            logger.debug(f"Forcing tracks table visible for {len(self.current_tracks)} tracks")
+
+        # Then use multiple timers to ensure UI thread gets a chance to process and indicators stay hidden
+        QTimer.singleShot(50, lambda: self._ensure_loading_hidden())
+        QTimer.singleShot(150, lambda: self._ensure_loading_hidden())
+        QTimer.singleShot(300, lambda: self._ensure_loading_hidden())
 
     def _handle_refresh_complete(self, result: dict[str, Any]) -> None:
         """Handle data from refresh operation.
@@ -866,21 +941,37 @@ class PlaylistComponent(QWidget):
             # Update the playlist header
             if self.current_playlist_id is not None:
                 # Find the playlist item to get its name
+                playlist_name = "Unknown"
                 for row in range(self.playlist_model.rowCount()):
                     index = self.playlist_model.index(row, 0)
                     item = index.internalPointer()
                     if hasattr(item, "item_id") and item.item_id == self.current_playlist_id:
+                        playlist_name = item.name
                         self.playlist_header.setText(
-                            f"Playlist: {item.name} ({len(self.current_tracks)} tracks)"
+                            f"Playlist: {playlist_name} ({len(self.current_tracks)} tracks)"
                         )
                         break
 
-            # If no tracks, show a message
-            if not self.current_tracks:
-                self.track_container.show_message("This playlist is empty.")
+                # Make sure tracks are visible
+                if self.current_tracks:
+                    logger.debug(
+                        f"Showing {len(self.current_tracks)} tracks for playlist {playlist_name}"
+                    )
+                    self.track_container.hide_loading()
+                else:
+                    logger.debug(f"No tracks found for playlist {playlist_name}")
+                    self.track_container.show_message("This playlist is empty.")
+            else:
+                # No playlist selected
+                self.track_container.show_message("Select a playlist to view tracks.")
 
         # Clear track details
         self.details_panel.set_track(None)
+
+        # Force UI to update
+        from PyQt6.QtCore import QTimer
+
+        QTimer.singleShot(10, self._ensure_loading_hidden)
 
     def _show_track_context_menu(self, position: Any) -> None:
         """Show context menu for tracks table.
@@ -1112,9 +1203,25 @@ class PlaylistComponent(QWidget):
 
     def _on_data_changed(self) -> None:
         """Handle notification that data has changed."""
+        # Skip refresh if we're already in a loading state
+        if (
+            self.track_container.stacked_widget.currentWidget()
+            == self.track_container.loading_widget
+            or self.playlist_container.stacked_widget.currentWidget()
+            == self.playlist_container.loading_widget
+        ):
+            logger.debug("Skipping data_changed refresh - already in loading state")
+            return
+
         # Only refresh if we have a selected playlist
         if self.data_provider is not None and self.current_playlist_id is not None:
-            self.refresh()
+            # Directly execute the refresh - we already have debouncing in selection_state
+            self._execute_data_changed_refresh()
+
+    def _execute_data_changed_refresh(self) -> None:
+        """Execute the actual refresh after data changes - called by timer to debounce."""
+        logger.debug("Executing debounced data_changed refresh")
+        self.refresh()
 
     def _on_track_updated(self, track_id: int) -> None:
         """Handle notification that a specific track has been updated.
@@ -1122,16 +1229,145 @@ class PlaylistComponent(QWidget):
         Args:
             track_id: The ID of the track that was updated
         """
-        logger.debug(f"Playlist component handling track update for track_id={track_id}")
+        # Reduced logging
+        # logger.debug(f"Playlist component handling track update for track_id={track_id}")
 
-        # Check if we need to update our view
-        if self.tracks_model:
-            # Try to update just this track in the model
-            updated = self.tracks_model.update_track_quality(track_id, None)
+        # Skip update if we don't have a model or no playlist is selected
+        if not self.tracks_model or self.current_playlist_id is None:
+            return
 
-            if not updated and self.current_playlist_id is not None:
-                # If the track isn't in our current view, we'll do a targeted refresh
-                # of the current playlist's tracks instead of a full refresh
+        # Skip update during loading to prevent infinite refresh loops
+        if (
+            self.track_container.stacked_widget.currentWidget()
+            == self.track_container.loading_widget
+        ):
+            logger.debug("Skipping track update during loading")
+            return
+
+        # Execute the update immediately without unnecessary timers
+        self._execute_track_update(track_id)
+
+    def _execute_track_update(self, track_id: int) -> None:
+        """Execute the actual track update after debouncing.
+
+        Args:
+            track_id: The ID of the track to update
+        """
+        # Reduced logging
+        # logger.debug(f"Executing debounced update for track {track_id}")
+
+        try:
+            # Force reload the track from database
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.track_repository import TrackRepository
+
+            session = get_session()
+            track_repo = TrackRepository(session)
+
+            # Get the fresh track data with ALL updated information
+            db_track = track_repo.get_by_id(track_id)
+            if not db_track:
+                logger.warning(f"Track {track_id} not found in database for update")
+                return
+
+            # Check if this track has been linked to any platform
+            platforms = []
+
+            # Check for platform-specific metadata
+            platform_linked = False
+            if hasattr(db_track, "spotify_id") and db_track.spotify_id:
+                platforms.append("spotify")
+                platform_linked = True
+
+            if hasattr(db_track, "rekordbox_id") and db_track.rekordbox_id:
+                platforms.append("rekordbox")
+                platform_linked = True
+
+            if hasattr(db_track, "youtube_id") and db_track.youtube_id:
+                platforms.append("youtube")
+                platform_linked = True
+
+            if hasattr(db_track, "discogs_id") and db_track.discogs_id:
+                platforms.append("discogs")
+                platform_linked = True
+
+            # Log the linked platforms for debugging
+            if platform_linked:
+                logger.debug(f"Track {track_id} is linked to platforms: {platforms}")
+
+            # Update all tracks in the model
+            track_found = False
+            for i, track in enumerate(self.current_tracks):
+                if hasattr(track, "track_id") and track.track_id == track_id:
+                    track_found = True
+                    # Replace with database track if possible
+                    if hasattr(track, "_replace_with"):
+                        track._replace_with(db_track)
+                    else:
+                        # Otherwise try updating individual fields
+                        for attr in dir(db_track):
+                            # Skip private attributes and methods
+                            if attr.startswith("_") or callable(getattr(db_track, attr)):
+                                continue
+
+                            # Copy attribute value if it exists on both objects
+                            if hasattr(track, attr):
+                                setattr(track, attr, getattr(db_track, attr))
+
+                    # Force update platform information which is most critical
+                    if hasattr(track, "platforms"):
+                        track.platforms = platforms
+
+                    # Force clear cached display data
+                    if hasattr(track, "_display_data"):
+                        delattr(track, "_display_data")
+
+                    # Force model to update this row
+                    row_index = self.tracks_model.index(i, 0)
+                    last_index = self.tracks_model.index(i, self.tracks_model.columnCount() - 1)
+                    self.tracks_model.dataChanged.emit(row_index, last_index)
+
+                    # Specifically update platforms column if it exists
+                    if "platforms" in self.tracks_model.column_keys:
+                        platform_col = self.tracks_model.column_keys.index("platforms")
+                        platform_index = self.tracks_model.index(i, platform_col)
+                        self.tracks_model.dataChanged.emit(platform_index, platform_index)
+
+                    # Also update the details panel if this track is currently selected
+                    selected_track = self.selection_state.get_selected_track()
+                    if (
+                        selected_track
+                        and hasattr(selected_track, "track_id")
+                        and selected_track.track_id == track_id
+                    ):
+                        # Update the details panel with the latest track data
+                        # Reduced logging
+                        # logger.debug(f"Updating details panel for track {track_id}")
+                        self.details_panel.set_track(track)
+
+                    break  # We found and updated the track
+
+            # If track not found but platforms were updated, consider refreshing
+            if not track_found and platform_linked:
+                logger.debug(
+                    f"Track {track_id} not found in current view but was linked to platforms"
+                )
+
+                # Force tracks table to be visible if we have tracks
+                if (
+                    self.current_tracks
+                    and self.track_container.stacked_widget.currentWidget()
+                    != self.track_container.tracks_table
+                ):
+                    self.track_container.hide_loading()
+
+                # Repaint all visible tracks to ensure platform icons are updated
+                self.tracks_table.viewport().update()
+
+        except Exception as e:
+            logger.error(f"Error during track update for {track_id}: {e}")
+            # Fall back to a targeted refresh in case of errors
+            if hasattr(self, "_refresh_current_playlist_tracks"):
                 self._refresh_current_playlist_tracks()
 
     def _on_track_double_clicked(self, index) -> None:
@@ -1148,6 +1384,35 @@ class PlaylistComponent(QWidget):
 
     def _refresh_current_playlist_tracks(self) -> None:
         """Refresh only the tracks for the current playlist."""
+        if not self.data_provider or self.current_playlist_id is None:
+            return
+
+        # Safety check - avoid refreshing if we're already loading
+        if (
+            self.track_container.stacked_widget.currentWidget()
+            == self.track_container.loading_widget
+        ):
+            logger.debug("Skipping refresh - already in loading state")
+            return
+
+        # Use a debounced refresh with a timer to prevent rapid sequential refreshes
+        # Add the timer as an attribute if it doesn't exist yet
+        if not hasattr(self, "_refresh_timer"):
+            from PyQt6.QtCore import QTimer
+
+            self._refresh_timer = QTimer()
+            self._refresh_timer.setSingleShot(True)
+            self._refresh_timer.timeout.connect(self._execute_playlist_refresh)
+
+        # Reset the timer if it's running
+        if hasattr(self, "_refresh_timer") and self._refresh_timer.isActive():
+            self._refresh_timer.stop()
+
+        # Start the timer with a short delay (100ms)
+        self._refresh_timer.start(100)
+
+    def _execute_playlist_refresh(self) -> None:
+        """Execute the actual playlist refresh - called by timer to debounce."""
         if not self.data_provider or self.current_playlist_id is None:
             return
 
@@ -1171,6 +1436,78 @@ class PlaylistComponent(QWidget):
         )
         worker.signals.finished.connect(lambda: self.track_container.hide_loading())
 
+    def _ensure_loading_hidden(self) -> None:
+        """Ensure that all loading indicators are hidden.
+
+        This is a failsafe to recover from any state where loading indicators
+        may remain visible after they should be hidden.
+        """
+        # Reduced loading indicators logging
+        # logger.debug("Ensuring all loading indicators are hidden")
+        self.playlist_container.hide_loading()
+        self.track_container.hide_loading()
+
+        # Make sure the correct widgets are visible based on state
+        if not self.current_tracks:
+            self.track_container.show_message("Select a playlist or refresh the view.")
+        elif (
+            self.current_tracks
+            and self.track_container.stacked_widget.currentWidget()
+            != self.track_container.tracks_table
+        ):
+            # If tracks exist but table is not visible, make it visible
+            logger.debug(f"Forcing tracks table visible for {len(self.current_tracks)} tracks")
+            self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
+
+        # Force a UI update immediately without scheduling another check
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
+        # Do final check immediately instead of with a timer - avoids recursive timer calls
+        self._final_visibility_check()
+
+    def _ensure_tracks_visible(self) -> None:
+        """Ensure that tracks table is visible if there are tracks.
+
+        This is a specialized method to ensure that track table is shown
+        whenever tracks are loaded.
+        """
+        if (
+            self.current_tracks
+            and self.track_container.stacked_widget.currentWidget()
+            != self.track_container.tracks_table
+        ):
+            logger.debug(
+                f"Final visibility check - forcing {len(self.current_tracks)} tracks visible"
+            )
+            self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
+
+            # Force a UI update
+            from PyQt6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+    def _final_visibility_check(self) -> None:
+        """Final check to ensure correct widget visibility after all operations.
+
+        This catches any race conditions that might occur during UI updates.
+        """
+        # Check if tracks table should be visible but isn't
+        if (
+            self.current_tracks
+            and self.track_container.stacked_widget.currentWidget()
+            != self.track_container.tracks_table
+            and self.track_container.stacked_widget.currentWidget()
+            == self.track_container.loading_widget
+        ):
+            logger.debug("Final visibility check - forcing tracks table visible")
+            self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
+
+            # Force a UI update
+            from PyQt6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
     def _handle_tracks_refreshed(self, tracks: list[Any]) -> None:
         """Handle refreshed tracks for the current playlist.
 
@@ -1184,6 +1521,9 @@ class PlaylistComponent(QWidget):
         # Update our model with the refreshed tracks
         self.current_tracks = tracks
         self.tracks_model.set_tracks(self.current_tracks)
+
+        # Ensure the tracks table is visible
+        self.track_container.hide_loading()
 
         # Update search suggestions
         self._update_search_suggestions()

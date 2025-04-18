@@ -25,12 +25,12 @@ from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.spotify.client import SpotifyClient
 from selecta.core.utils.type_helpers import column_to_int, has_artist_names
 from selecta.core.utils.worker import ThreadManager
-from selecta.ui.components.loading_widget import LoadableWidget
+from selecta.ui.components.platform_search_panel import PlatformSearchPanel
 from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.components.spotify.spotify_track_item import SpotifyTrackItem
 
 
-class SpotifySearchPanel(LoadableWidget):
+class SpotifySearchPanel(PlatformSearchPanel):
     """Panel for searching and displaying Spotify tracks."""
 
     track_linked = pyqtSignal(dict)  # Emitted when a track is linked
@@ -439,17 +439,12 @@ class SpotifySearchPanel(LoadableWidget):
         Args:
             track_data: The track data that was linked
         """
-        # Emit signal with the linked track
-        self.track_linked.emit(track_data)
-
-        # Notify that data has changed
-        self.selection_state.notify_data_changed()
-
-        # Show success message
-        self.show_message(f"Track linked: {track_data.get('name')}")
-
-        # Wait a moment, then restore the search results
-        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+        # Get name for display
+        name = track_data.get("name", "")
+        
+        # Use the standardized implementation from the PlatformSearchPanel
+        # which now inherits from our shared base class
+        super()._handle_link_complete(track_data, name)
 
     def _handle_link_error(self, error_msg: str) -> None:
         """Handle error during track linking.
@@ -609,8 +604,36 @@ class SpotifySearchPanel(LoadableWidget):
         # Notify that data has changed
         self.selection_state.notify_data_changed()
 
-        # Show success message
-        self.show_message(f"Track added: {artist} - {title}")
+        # Show a proper toast notification
+        track_name = f"{artist} - {title}"
+        try:
+            # Import PyQtToast
+            from pyqttoast import Toast, ToastPreset, ToastPosition
+            # Create a toast notification with custom styling for more visibility
+            toast = Toast(self.window())  # Use main window as parent
+            toast.setTitle("Track Added ✅")
+            toast.setText(f"{track_name}")
+            toast.setDuration(4000)  # 4 seconds for better visibility
+            toast.applyPreset(ToastPreset.SUCCESS_DARK)  # Use dark success preset
+            toast.setBorderRadius(8)  # More rounded corners
+            toast.setShowIcon(True)  # Show the success icon
+            from PyQt6.QtCore import QSize
+            from PyQt6.QtGui import QFont
+            toast.setIconSize(QSize(20, 20))  # Larger icon
+            toast.setTitleFont(QFont("Arial", 11, QFont.Weight.Bold))  # Larger title font
+            toast.setTextFont(QFont("Arial", 10))  # Larger text font
+            # Make sure it stays on top
+            toast.setStayOnTop(True)
+            # Show the toast
+            toast.show()
+            logger.info(f"Displayed GUI toast for track added: '{track_name}'")
+        except ImportError:
+            # Fall back to simple message if PyQtToast isn't available
+            self.show_message(f"Track added: {track_name}")
+        except Exception as e:
+            # Log any other errors but continue execution
+            logger.error(f"Error showing toast: {e}")
+            self.show_message(f"Track added: {track_name}")
 
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))

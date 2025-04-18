@@ -41,6 +41,8 @@ class DynamicContent(LoadableWidget):
             parent: Parent widget
         """
         super().__init__(parent)
+        # Set object name to make it easier to find
+        self.setObjectName("dynamicContent")
         self._setup_ui()
 
         # Track the current state
@@ -254,12 +256,43 @@ class DynamicContent(LoadableWidget):
         # Emit signal to notify that track was updated
         if self._current_track_id:
             self.track_updated.emit(self._current_track_id)
+            logger.debug(f"Emitted track_updated signal for track_id={self._current_track_id}")
 
-        # Reload track details if we're showing a local track
-        if self._current_track_id:
-            selected_track = self.selection_state.get_selected_track()
-            if selected_track and hasattr(selected_track, "is_local") and selected_track.is_local:
-                self._on_track_selected(selected_track)
+            # SIMPLIFIED DIRECT APPROACH: Get track and force refresh now
+            logger.info(f"DIRECT REFRESH: Forcing immediate reload after linking for track {self._current_track_id}")
+            
+            try:
+                # Load track and all platform info directly
+                track_db = self._track_repo.get_by_id(self._current_track_id)
+                
+                if not track_db:
+                    logger.warning(f"Cannot find track {self._current_track_id} in database")
+                    return
+                    
+                # Get ALL platform info directly from DB
+                all_platform_info = {}
+                for platform in ["spotify", "discogs", "youtube", "rekordbox"]:
+                    info = self._track_repo.get_platform_info(self._current_track_id, platform)
+                    if info:
+                        logger.info(f"Found platform info for {platform}: {info}")
+                        all_platform_info[platform] = info
+                
+                # Get the currently selected track from selection state
+                current_track = self.selection_state.get_selected_track()
+                
+                if not current_track:
+                    logger.warning("No track in selection state to update")
+                    return
+                
+                # Force switch to the track details panel
+                self.stacked_widget.setCurrentWidget(self.track_details_panel)
+                
+                # IMPORTANT: Force the track details panel to reload with fresh platform info
+                logger.info(f"Setting track details with platform info for: {list(all_platform_info.keys())}")
+                self.track_details_panel.set_track(current_track, all_platform_info)
+                
+            except Exception as e:
+                logger.error(f"Error during direct track refresh: {e}")
 
     def _handle_track_added(self, track_data: dict[str, Any]) -> None:
         """Handle track add from search panel.

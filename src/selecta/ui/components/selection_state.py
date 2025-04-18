@@ -40,6 +40,8 @@ class SelectionState(QObject):
         self.current_playlist = None
         self.current_track = None
         self._initialized = True
+        self._last_data_change_time = 0
+        self._last_track_update_times = {}
 
         logger.debug("SelectionState initialized")
 
@@ -56,7 +58,9 @@ class SelectionState(QObject):
             new_id = getattr(playlist, "item_id", None) if playlist else None
 
             self.current_playlist = playlist
-            logger.debug(f"Global playlist selection changed: {old_id} -> {new_id}")
+            # Reduce log output
+            if old_id is not None or new_id is not None:
+                logger.debug(f"Global playlist selection changed: {old_id} -> {new_id}")
 
             # Emit signal
             self.playlist_selected.emit(playlist)
@@ -72,13 +76,26 @@ class SelectionState(QObject):
             new_id = getattr(track, "track_id", None) if track else None
 
             self.current_track = track
-            logger.debug(f"Global track selection changed: {old_id} -> {new_id}")
+            # Only log meaningful track changes
+            if old_id is not None and new_id is not None and old_id != new_id:
+                logger.debug(f"Global track selection changed: {old_id} -> {new_id}")
 
             # Emit signal
             self.track_selected.emit(track)
 
     def notify_data_changed(self) -> None:
         """Notify all observers that the underlying data has changed."""
+        # Add debouncing to prevent notification storms
+        import time
+
+        current_time = time.time()
+
+        # Only allow one notification per 0.5 seconds
+        if current_time - self._last_data_change_time < 0.5:
+            logger.debug("Data change notification throttled")
+            return
+
+        self._last_data_change_time = current_time
         logger.debug("Data change notification sent")
         self.data_changed.emit()
 
@@ -88,7 +105,24 @@ class SelectionState(QObject):
         Args:
             track_id: The ID of the track that was updated
         """
-        logger.debug(f"Track update notification sent for track_id={track_id}")
+        # Add debouncing to prevent notification storms for the same track
+        import time
+
+        current_time = time.time()
+
+        # Only allow one notification per track per 0.5 seconds
+        if (
+            track_id in self._last_track_update_times
+            and current_time - self._last_track_update_times[track_id] < 0.5
+        ):
+            logger.debug(f"Track update notification throttled for track_id={track_id}")
+            return
+
+        self._last_track_update_times[track_id] = current_time
+        # Reduce log spam
+        # logger.debug(f"Track update notification sent for track_id={track_id}")
+
+        # Emit track updated signal immediately - no need for delay
         self.track_updated.emit(track_id)
 
     def get_selected_playlist_id(self) -> Any:

@@ -52,8 +52,43 @@ class PlatformIconDelegate(QStyledItemDelegate):
         # First, let the base class handle selection background etc.
         super().paint(painter, option, index)
 
-        # Get the platforms from the model
+        # Get the platforms from the model - ALWAYS get fresh data, never cache
+        # This is critical for showing updated platform icons
         platforms = index.data(Qt.ItemDataRole.UserRole)
+        
+        # Force refresh data - critical for updating platforms
+        # This ensures we're getting the most recent platform data
+        index.model().force_refresh_data = True
+
+        # Get track info for logging
+        track_info = ""
+        track_data = index.model().data(
+            index.model().index(index.row(), 0), Qt.ItemDataRole.UserRole
+        )
+        if isinstance(track_data, dict) and "track_id" in track_data:
+            track_info = f"track_id={track_data['track_id']}"
+
+        from loguru import logger
+        
+        # Only log once every few seconds per track to reduce log spam
+        import time
+        current_time = time.time()
+        
+        # Use a class-level cache to avoid excessive logging
+        if not hasattr(self, '_last_icon_log_times'):
+            self._last_icon_log_times = {}
+            
+        # Only log once every 5 seconds per track
+        track_id = None
+        if isinstance(track_data, dict) and "track_id" in track_data:
+            track_id = track_data['track_id']
+            
+        if track_id is not None:
+            last_log_time = self._last_icon_log_times.get(track_id, 0)
+            if current_time - last_log_time > 60:  # Log only once per minute per track
+                logger.debug(f"Drawing platform icons for {track_info}: {platforms}")
+                self._last_icon_log_times[track_id] = current_time
+
         if not platforms:
             return
 

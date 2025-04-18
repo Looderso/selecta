@@ -166,7 +166,8 @@ class PlatformLinkManager:
 
         if existing_track:
             # Update the existing track with any new information
-            self.track_repo.update(existing_track.id, track_data)
+            # Use preserve_existing=True to avoid overwriting existing fields
+            self.track_repo.update(existing_track.id, track_data, preserve_existing=True)
             track = existing_track
         else:
             # Create a new track

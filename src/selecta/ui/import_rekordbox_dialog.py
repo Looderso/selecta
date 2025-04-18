@@ -269,7 +269,7 @@ class ImportThread(QThread):
                 updated = True
 
             if updated:
-                self.track_repo.update(existing_track.id, track_data)
+                self.track_repo.update(existing_track.id, track_data, preserve_existing=True)
 
             # Update attributes and metadata
             self._add_track_metadata(existing_track.id, rekordbox_track)
