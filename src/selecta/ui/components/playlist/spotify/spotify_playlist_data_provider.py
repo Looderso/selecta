@@ -17,7 +17,7 @@ from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.spotify.spotify_playlist_item import SpotifyPlaylistItem
 from selecta.ui.components.playlist.spotify.spotify_track_item import SpotifyTrackItem
 from selecta.ui.components.playlist.track_item import TrackItem
-from selecta.ui.import_export_playlist_dialog import ImportExportPlaylistDialog
+from selecta.ui.dialogs import ImportExportPlaylistDialog
 
 
 class SpotifyPlaylistDataProvider(AbstractPlaylistDataProvider):

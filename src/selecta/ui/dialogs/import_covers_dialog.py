@@ -1,4 +1,4 @@
-# src/selecta/ui/import_covers_dialog.py
+"""Dialog for importing covers from audio metadata."""
 import time
 
 from loguru import logger

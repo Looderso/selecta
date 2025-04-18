@@ -17,7 +17,7 @@ from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
 from selecta.ui.components.playlist.youtube.youtube_playlist_item import YouTubePlaylistItem
 from selecta.ui.components.playlist.youtube.youtube_track_item import YouTubeTrackItem
-from selecta.ui.create_playlist_dialog import CreatePlaylistDialog
+from selecta.ui.dialogs import CreatePlaylistDialog
 
 
 class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):

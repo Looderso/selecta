@@ -22,7 +22,7 @@ from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_item import RekordboxPlaylistItem
 from selecta.ui.components.playlist.rekordbox.rekordbox_track_item import RekordboxTrackItem
 from selecta.ui.components.playlist.track_item import TrackItem
-from selecta.ui.import_export_playlist_dialog import ImportExportPlaylistDialog
+from selecta.ui.dialogs import ImportExportPlaylistDialog
 
 
 class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
