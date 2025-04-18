@@ -229,3 +229,18 @@ class DatabaseImageLoader(QObject):
     def clear_cache(self) -> None:
         """Clear the image cache."""
         self._cache.clear()
+
+    def clear_track_image_cache(self, track_id: int) -> None:
+        """Clear the cache for a specific track.
+
+        Args:
+            track_id: The track ID to clear from cache
+        """
+        keys_to_remove = []
+        for key in self._cache:
+            if key.startswith(f"track_{track_id}_"):
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            logger.debug(f"Removing {key} from image cache")
+            del self._cache[key]
