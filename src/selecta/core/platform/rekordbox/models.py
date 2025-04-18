@@ -223,8 +223,11 @@ class RekordboxTrack:
             # TODO Check me
             duration_ms = int(duration_ms * 1000)
 
-        # Get other track details
-        bpm: float | None = getattr(content, "BPM", None)
+        # Get BPM - Rekordbox stores BPM as integers multiplied by 100
+        raw_bpm: int | None = getattr(content, "BPM", None)
+        bpm: float | None = None
+        if raw_bpm is not None:
+            bpm = raw_bpm / 100.0
 
         # Get key
         key: str | None = None
