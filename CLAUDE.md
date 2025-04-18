@@ -3,25 +3,32 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
+
 Selecta is a unified music library manager integrating:
+
 - Rekordbox (DJ library)
 - Spotify (streaming playlists)
 - Discogs (vinyl collection)
+- Youtube (playback and downloading tracks)
 
 Key features:
+
 - Cross-platform playlist synchronization
 - Track matching between platforms
 - Music library organization
 - Modern PyQt6-based UI
 
 ## Platform Synchronization Strategy
+
 Selecta follows a consistent approach for platform integration:
 
 ### Key Concepts
+
 - **Syncing**: The bi-directional process of importing and exporting tracks/playlists between platforms
 - **Linking**: Creating connections between tracks across platforms by storing platform-specific metadata
 
 ### Core Goals
+
 - Import playlists from any platform into the local database
 - Export local playlists to external platforms
 - Sync changes bidirectionally (update both local and platform data)
@@ -29,6 +36,7 @@ Selecta follows a consistent approach for platform integration:
 - Enable cross-platform workflow (e.g., import from Spotify, add tracks, export to Rekordbox)
 
 ### Platform-Specific Notes
+
 - **Rekordbox & Spotify**: Full playlist import/export/sync functionality
 - **Discogs**: Limited to wantlist/collection integration (not traditional playlists)
   - Use wantlist/collection to mark tracks owned or wanted
@@ -124,6 +132,7 @@ Selecta follows a consistent approach for platform integration:
 ### Platform Client Implementation Notes
 
 #### SpotifyClient
+
 - Uses `spotipy` library for API access
 - Handles OAuth authentication flow via SpotifyAuthManager
 - Manages token refresh and persistence
@@ -131,6 +140,7 @@ Selecta follows a consistent approach for platform integration:
 - Converts Spotify API responses to application models
 
 #### RekordboxClient
+
 - Uses `pyrekordbox` library to access Rekordbox database
 - Implements a singleton pattern for database connection
 - Includes special handling for when Rekordbox is running
@@ -138,6 +148,7 @@ Selecta follows a consistent approach for platform integration:
 - Converts Rekordbox database entries to application models
 
 #### DiscogsClient
+
 - Uses custom DiscogsApiClient for API access
 - Handles OAuth authentication flow
 - Treats collection and wantlist as "playlists"
@@ -147,6 +158,7 @@ Selecta follows a consistent approach for platform integration:
 ## Data Flow Examples
 
 ### Importing a Spotify Playlist
+
 1. User selects a Spotify playlist in UI
 2. UI calls `SpotifyPlaylistDataProvider.import_playlist()`
 3. Provider uses PlatformSyncManager to handle the import
@@ -157,6 +169,7 @@ Selecta follows a consistent approach for platform integration:
 8. UI is refreshed to show the new local playlist
 
 ### Exporting to Rekordbox
+
 1. User selects a local playlist to export to Rekordbox
 2. UI calls `LocalPlaylistDataProvider.export_playlist()`
 3. Provider uses PlatformSyncManager to handle the export
@@ -167,6 +180,7 @@ Selecta follows a consistent approach for platform integration:
 8. UI is refreshed to reflect changes
 
 ## Build/Run/Test Commands
+
 - Run app: `selecta-gui`
 - Reset database: `selecta database init --force`
 - Linting/type checking: `ruff check src`
@@ -174,6 +188,7 @@ Selecta follows a consistent approach for platform integration:
 - Run specific test: `pytest -m [rekordbox|spotify|discogs]`
 
 ## Code Style Guidelines
+
 - Python 3.11+ with strict typing
 - Line length: 100 characters
 - Use Google docstring style
@@ -186,3 +201,115 @@ Selecta follows a consistent approach for platform integration:
 - Create TypeGuard functions for type narrowing with attribute checks
 
 For detailed typing guidelines, see TYPING_GUIDELINES.md
+
+## Documentation System and Token Optimization
+
+### Documentation Hierarchy
+
+Selecta implements a comprehensive documentation system to optimize token usage and speed up development:
+
+1. **Top-Level Documentation**
+   - **CLAUDE.md** (this file): Project overview and architectural guidance
+   - **CODE_INDEX.md**: Quick reference for locating features and files
+   - **SESSION_RULES.md**: Configuration for the current session
+
+2. **Module-Level Documentation**
+   - Each major module contains a **README.md** with module-specific details:
+     - Module purpose and architecture
+     - Component relationships
+     - File structure and responsibilities
+     - Usage patterns and examples
+
+3. **Sub-Module Documentation**
+   - Complex modules have additional READMEs in subdirectories
+   - Platform integrations each have their own detailed documentation
+   - UI component groups have specialized guides
+
+### Documentation Content
+
+Each README follows a consistent format:
+
+- **Overview**: High-level description of the module's purpose
+- **Architecture**: Component structure and relationships
+- **File Structure**: Detailed listing of files and their purposes
+- **Common Tasks**: How to accomplish typical development tasks
+- **Implementation Notes**: Key design patterns and approaches
+- **Dependencies**: Internal and external dependencies
+- **Usage Examples**: Code examples demonstrating common operations
+- **Change History**: Record of significant updates
+
+### Token Optimization Strategy
+
+#### Navigation Process
+
+Follow this sequence to minimize token usage:
+
+1. **Start with CODE_INDEX.md**
+   - Locate the general area you need to work with
+   - Find references to specific module documentation
+
+2. **Read Module README.md**
+   - Understand the module's architecture and patterns
+   - Identify specific files relevant to your task
+
+3. **Read Sub-Module README.md** (if applicable)
+   - Get detailed information about specific components
+   - Find exact file locations for your changes
+
+4. **Examine Specific Files**
+   - Only after understanding the context through documentation
+   - Focus on relevant sections rather than entire files
+
+5. **Make Targeted Changes**
+   - With full understanding of the architecture and file purposes
+   - Following established patterns from the documentation
+
+#### Searching Strategy
+
+- **Avoid broad searches** (e.g., "find all occurrences of X")
+- **Use targeted searches** guided by documentation
+- **Follow the documentation path** to locate functionality
+- **Use CODE_INDEX.md** as your primary navigation tool
+
+### Documentation Update Process
+
+Maintaining documentation is crucial for continued token optimization:
+
+1. **Update README.md** when making significant changes to a module
+2. **Update CODE_INDEX.md** when adding new files or changing structure
+3. **Add new README.md files** for new modules or significant components
+4. **Follow the template format** for consistency across documentation
+5. **Document changes** in the Change History section of affected READMEs
+
+### Documentation Usage Examples
+
+#### Finding and Modifying Platform Integration Code
+
+```
+1. Check CODE_INDEX.md → Platform Integrations → Spotify
+2. Read src/selecta/core/platform/spotify/README.md
+3. Identify the specific component (Auth, Client, Models, Sync)
+4. Navigate to the specific file
+5. Make changes following established patterns
+6. Update documentation if necessary
+```
+
+#### Adding a New UI Feature
+
+```
+1. Check CODE_INDEX.md → UI Components
+2. Read src/selecta/ui/README.md for overall UI architecture
+3. Locate relevant component area (Playlist, Player, etc.)
+4. Read component-specific README.md
+5. Create new component following established patterns
+6. Update documentation to include the new component
+```
+
+### Navigation Workflow Summary
+
+1. Start with top-level documentation
+2. Find relevant module in CODE_INDEX.md
+3. Read module README.md for architecture understanding
+4. Check sub-module README.md for component details
+5. Only then read and modify specific code files
+6. Update documentation to reflect your changes
