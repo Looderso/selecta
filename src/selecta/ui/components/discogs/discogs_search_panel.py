@@ -33,7 +33,7 @@ from selecta.ui.components.search_bar import SearchBar
 class DiscogsSearchPanel(LoadableWidget):
     """Panel for searching and displaying Discogs releases."""
 
-    track_synced = pyqtSignal(dict)  # Emitted when a track is synced
+    track_linked = pyqtSignal(dict)  # Emitted when a track is linked
     track_added = pyqtSignal(dict)  # Emitted when a track is added
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -165,15 +165,15 @@ class DiscogsSearchPanel(LoadableWidget):
         """Update all track item buttons based on current selection."""
         # Get button states from the selection state
         can_add = self.selection_state.is_playlist_selected()
-        can_sync = self.selection_state.is_track_selected()
+        can_link = self.selection_state.is_track_selected()
 
         # Log for debugging
-        logger.debug(f"Button state update: can_add={can_add}, can_sync={can_sync}")
+        logger.debug(f"Button state update: can_add={can_add}, can_link={can_link}")
 
         # Update all result widgets
         for widget in self.result_widgets:
             if isinstance(widget, DiscogsTrackItem):
-                widget.update_button_state(can_add=can_add, can_sync=can_sync)
+                widget.update_button_state(can_add=can_add, can_link=can_link)
 
     def search(self, query: str) -> None:
         """Public method to perform a search.
@@ -280,7 +280,7 @@ class DiscogsSearchPanel(LoadableWidget):
                 release_data = cast(dict[str, Any], release)
 
             track_widget = DiscogsTrackItem(release_data)
-            track_widget.sync_clicked.connect(self._on_track_sync)
+            track_widget.link_clicked.connect(self._on_track_link)
             track_widget.add_clicked.connect(self._on_track_add)
             self.results_layout.addWidget(track_widget)
             self.result_widgets.append(track_widget)
@@ -331,8 +331,8 @@ class DiscogsSearchPanel(LoadableWidget):
         self.results_layout.addWidget(self.message_label)
         self.results_layout.addStretch(1)
 
-    def _on_track_sync(self, release_data: dict[str, Any]) -> None:
-        """Handle track sync button click.
+    def _on_track_link(self, release_data: dict[str, Any]) -> None:
+        """Handle track link button click.
 
         Args:
             release_data: Dictionary with release data
@@ -341,7 +341,7 @@ class DiscogsSearchPanel(LoadableWidget):
 
         if not selected_track:
             QMessageBox.warning(
-                self, "Sync Error", "No track selected. Please select a track to sync with."
+                self, "Link Error", "No track selected. Please select a track to link with."
             )
             return
 
@@ -354,7 +354,7 @@ class DiscogsSearchPanel(LoadableWidget):
             discogs_uri = release_data.get("uri")
 
             if not discogs_id or not discogs_uri:
-                QMessageBox.warning(self, "Sync Error", "Invalid Discogs release data")
+                QMessageBox.warning(self, "Link Error", "Invalid Discogs release data")
                 return
 
             # Get cover image URL if available
@@ -377,10 +377,10 @@ class DiscogsSearchPanel(LoadableWidget):
             platform_data_json = json.dumps(platform_data)
 
             # Show loading overlay
-            self.show_loading("Syncing track with Discogs...")
+            self.show_loading("Linking track with Discogs...")
 
-            # Run sync operation in background
-            def sync_task() -> dict[str, Any]:
+            # Run link operation in background
+            def link_task() -> dict[str, Any]:
                 # Add platform info to the track
                 self.track_repo.add_platform_info(
                     track_id, "discogs", str(discogs_id), discogs_uri, platform_data_json
@@ -415,43 +415,43 @@ class DiscogsSearchPanel(LoadableWidget):
                 return release_data
 
             thread_manager = ThreadManager()
-            worker = thread_manager.run_task(sync_task)
+            worker = thread_manager.run_task(link_task)
 
-            worker.signals.result.connect(lambda rd: self._handle_sync_complete(rd))
-            worker.signals.error.connect(lambda err: self._handle_sync_error(err))
+            worker.signals.result.connect(lambda rd: self._handle_link_complete(rd))
+            worker.signals.error.connect(lambda err: self._handle_link_error(err))
             worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
             self.hide_loading()
-            logger.exception(f"Error syncing track: {e}")
-            QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
+            logger.exception(f"Error linking track: {e}")
+            QMessageBox.critical(self, "Link Error", f"Error linking track: {str(e)}")
 
-    def _handle_sync_complete(self, release_data: dict[str, Any]) -> None:
-        """Handle completion of track sync.
+    def _handle_link_complete(self, release_data: dict[str, Any]) -> None:
+        """Handle completion of track linking.
 
         Args:
-            release_data: The release data that was synced
+            release_data: The release data that was linked
         """
-        # Emit signal with the synchronized track
-        self.track_synced.emit(release_data)
+        # Emit signal with the linked track
+        self.track_linked.emit(release_data)
 
         # Notify that data has changed
         self.selection_state.notify_data_changed()
 
         # Show success message
-        self.show_message(f"Track synchronized: {release_data.get('title')}")
+        self.show_message(f"Track linked: {release_data.get('title')}")
 
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_sync_error(self, error_msg: str) -> None:
-        """Handle error during track sync.
+    def _handle_link_error(self, error_msg: str) -> None:
+        """Handle error during track linking.
 
         Args:
             error_msg: The error message
         """
-        logger.error(f"Error syncing track: {error_msg}")
-        QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
+        logger.error(f"Error linking track: {error_msg}")
+        QMessageBox.critical(self, "Link Error", f"Error linking track: {error_msg}")
 
     def _on_track_add(self, release_data: dict[str, Any]) -> None:
         """Handle track add button click.

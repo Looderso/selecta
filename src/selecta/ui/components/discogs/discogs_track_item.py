@@ -19,7 +19,7 @@ from selecta.ui.components.spotify.image_loader import ImageLoader
 class DiscogsTrackItem(QWidget):
     """Widget to display a single Discogs release search result."""
 
-    sync_clicked = pyqtSignal(dict)  # Emits release data on sync button click
+    link_clicked = pyqtSignal(dict)  # Emits release data on link button click
     add_clicked = pyqtSignal(dict)  # Emits release data on add button click
 
     # Shared image loaders for all track items
@@ -46,7 +46,7 @@ class DiscogsTrackItem(QWidget):
 
         # Track button state
         self._can_add = False
-        self._can_sync = False
+        self._can_link = False
 
         # Track image loading state
         self._db_image_tried = False
@@ -212,14 +212,14 @@ class DiscogsTrackItem(QWidget):
         self.buttons_layout.setSpacing(6)
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Sync button
-        self.sync_button = QPushButton("Sync")
-        self.sync_button.setFixedSize(60, 25)
-        self.sync_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sync_button.clicked.connect(self._on_sync_clicked)
+        # Link button
+        self.link_button = QPushButton("Link")
+        self.link_button.setFixedSize(60, 25)
+        self.link_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.link_button.clicked.connect(self._on_link_clicked)
         # Initially disabled until a track is selected
-        self.sync_button.setEnabled(False)
-        self.buttons_layout.addWidget(self.sync_button)
+        self.link_button.setEnabled(False)
+        self.buttons_layout.addWidget(self.link_button)
 
         # Add button
         self.add_button = QPushButton("Add")
@@ -234,23 +234,23 @@ class DiscogsTrackItem(QWidget):
         layout.addLayout(self.buttons_layout)
 
         # Hide buttons initially
-        self.sync_button.setVisible(False)
+        self.link_button.setVisible(False)
         self.add_button.setVisible(False)
 
-    def update_button_state(self, can_add: bool = False, can_sync: bool = False) -> None:
+    def update_button_state(self, can_add: bool = False, can_link: bool = False) -> None:
         """Update the state of the buttons based on current selection.
 
         Args:
             can_add: Whether the add button should be enabled
-            can_sync: Whether the sync button should be enabled
+            can_link: Whether the link button should be enabled
         """
         # Store the button states
         self._can_add = can_add
-        self._can_sync = can_sync
+        self._can_link = can_link
 
         # Update button states
         self.add_button.setEnabled(can_add)
-        self.sync_button.setEnabled(can_sync)
+        self.link_button.setEnabled(can_link)
 
         # Only show buttons if we're hovered and set appropriate state
         self._update_button_visibility()
@@ -290,9 +290,9 @@ class DiscogsTrackItem(QWidget):
             self.cover_label.setPixmap(pixmap)
             self._db_image_tried = True
 
-    def _on_sync_clicked(self):
-        """Handle sync button click."""
-        self.sync_clicked.emit(self.release_data)
+    def _on_link_clicked(self):
+        """Handle link button click."""
+        self.link_clicked.emit(self.release_data)
 
     def _on_add_clicked(self):
         """Handle add button click."""
@@ -322,13 +322,13 @@ class DiscogsTrackItem(QWidget):
         """Update the visibility of the buttons based on hover state."""
         if self.is_hovered:
             # When hovering, show both buttons
-            self.sync_button.setVisible(True)
+            self.link_button.setVisible(True)
             self.add_button.setVisible(True)
 
             # Make sure the enabled state is correct
-            self.sync_button.setEnabled(self._can_sync)
+            self.link_button.setEnabled(self._can_link)
             self.add_button.setEnabled(self._can_add)
         else:
             # When not hovering, hide both buttons
-            self.sync_button.setVisible(False)
+            self.link_button.setVisible(False)
             self.add_button.setVisible(False)

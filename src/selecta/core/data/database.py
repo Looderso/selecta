@@ -231,15 +231,15 @@ def init_database(db_path: Path | str | None = None) -> None:
             "platform_id",
             "uri",
             "platform_data",
-            "last_synced",
+            "last_linked",
             "needs_update",
         ]
 
         missing_columns = [col for col in required_columns if col not in columns]
         if missing_columns:
             logger.warning(f"TrackPlatformInfo table is missing columns: {missing_columns}")
-            logger.warning("Database schema may need to be upgraded.")
-            logger.warning("Run 'python upgrade_db.py' to fix schema issues.")
+            logger.warning("Database schema needs to be upgraded.")
+            logger.warning("Run 'selecta database init --force' to recreate the database.")
         else:
             logger.info("TrackPlatformInfo table has all required columns.")
     else:

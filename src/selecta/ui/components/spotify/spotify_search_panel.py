@@ -33,7 +33,7 @@ from selecta.ui.components.spotify.spotify_track_item import SpotifyTrackItem
 class SpotifySearchPanel(LoadableWidget):
     """Panel for searching and displaying Spotify tracks."""
 
-    track_synced = pyqtSignal(dict)  # Emitted when a track is synced
+    track_linked = pyqtSignal(dict)  # Emitted when a track is linked
     track_added = pyqtSignal(dict)  # Emitted when a track is added
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -285,7 +285,7 @@ class SpotifySearchPanel(LoadableWidget):
                 track_data = cast(dict[str, Any], track)
 
             track_widget = SpotifyTrackItem(track_data)
-            track_widget.sync_clicked.connect(self._on_track_sync)
+            track_widget.sync_clicked.connect(self._on_track_link)
             track_widget.add_clicked.connect(self._on_track_add)
             self.results_layout.addWidget(track_widget)
             self.result_widgets.append(track_widget)
@@ -336,8 +336,8 @@ class SpotifySearchPanel(LoadableWidget):
         self.results_layout.addWidget(self.message_label)
         self.results_layout.addStretch(1)
 
-    def _on_track_sync(self, track_data: dict[str, Any]) -> None:
-        """Handle track sync button click.
+    def _on_track_link(self, track_data: dict[str, Any]) -> None:
+        """Handle track link button click.
 
         Args:
             track_data: Dictionary with track data
@@ -346,7 +346,7 @@ class SpotifySearchPanel(LoadableWidget):
 
         if not selected_track:
             QMessageBox.warning(
-                self, "Sync Error", "No track selected. Please select a track to sync with."
+                self, "Link Error", "No track selected. Please select a track to link with."
             )
             return
 
@@ -359,7 +359,7 @@ class SpotifySearchPanel(LoadableWidget):
             spotify_uri = track_data.get("uri")
 
             if not spotify_id or not spotify_uri:
-                QMessageBox.warning(self, "Sync Error", "Invalid Spotify track data")
+                QMessageBox.warning(self, "Link Error", "Invalid Spotify track data")
                 return
 
             # Get album image URLs if available
@@ -384,10 +384,10 @@ class SpotifySearchPanel(LoadableWidget):
             platform_data_json = json.dumps(platform_data)
 
             # Show loading overlay
-            self.show_loading("Syncing track with Spotify...")
+            self.show_loading("Linking track with Spotify...")
 
-            # Run sync in background
-            def sync_task() -> dict[str, Any]:
+            # Run link in background
+            def link_task() -> dict[str, Any]:
                 try:
                     # Add platform info using the repository
                     self.track_repo.add_platform_info(
@@ -416,49 +416,49 @@ class SpotifySearchPanel(LoadableWidget):
                             # Continue even if image download fails
 
                 except Exception as e:
-                    logger.error(f"Error in sync_task: {e}")
+                    logger.error(f"Error in link_task: {e}")
                     raise
 
                 return track_data
 
             thread_manager = ThreadManager()
-            worker = thread_manager.run_task(sync_task)
+            worker = thread_manager.run_task(link_task)
 
-            worker.signals.result.connect(lambda td: self._handle_sync_complete(td))
-            worker.signals.error.connect(lambda err: self._handle_sync_error(err))
+            worker.signals.result.connect(lambda td: self._handle_link_complete(td))
+            worker.signals.error.connect(lambda err: self._handle_link_error(err))
             worker.signals.finished.connect(lambda: self.hide_loading())
 
         except Exception as e:
             self.hide_loading()
-            logger.exception(f"Error syncing track: {e}")
-            QMessageBox.critical(self, "Sync Error", f"Error syncing track: {str(e)}")
+            logger.exception(f"Error linking track: {e}")
+            QMessageBox.critical(self, "Link Error", f"Error linking track: {str(e)}")
 
-    def _handle_sync_complete(self, track_data: dict[str, Any]) -> None:
-        """Handle completion of track sync.
+    def _handle_link_complete(self, track_data: dict[str, Any]) -> None:
+        """Handle completion of track linking.
 
         Args:
-            track_data: The track data that was synced
+            track_data: The track data that was linked
         """
-        # Emit signal with the synchronized track
-        self.track_synced.emit(track_data)
+        # Emit signal with the linked track
+        self.track_linked.emit(track_data)
 
         # Notify that data has changed
         self.selection_state.notify_data_changed()
 
         # Show success message
-        self.show_message(f"Track synchronized: {track_data.get('name')}")
+        self.show_message(f"Track linked: {track_data.get('name')}")
 
         # Wait a moment, then restore the search results
         QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
 
-    def _handle_sync_error(self, error_msg: str) -> None:
-        """Handle error during track sync.
+    def _handle_link_error(self, error_msg: str) -> None:
+        """Handle error during track linking.
 
         Args:
             error_msg: The error message
         """
-        logger.error(f"Error syncing track: {error_msg}")
-        QMessageBox.critical(self, "Sync Error", f"Error syncing track: {error_msg}")
+        logger.error(f"Error linking track: {error_msg}")
+        QMessageBox.critical(self, "Link Error", f"Error linking track: {error_msg}")
 
     def _on_track_add(self, track_data: dict[str, Any]) -> None:
         """Handle track add button click.

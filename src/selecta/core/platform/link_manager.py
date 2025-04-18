@@ -211,7 +211,7 @@ class PlatformLinkManager:
             )
         except Exception as e:
             logger.exception(f"Error importing playlist from {self.platform_name}: {e}")
-            raise ValueError(f"Failed to import playlist: {str(e)}")
+            raise ValueError(f"Failed to import playlist: {str(e)}") from e
 
         # Extract playlist metadata
         playlist_name = getattr(
@@ -345,7 +345,7 @@ class PlatformLinkManager:
             return new_platform_id
         except Exception as e:
             logger.exception(f"Error exporting playlist to {self.platform_name}: {e}")
-            raise ValueError(f"Failed to export playlist: {str(e)}")
+            raise ValueError(f"Failed to export playlist: {str(e)}") from e
 
     def link_playlist(self, local_playlist_id: int) -> tuple[int, int]:
         """Link a playlist bidirectionally between local database and platform.
@@ -375,7 +375,6 @@ class PlatformLinkManager:
 
         # Get current tracks in local playlist
         local_tracks = self.playlist_repo.get_playlist_tracks(local_playlist_id)
-        local_track_map = {track.id: track for track in local_tracks}
 
         # Get platform tracks
         platform_tracks, platform_playlist = self.platform_client.import_playlist_to_local(
@@ -432,22 +431,18 @@ class PlatformLinkManager:
         )
 
         if playlist_name and playlist_name != local_playlist.name:
+            # Update with new name and timestamp
             self.playlist_repo.update(
                 local_playlist_id,
-                {
-                    "name": playlist_name,
-                    "last_linked": datetime.now(UTC),
-                },  # Using last_linked in Playlist model
+                {"name": playlist_name, "last_linked": datetime.now(UTC)},
             )
         else:
-            # Just update the link timestamp
-            self.playlist_repo.update(
-                local_playlist_id, {"last_linked": datetime.now(UTC)}
-            )  # Using last_linked in Playlist model
+            # Just timestamp update
+            self.playlist_repo.update(local_playlist_id, {"last_linked": datetime.now(UTC)})
 
         # Find local tracks not in platform playlist and try to export them
         platform_track_ids = []
-        for track, platform_info in local_tracks_with_platform_info:
+        for _, platform_info in local_tracks_with_platform_info:
             # Check if this track is in the platform playlist
             if platform_info.platform_id in platform_track_by_id:
                 continue
@@ -509,16 +504,13 @@ class PlatformLinkManager:
 
             # Get album info if available
             album_info = getattr(platform_track, "album", platform_track.get("album", {}))
-            if album_info:
-                if isinstance(album_info, dict) and "images" in album_info:
-                    images = album_info["images"]
-                    if images:
-                        # Find largest image for best quality when resizing
-                        sorted_images = sorted(
-                            images, key=lambda x: x.get("width", 0), reverse=True
-                        )
-                        if sorted_images:
-                            platform_metadata["artwork_url"] = sorted_images[0].get("url")
+            if album_info and isinstance(album_info, dict) and "images" in album_info:
+                images = album_info["images"]
+                if images:
+                    # Find largest image for best quality when resizing
+                    sorted_images = sorted(images, key=lambda x: x.get("width", 0), reverse=True)
+                    if sorted_images:
+                        platform_metadata["artwork_url"] = sorted_images[0].get("url")
 
         elif self.platform_name == "rekordbox":
             # Handle Rekordbox track format

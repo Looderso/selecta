@@ -231,8 +231,8 @@ class TrackPlatformInfo(Base):
     # Platform-specific metadata as JSON string
     platform_data: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # When the platform data was last synchronized
-    last_synced: Mapped[datetime] = mapped_column(
+    # When the platform data was last linked
+    last_linked: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -249,7 +249,7 @@ class TrackPlatformInfo(Base):
         "platform_id": "platform_id",
         "uri": "uri",
         "platform_data": "platform_data",
-        "last_synced": "last_synced",
+        "last_linked": "last_linked",
         "needs_update": "needs_update",
     }
 
@@ -508,9 +508,9 @@ class Playlist(Base):
     is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)  # Position within parent
 
-    # Synchronization settings
-    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_synced: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Link settings
+    link_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_linked: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     children: Mapped[list["Playlist"]] = relationship(

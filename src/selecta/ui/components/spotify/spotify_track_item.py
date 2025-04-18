@@ -19,7 +19,7 @@ from selecta.ui.components.spotify.image_loader import ImageLoader
 class SpotifyTrackItem(QWidget):
     """Widget to display a single Spotify track search result."""
 
-    sync_clicked = pyqtSignal(dict)  # Emits track data on sync button click
+    sync_clicked = pyqtSignal(dict)  # Emits track data on link button click
     add_clicked = pyqtSignal(dict)  # Emits track data on add button click
 
     # Shared image loaders for all track items
@@ -195,8 +195,8 @@ class SpotifyTrackItem(QWidget):
         self.buttons_layout.setSpacing(6)
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Sync button
-        self.sync_button = QPushButton("Sync")
+        # Link button
+        self.sync_button = QPushButton("Link")
         self.sync_button.setFixedSize(60, 25)
         self.sync_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sync_button.clicked.connect(self._on_sync_clicked)

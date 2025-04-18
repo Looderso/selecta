@@ -27,13 +27,25 @@ def database():
     type=click.Path(),
     help="Custom database path (default: app data directory)",
 )
-def init_db(force: bool, path: str | None) -> None:
+@click.option(
+    "--keep-auth/--no-keep-auth",
+    default=False,
+    help="Preserve platform authentication credentials when reinitializing",
+)
+def init_db(force: bool, path: str | None, keep_auth: bool) -> None:
     """Initialize a new Selecta database.
 
     Args:
         force: Whether to force initialization if database already exists
         path: Optional custom database path
+        keep_auth: Whether to preserve platform authentication credentials
     """
+    import sqlite3
+
+    from sqlalchemy import text
+
+    from selecta.core.data.database import get_engine
+
     db_path = Path(path) if path else get_app_data_path() / "selecta.db"
 
     # Check if database already exists
@@ -43,13 +55,122 @@ def init_db(force: bool, path: str | None) -> None:
             click.echo("Database initialization cancelled.")
             return
 
+    # Backup authentication if requested
+    auth_backup = None
+    if keep_auth and db_path.exists():
+        try:
+            click.echo("Backing up platform authentication credentials...")
+
+            # Connect to existing database
+            engine = get_engine(db_path)
+            with engine.connect() as conn:
+                # Check if platform_credentials table exists
+                result = conn.execute(
+                    text(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' AND name='platform_credentials'"
+                    )
+                )
+                if result.fetchone():
+                    # Get all platform credentials
+                    result = conn.execute(text("SELECT * FROM platform_credentials"))
+                    rows = result.fetchall()
+
+                    if rows:
+                        # Convert to dictionary format
+                        auth_backup = []
+                        for row in rows:
+                            # Get column names from result
+                            columns = result.keys()
+                            auth_data = {col: row[idx] for idx, col in enumerate(columns)}
+                            auth_backup.append(auth_data)
+
+                        click.echo(f"Backed up credentials for {len(auth_backup)} platforms")
+                    else:
+                        click.echo("No authentication credentials found to back up")
+                else:
+                    click.echo("No platform_credentials table found in the database")
+        except Exception as e:
+            logger.warning(f"Failed to backup authentication credentials: {e}")
+            click.secho(
+                "Failed to backup authentication credentials. Continuing without backup.",
+                fg="yellow",
+            )
+            auth_backup = None
+
+    # Remove existing database files completely if they exist
+    if db_path.exists():
+        try:
+            click.echo(f"Removing existing database at {db_path}")
+            wal_path = db_path.with_suffix(".db-wal")
+            shm_path = db_path.with_suffix(".db-shm")
+            journal_path = db_path.with_name(f"{db_path.name}-journal")
+
+            # Remove all database-related files
+            if db_path.exists():
+                os.remove(db_path)
+            if wal_path.exists():
+                os.remove(wal_path)
+            if shm_path.exists():
+                os.remove(shm_path)
+            if journal_path.exists():
+                os.remove(journal_path)
+
+            click.echo("Existing database files removed.")
+        except Exception as e:
+            logger.error(f"Error removing existing database: {e}")
+            click.secho(f"Error removing existing database: {e}", fg="red")
+            if not click.confirm("Continue with database initialization anyway?"):
+                click.echo("Database initialization cancelled.")
+                return
+
     # Initialize the database
     try:
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        click.echo(f"Initializing database at {db_path}")
+        click.echo(f"Initializing new database at {db_path}")
         initialize_database(db_path)
+
+        # Restore authentication credentials if requested and backed up
+        if keep_auth and auth_backup:
+            click.echo("Restoring platform authentication credentials...")
+            try:
+                # Connect to the new database
+                conn = sqlite3.connect(str(db_path))
+                cursor = conn.cursor()
+
+                # Insert each credential row back
+                for auth_data in auth_backup:
+                    # Convert to properly formatted SQL
+                    columns = list(auth_data.keys())
+                    placeholders = ["?" for _ in columns]
+                    values = [auth_data[col] for col in columns]
+
+                    # Skip ID column as it's auto-incremented
+                    if "id" in columns:
+                        idx = columns.index("id")
+                        columns.pop(idx)
+                        placeholders.pop(idx)
+                        values.pop(idx)
+
+                    # Create INSERT statement
+                    columns_str = ", ".join(columns)
+                    placeholders_str = ", ".join(placeholders)
+                    sql = (
+                        f"INSERT INTO platform_credentials ({columns_str}) "
+                        f"VALUES ({placeholders_str})"
+                    )
+
+                    cursor.execute(sql, values)
+
+                conn.commit()
+                conn.close()
+                click.echo(f"Restored authentication credentials for {len(auth_backup)} platforms")
+            except Exception as e:
+                logger.error(f"Error restoring authentication credentials: {e}")
+                click.secho(f"Error restoring authentication credentials: {e}", fg="red")
+
         click.secho("Database initialized successfully!", fg="green")
     except Exception as e:
         logger.exception(f"Error initializing database: {e}")

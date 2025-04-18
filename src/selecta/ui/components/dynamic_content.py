@@ -50,11 +50,12 @@ class DynamicContent(LoadableWidget):
         self._platform_clients = {}  # Cache platform clients
 
         # Connect signals from search panels
-        self.spotify_search_panel.track_synced.connect(self._handle_track_synced)
+        self.spotify_search_panel.track_linked.connect(self._handle_track_linked)
         self.spotify_search_panel.track_added.connect(self._handle_track_added)
-        self.discogs_search_panel.track_synced.connect(self._handle_track_synced)
+        self.discogs_search_panel.track_linked.connect(self._handle_track_linked)
         self.discogs_search_panel.track_added.connect(self._handle_track_added)
-        self.youtube_search_panel.video_selected.connect(self._handle_track_added)
+        self.youtube_search_panel.track_linked.connect(self._handle_track_linked)
+        self.youtube_search_panel.track_added.connect(self._handle_track_added)
 
         # Import here to avoid circular imports
         from selecta.ui.components.selection_state import SelectionState
@@ -244,11 +245,11 @@ class DynamicContent(LoadableWidget):
         # Hide update buttons when showing search panel
         self.update_button_container.setVisible(False)
 
-    def _handle_track_synced(self, track_data: dict[str, Any]) -> None:
-        """Handle track sync from search panel.
+    def _handle_track_linked(self, track_data: dict[str, Any]) -> None:
+        """Handle track linking from search panel.
 
         Args:
-            track_data: Track data that was synced
+            track_data: Track data that was linked
         """
         # Emit signal to notify that track was updated
         if self._current_track_id:

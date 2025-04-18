@@ -915,7 +915,7 @@ class PlaylistComponent(QWidget):
         menu = QMenu(self.tracks_table)
 
         # Add playlist operations for local playlists
-        if self.data_provider and self.data_provider.get_platform_name() == "Local Database":
+        if self.data_provider and self.data_provider.get_platform_name() == "Local":
             # Get current playlist
             current_playlist_id = self.current_playlist_id
 
