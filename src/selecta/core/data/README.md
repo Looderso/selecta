@@ -1,9 +1,11 @@
 # Data Module Documentation
 
 ## Overview
+
 The data module handles all database operations, models, and data access in Selecta. It provides a clean abstraction over SQLAlchemy for working with music metadata, playlists, and platform-specific data. This module is the foundation of the application's data management, enabling cross-platform music library integration.
 
 ## Key Components
+
 - **Database**: Core database configuration and connection management
 - **Models**: SQLAlchemy model definitions for all application entities
 - **Repositories**: Data access layer providing methods to work with models
@@ -11,6 +13,7 @@ The data module handles all database operations, models, and data access in Sele
 - **Types**: Custom type definitions and base classes
 
 ## Database Architecture
+
 Selecta uses SQLite as its database engine with SQLAlchemy as the ORM. The database architecture is designed to support:
 
 1. **Cross-platform integration**: Storing platform-specific metadata while maintaining unified track/playlist representations
@@ -21,6 +24,7 @@ Selecta uses SQLite as its database engine with SQLAlchemy as the ORM. The datab
 ### Core Entities
 
 #### Tracks and Metadata
+
 - **Track**: Central entity representing a music track across all platforms
 - **TrackPlatformInfo**: Platform-specific metadata for tracks (Spotify, Rekordbox, Discogs)
 - **TrackAttribute**: Dynamic attributes for tracks (energy, danceability, etc.)
@@ -28,17 +32,20 @@ Selecta uses SQLite as its database engine with SQLAlchemy as the ORM. The datab
 - **Genre/Tag**: Categorization entities that can be attached to tracks
 
 #### Playlists and Organization
+
 - **Playlist**: Represents a collection of tracks or nested folders
 - **PlaylistTrack**: Ordered association between playlists and tracks
 - **PlaylistPlatformInfo**: Platform-specific metadata for playlists
 
 #### Other Entities
+
 - **Image**: Storage for artwork in various sizes
 - **VinylRecord**: Information specific to vinyl records (Discogs integration)
 - **UserSettings**: Application settings and preferences
 - **PlatformCredentials**: Securely stored authentication for external platforms
 
 ## File Structure
+
 - `database.py`: Core database setup and connection handling
   - Connection management, session handling, SQLite optimizations
   - Thread-safe engine and session factories
@@ -57,6 +64,7 @@ Selecta uses SQLite as its database engine with SQLAlchemy as the ORM. The datab
   - Version-controlled database schema changes
 
 ## Repository Pattern
+
 The data module implements the Repository pattern to provide a clean, abstracted interface for data access:
 
 1. **BaseRepository**: Generic base class with common CRUD operations
@@ -65,6 +73,7 @@ The data module implements the Repository pattern to provide a clean, abstracted
 4. **Type Safety**: Strong typing for both inputs and outputs
 
 ### Repository Features
+
 - **Eager Loading**: Configurable relationship loading for optimized queries
 - **Search Capabilities**: Full-text search and filtering
 - **Batch Operations**: Efficient handling of multiple entities
@@ -72,6 +81,7 @@ The data module implements the Repository pattern to provide a clean, abstracted
 - **Transaction Safety**: Context managers for transaction boundaries
 
 ## Data Model Relationships
+
 The database schema includes complex relationships that model music library organization:
 
 - **One-to-Many**: Tracks belong to Albums, Images belong to Tracks
@@ -80,6 +90,7 @@ The database schema includes complex relationships that model music library orga
 - **Cross-Platform Links**: TrackPlatformInfo connects local tracks to platform-specific entities
 
 ## SQLAlchemy Usage
+
 Selecta uses modern SQLAlchemy 2.0-style type hints and patterns:
 
 - **Mapped Columns**: `Mapped[Type]` annotations for type safety
@@ -88,6 +99,7 @@ Selecta uses modern SQLAlchemy 2.0-style type hints and patterns:
 - **Session Management**: Context managers for transaction safety
 
 ## Migrations
+
 Database schema evolution is managed through Alembic:
 
 - **Version Control**: Sequentially numbered migration scripts
@@ -96,6 +108,7 @@ Database schema evolution is managed through Alembic:
 - **Data Preservation**: Migration logic to ensure data continuity
 
 ## Dependencies
+
 - **Internal**:
   - core.utils for path handling and type helpers
   - core.utils.type_helpers for type conversion and safety
@@ -107,21 +120,26 @@ Database schema evolution is managed through Alembic:
 ## Common Tasks
 
 ### Adding a New Model
+
 1. Define the model class in `models/db.py`
 2. Add appropriate relationships to existing models
 3. Create a migration script:
+
    ```bash
    alembic revision -m "add_new_model"
    ```
+
 4. Implement the Repository class in `repositories/`
 
 ### Adding Fields to Existing Models
+
 1. Update the model class in `models/db.py`
 2. Create a migration script that alters the table
 3. Update any affected repository methods
 4. Update UI components that use the model
 
 ### Database Operations
+
 ```python
 # Creating a track
 track_repo = TrackRepository()
@@ -139,6 +157,7 @@ track_repo.link_to_platform(track_id, "spotify", "spotify_track_id", metadata)
 ```
 
 ### Transaction Management
+
 ```python
 # Using context manager for transaction safety
 from selecta.core.data.database import session_scope
@@ -151,6 +170,7 @@ with session_scope() as session:
 ```
 
 ## Implementation Notes
+
 - Uses SQLAlchemy 2.0 style with Mapped[] annotations
 - SQLite-specific optimizations for better performance
 - Follows repository pattern for data access
@@ -159,6 +179,7 @@ with session_scope() as session:
 - Uses eager loading for related entities to reduce queries
 
 ## Change History
+
 - Initial schema implementation
 - Added platform metadata fields with improved linking capabilities
 - Added Image model for better artwork management

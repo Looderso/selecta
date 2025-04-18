@@ -1,9 +1,11 @@
 # Platform Module Documentation
 
 ## Overview
+
 The platform module is the core integration layer that connects Selecta with external music services (Spotify, Rekordbox, Discogs, YouTube). It handles authentication, data synchronization, cross-platform track linking, and provides a unified interface for interacting with these disparate platforms. This module enables Selecta's key functionality of bridging different music ecosystems.
 
 ## Architecture
+
 The platform module follows a layered architecture built around platform abstraction:
 
 1. **Interface Layer**:
@@ -30,6 +32,7 @@ The platform module follows a layered architecture built around platform abstrac
 ## Key Components
 
 ### AbstractPlatform
+
 - **File**: `abstract_platform.py`
 - **Purpose**: Defines the common interface that all platform clients implement
 - **Features**:
@@ -57,6 +60,7 @@ class AbstractPlatform(Generic[P, T]):
 ```
 
 ### PlatformFactory
+
 - **File**: `platform_factory.py`
 - **Purpose**: Creates appropriate platform client instances
 - **Features**:
@@ -71,6 +75,7 @@ client = PlatformFactory.create("spotify", settings_repo)
 ```
 
 ### SyncManager
+
 - **File**: `sync_manager.py`
 - **Purpose**: Handles synchronization between local database and external platforms
 - **Features**:
@@ -81,6 +86,7 @@ client = PlatformFactory.create("spotify", settings_repo)
   - Change tracking
 
 ### LinkManager
+
 - **File**: `link_manager.py`
 - **Purpose**: Manages relationships between tracks across different platforms
 - **Features**:
@@ -93,6 +99,7 @@ client = PlatformFactory.create("spotify", settings_repo)
 ## Platform Implementations
 
 ### Spotify
+
 - **Directory**: `spotify/`
 - **Components**:
   - `client.py`: SpotifyClient implementation of AbstractPlatform with synchronization logic
@@ -105,6 +112,7 @@ client = PlatformFactory.create("spotify", settings_repo)
   - Album artwork integration
 
 ### Rekordbox
+
 - **Directory**: `rekordbox/`
 - **Components**:
   - `client.py`: RekordboxClient implementation of AbstractPlatform with synchronization logic
@@ -117,6 +125,7 @@ client = PlatformFactory.create("spotify", settings_repo)
   - Track organization
 
 ### Discogs
+
 - **Directory**: `discogs/`
 - **Components**:
   - `client.py`: DiscogsClient implementation of AbstractPlatform with synchronization and matching logic
@@ -131,6 +140,7 @@ client = PlatformFactory.create("spotify", settings_repo)
   - Vinyl record matching
 
 ### YouTube
+
 - **Directory**: `youtube/`
 - **Components**:
   - `client.py`: YouTubeClient implementation of AbstractPlatform
@@ -146,6 +156,7 @@ client = PlatformFactory.create("spotify", settings_repo)
 ## Usage Patterns
 
 ### Authentication Flow
+
 ```python
 # Get client instance
 spotify_client = PlatformFactory.create("spotify", settings_repo)
@@ -160,6 +171,7 @@ if not spotify_client.is_authenticated():
 ```
 
 ### Platform Operations
+
 ```python
 # Get all playlists
 playlists = spotify_client.get_all_playlists()
@@ -175,6 +187,7 @@ new_playlist = spotify_client.create_playlist("My Playlist", "Description")
 ```
 
 ### Synchronization
+
 ```python
 # Create sync manager
 sync_manager = PlatformSyncManager()
@@ -196,6 +209,7 @@ added, removed = sync_manager.sync_playlist(local_playlist_id=123)
 ```
 
 ### Track Linking
+
 ```python
 # Link tracks across platforms
 link_manager = LinkManager()
@@ -216,6 +230,7 @@ matches = link_manager.find_possible_matches(
 ```
 
 ## Dependencies
+
 - **Internal**:
   - `core.data`: Models and repositories for database operations
   - `core.utils`: Type helpers, caching, and other utilities
@@ -226,6 +241,7 @@ matches = link_manager.find_possible_matches(
   - `google-auth-oauthlib`: YouTube authentication
 
 ## Extension Points
+
 The platform module is designed for extensibility:
 
 1. **New Platforms**: Add a new directory with client, auth, models, and sync components
@@ -234,6 +250,7 @@ The platform module is designed for extensibility:
 4. **Custom Sync Logic**: Extend PlatformSyncManager for special synchronization needs
 
 ## Implementation Notes
+
 - **Generic Types**: AbstractPlatform uses generic type parameters for type safety
 - **Interface Consistency**: All platforms implement the same interface with consistent behavior
 - **Error Handling**: Platform-specific errors are translated into consistent application errors
@@ -243,6 +260,7 @@ The platform module is designed for extensibility:
 - **Pagination**: Large result sets are handled with pagination where appropriate
 
 ## Best Practices
+
 - Use PlatformFactory to create platform clients rather than instantiating directly
 - Check authentication status before performing operations
 - Handle platform-specific rate limits and API constraints
@@ -251,6 +269,7 @@ The platform module is designed for extensibility:
 - Implement proper error handling for platform API failures
 
 ## Change History
+
 - Initial implementation of platform abstraction with Spotify, Rekordbox and Discogs
 - Added YouTube integration with playlist support
 - Refactored linking system to improve cross-platform track matching

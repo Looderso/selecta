@@ -1,9 +1,11 @@
 # Spotify Platform Integration Documentation
 
 ## Overview
+
 The Spotify integration connects Selecta with the Spotify Web API, allowing users to import playlists, search for tracks, and synchronize their Spotify library with the local database. It implements the AbstractPlatform interface to provide a standardized way of interacting with Spotify within the application.
 
 ## Architecture
+
 The Spotify integration follows a layered architecture:
 
 1. **Authentication Layer**:
@@ -29,6 +31,7 @@ The Spotify integration follows a layered architecture:
 ## Components
 
 ### SpotifyAuthManager
+
 - **File**: `auth.py`
 - **Purpose**: Manages OAuth2 authentication with Spotify
 - **Features**:
@@ -39,6 +42,7 @@ The Spotify integration follows a layered architecture:
   - Validation of authentication status
 
 ### SpotifyClient
+
 - **File**: `client.py`
 - **Purpose**: Core client implementing AbstractPlatform for Spotify
 - **Features**:
@@ -50,6 +54,7 @@ The Spotify integration follows a layered architecture:
   - Synchronization logic for playlists and tracks
 
 ### SpotifyModels
+
 - **File**: `models.py`
 - **Purpose**: Data models for Spotify entities
 - **Key Models**:
@@ -61,7 +66,9 @@ The Spotify integration follows a layered architecture:
 ## API Scope and Capabilities
 
 ### Authentication Scopes
+
 The Spotify integration requires the following OAuth scopes:
+
 - `playlist-read-private`: Read access to user's private playlists
 - `playlist-read-collaborative`: Read access to collaborative playlists
 - `playlist-modify-public`: Write access to public playlists
@@ -70,6 +77,7 @@ The Spotify integration requires the following OAuth scopes:
 - `user-read-email`: Access to user's email for identification
 
 ### Supported Features
+
 1. **Playlist Management**:
    - List all user playlists (including private and collaborative)
    - Create new playlists
@@ -95,6 +103,7 @@ The Spotify integration requires the following OAuth scopes:
 ## Data Flow
 
 ### Importing a Spotify Playlist
+
 1. `SpotifyClient.import_playlist_to_local()` is called
 2. Client fetches playlist metadata and tracks from Spotify API
 3. Playlist details are converted to local model format
@@ -104,6 +113,7 @@ The Spotify integration requires the following OAuth scopes:
 7. Track and album artwork is fetched and stored
 
 ### Searching for Tracks
+
 1. `SpotifyClient.search_tracks()` is called with query string
 2. Client sends search request to Spotify API
 3. Results are converted to SpotifyTrack objects
@@ -113,27 +123,32 @@ The Spotify integration requires the following OAuth scopes:
 ## Implementation Details
 
 ### Connection Management
+
 - Uses spotipy as the underlying Spotify API client library
 - Implements proper error handling for API failures and rate limits
 - Handles token refresh automatically when needed
 - Uses connection pooling for efficient API usage
 
 ### Token Storage
+
 - Authentication tokens are stored securely in the database
 - Refresh tokens are used to obtain new access tokens when expired
 - Token encryption can be implemented for additional security
 
 ### Error Handling
+
 - Translation of Spotify API errors to application-level errors
 - Retry logic for transient failures
 - Graceful handling of authentication issues
 
 ### Optimization
+
 - Intelligent caching of API responses to reduce calls
 - Batch operations where possible (e.g., adding multiple tracks to a playlist)
 - Pagination handling for large datasets
 
 ## Dependencies
+
 - **Internal**:
   - `core.data.repositories`: For storing credentials and linked tracks
   - `core.utils.caching`: For API response caching
@@ -144,6 +159,7 @@ The Spotify integration requires the following OAuth scopes:
 ## Usage Examples
 
 ### Authentication
+
 ```python
 # Create authentication manager
 auth_manager = SpotifyAuthManager(settings_repo)
@@ -158,6 +174,7 @@ if client.is_authenticated():
 ```
 
 ### Playlist Operations
+
 ```python
 # Get all user playlists
 playlists = client.get_all_playlists()
@@ -179,6 +196,7 @@ client.add_tracks_to_playlist(
 ```
 
 ### Search and Track Information
+
 ```python
 # Search for tracks
 results = client.search_tracks("artist name song title", limit=20)
@@ -191,6 +209,7 @@ features = client.get_audio_features("track_id")
 ```
 
 ### Import/Export
+
 ```python
 # Import a playlist from Spotify to local database
 playlist, tracks = client.import_playlist_to_local("playlist_id")
@@ -205,6 +224,7 @@ spotify_id = client.export_tracks_to_playlist(
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Authentication failures**:
    - Check that client ID and secret are correct
    - Verify that required scopes are approved
@@ -221,6 +241,7 @@ spotify_id = client.export_tracks_to_playlist(
    - Manage playlist ownership permissions
 
 ## Best Practices
+
 - Always check authentication status before performing operations
 - Handle token expiration gracefully
 - Cache results when making repeated API calls
@@ -229,6 +250,7 @@ spotify_id = client.export_tracks_to_playlist(
 - Preserve Spotify IDs and URIs for future syncing
 
 ## Extending the Spotify Integration
+
 - Adding new API endpoints: Extend SpotifyClient with new methods
 - Supporting new metadata: Update SpotifyModels with new fields
 - Enhancing synchronization: Modify SpotifySync with additional logic

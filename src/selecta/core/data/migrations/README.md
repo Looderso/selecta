@@ -1,10 +1,13 @@
 # Database Migrations Documentation
 
 ## Overview
+
 This directory contains the database migration scripts for Selecta's schema evolution. Migrations are managed using Alembic, which provides a way to incrementally update the database schema while preserving existing data.
 
 ## Migration Architecture
+
 Selecta uses a simplified migration system where:
+
 1. The initial schema is created by SQLAlchemy's `create_all()`
 2. Subsequent changes are managed through Alembic migration scripts
 3. Each migration has unique revision identifiers for version tracking
@@ -12,10 +15,12 @@ Selecta uses a simplified migration system where:
 ## Migration Files
 
 ### Core Files
+
 - `env.py`: Alembic environment configuration, connects migrations to SQLAlchemy models
 - `__init__.py`: Package initialization
 
 ### Version Scripts
+
 - `001_initial_schema.py`: Initial database schema creation (baseline)
 - `002_platform_metadata_update.py`: Updates to platform metadata structure
 - `003_add_image_model.py`: Addition of the Image model for artwork management
@@ -24,6 +29,7 @@ Selecta uses a simplified migration system where:
 ## Migration Process
 
 ### Creating Migrations
+
 Migrations are created using the Alembic command-line tool:
 
 ```bash
@@ -35,6 +41,7 @@ alembic revision --autogenerate -m "description_of_changes"
 ```
 
 ### Running Migrations
+
 Migrations are typically run automatically during application startup, but can be manually executed:
 
 ```bash
@@ -54,13 +61,16 @@ alembic downgrade 002
 ## Migration Guidelines
 
 ### Writing Migrations
+
 1. **Backwards Compatibility**: Always include both `upgrade()` and `downgrade()` functions
 2. **Data Preservation**: Handle existing data appropriately when changing schema
 3. **Atomic Changes**: Each migration should represent a single, coherent change
 4. **Testing**: Test migrations on sample data before deploying
 
 ### Migration Operations
+
 Common operations in migrations:
+
 - Creating/dropping tables: `op.create_table()`, `op.drop_table()`
 - Adding/removing columns: `op.add_column()`, `op.drop_column()`
 - Creating/dropping indexes: `op.create_index()`, `op.drop_index()`
@@ -68,12 +78,14 @@ Common operations in migrations:
 - Data migration: Use SQLAlchemy within transaction context
 
 ## Implementation Notes
+
 - The initial schema (001) is handled by SQLAlchemy's `create_all()` method
 - Later migrations use Alembic operations to modify the schema
 - SQLite has limited support for certain schema changes (like column drops)
 - Some complex migrations may require table recreation for SQLite compatibility
 
 ## Best Practices
+
 - Always backup your database before running migrations
 - Test migrations on development environments before production
 - Include data migration code when schema changes affect existing data

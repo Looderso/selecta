@@ -1,9 +1,11 @@
 # Discogs Platform Integration Documentation
 
 ## Overview
+
 The Discogs integration connects Selecta with the Discogs music database and marketplace, focusing on vinyl record collections and wantlists. Unlike other music platform integrations, Discogs is primarily oriented towards physical media catalogs rather than digital streaming services, providing unique metadata about physical releases, pressings, and vinyl-specific information.
 
 ## Architecture
+
 The Discogs integration follows a layered architecture:
 
 1. **API Client Layer**:
@@ -34,6 +36,7 @@ The Discogs integration follows a layered architecture:
 ## Components
 
 ### DiscogsApiClient
+
 - **File**: `api_client.py`
 - **Purpose**: Low-level client for Discogs API
 - **Features**:
@@ -43,6 +46,7 @@ The Discogs integration follows a layered architecture:
   - Pagination for large result sets
 
 ### DiscogsAuth
+
 - **File**: `auth.py`
 - **Purpose**: Manages OAuth1 authentication with Discogs
 - **Features**:
@@ -52,6 +56,7 @@ The Discogs integration follows a layered architecture:
   - Credential management
 
 ### DiscogsClient
+
 - **File**: `client.py`
 - **Purpose**: Core client implementing AbstractPlatform for Discogs
 - **Features**:
@@ -66,6 +71,7 @@ The Discogs integration follows a layered architecture:
   - Artwork and label information handling
 
 ### DiscogsModels
+
 - **File**: `models.py`
 - **Purpose**: Data models for Discogs entities
 - **Key Models**:
@@ -78,19 +84,25 @@ The Discogs integration follows a layered architecture:
 ## Discogs Data Model Adaptation
 
 ### Collection as Playlist
+
 The Discogs user collection is represented as a virtual playlist in Selecta:
+
 - Collection items become tracks in the playlist
 - Release metadata is preserved with vinyl-specific details
 - Album artwork is imported from release images
 
 ### Wantlist as Playlist
+
 The Discogs wantlist is represented as another virtual playlist:
+
 - Wanted items appear as tracks with special status
 - Used for tracking desired vinyl releases
 - Can be used to create shopping lists
 
 ### Release Structure
+
 Discogs organizes music differently than digital platforms:
+
 - **Release**: Physical product (specific pressing of an album)
 - **Master**: Abstract release (the album itself, regardless of pressing)
 - **Artist**: Creator of the music
@@ -100,7 +112,9 @@ Discogs organizes music differently than digital platforms:
 ## API Integration
 
 ### Discogs API Endpoints
+
 The integration uses several Discogs API endpoints:
+
 - `/users/{username}/collection`: User's collection items
 - `/users/{username}/wants`: User's wantlist items
 - `/database/search`: Search for releases, masters, artists
@@ -109,14 +123,18 @@ The integration uses several Discogs API endpoints:
 - `/artists/{id}`: Get artist information
 
 ### Authentication Scopes
+
 The OAuth1 authentication requires these permissions:
+
 - `collection_read`: Access to user's collection
 - `collection_write`: Ability to modify collection (add/remove items)
 - `wantlist_read`: Access to user's wantlist
 - `wantlist_write`: Ability to modify wantlist
 
 ### Rate Limiting
+
 Discogs API has strict rate limits:
+
 - 60 requests per minute for authenticated requests
 - 25 requests per minute for unauthenticated requests
 - The integration implements automatic throttling and retry
@@ -124,6 +142,7 @@ Discogs API has strict rate limits:
 ## Data Flow
 
 ### Importing Collection as Playlist
+
 1. `DiscogsClient.get_all_playlists()` includes collection as virtual playlist
 2. When user imports this playlist, `import_playlist_to_local()` is called
 3. Client fetches all collection items from Discogs API
@@ -132,6 +151,7 @@ Discogs API has strict rate limits:
 6. Collection items are stored in local database as a playlist
 
 ### Searching for Vinyl
+
 1. `DiscogsClient.search_tracks()` is called with query string
 2. Client sends search request to Discogs API
 3. Results are fetched with pagination if needed
@@ -139,6 +159,7 @@ Discogs API has strict rate limits:
 5. Results are returned for display or matching
 
 ### Matching Digital to Vinyl
+
 1. `VinylMatcher.find_matches()` is called with digital track info
 2. Matcher generates search queries based on track metadata
 3. Search results are scored based on multiple criteria
@@ -148,18 +169,21 @@ Discogs API has strict rate limits:
 ## Implementation Details
 
 ### Throttling and Rate Limiting
+
 - Built-in rate limiter respects Discogs API constraints
 - Implements adaptive throttling based on response headers
 - Exponential backoff for retry on 429 errors
 - Batching of requests to optimize within limits
 
 ### OAuth1 Authentication
+
 - Uses OAuth1 protocol with request signing
 - Handles token exchange and verification
 - Stores credentials securely in database
 - Implements proper token refresh and validation
 
 ### Vinyl-Specific Metadata
+
 - Catalog numbers and release codes
 - Pressing information and release country
 - Matrix/runout etchings
@@ -167,6 +191,7 @@ Discogs API has strict rate limits:
 - Release date and pressing variants
 
 ## Dependencies
+
 - **Internal**:
   - `core.data.repositories`: For storing vinyl metadata
   - `core.utils.cache_manager`: For API response caching
@@ -178,6 +203,7 @@ Discogs API has strict rate limits:
 ## Usage Examples
 
 ### Authentication
+
 ```python
 # Create auth manager
 auth_manager = DiscogsAuth(settings_repo)
@@ -192,6 +218,7 @@ if client.is_authenticated():
 ```
 
 ### Collection and Wantlist
+
 ```python
 # Get user's collection and wantlist (as playlist representations)
 playlists = client.get_all_playlists()
@@ -208,6 +235,7 @@ client.add_to_wantlist(release_id=7654321)
 ```
 
 ### Search Operations
+
 ```python
 # Search for releases
 results = client.search_tracks("artist name album title", limit=20)
@@ -224,6 +252,7 @@ vinyl_results = client.search_tracks(
 ```
 
 ### Vinyl Matching
+
 ```python
 # Create vinyl matcher
 matcher = VinylMatcher(discogs_client)
@@ -243,6 +272,7 @@ catalog_matches = matcher.find_by_catalog_number("ABC-123-45")
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Authentication failures**:
    - OAuth1 token expiration or invalidation
    - Insufficient permissions requested during auth flow
@@ -259,6 +289,7 @@ catalog_matches = matcher.find_by_catalog_number("ABC-123-45")
    - Inconsistent naming conventions between platforms
 
 ## Best Practices
+
 - Always check authentication before performing operations
 - Respect Discogs API rate limits to avoid throttling
 - Cache search results and release metadata when possible
@@ -267,6 +298,7 @@ catalog_matches = matcher.find_by_catalog_number("ABC-123-45")
 - Preserve vinyl-specific metadata during synchronization
 
 ## Extending the Discogs Integration
+
 - Adding marketplace integration: Price tracking and purchase history
 - Improving matching algorithms: More sophisticated fuzzy matching
 - Supporting community features: Reviews, contributions, submissions

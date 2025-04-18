@@ -1,10 +1,13 @@
 # Database Models Documentation
 
 ## Overview
+
 This directory contains SQLAlchemy model definitions that represent the core data entities in Selecta. These models map to database tables and define the relationships between different entities, forming the foundation of the application's data structure.
 
 ## Model Architecture
+
 Selecta models follow SQLAlchemy 2.0's modern style with:
+
 - Type annotations using `Mapped[Type]` for better type safety
 - Relationship definitions with full type hinting
 - Clear separation of model attributes and relationships
@@ -13,6 +16,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
 ## Core Models
 
 ### Track-Related Models
+
 - **Track**: Central entity representing a music track
   - Properties: title, artist, duration, year, bpm, quality rating
   - Relationships: album, platform_info, playlists, genres, tags, images
@@ -29,6 +33,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
   - Tracks source of attributes for provenance
 
 ### Organizational Models
+
 - **Playlist**: Collection of tracks or other playlists (folders)
   - Supports hierarchical structure through parent/child relationships
   - Can represent both local playlists and imported platform playlists
@@ -43,6 +48,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
   - Stores album metadata (artwork, year, etc.)
 
 ### Categorization Models
+
 - **Genre**: Music genres for tracks
   - Many-to-many relationship with tracks
   - Tracks source of genre information
@@ -52,6 +58,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
   - Flexible tagging system for organization
 
 ### Media and Metadata Models
+
 - **Image**: Artwork for tracks and albums
   - Stores images in multiple sizes (thumbnail, small, medium, large)
   - Links to tracks or albums
@@ -62,6 +69,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
   - Links to tracks for unified library integration
 
 ### Configuration Models
+
 - **UserSettings**: Application settings and preferences
   - Key-value store for user configuration
   - Typed access to settings
@@ -71,6 +79,7 @@ Selecta models follow SQLAlchemy 2.0's modern style with:
   - Platform-specific authentication data
 
 ## Relationship Types
+
 The models use several types of SQLAlchemy relationships:
 
 1. **One-to-Many**:
@@ -89,6 +98,7 @@ The models use several types of SQLAlchemy relationships:
    - Playlist to child Playlists (for folders)
 
 ## Implementation Notes
+
 - The `db.py` file contains all model definitions for easier imports
 - SQLAlchemy relationship definitions include cascade behaviors
 - Models use modern class attributes for fields and relationships
@@ -99,6 +109,7 @@ The models use several types of SQLAlchemy relationships:
 ## Usage Examples
 
 ### Creating and Relating Models
+
 ```python
 # Create an album
 album = Album(name="Album Title", artist="Artist Name", year=2023)
@@ -129,6 +140,7 @@ session.add(platform_info)
 ```
 
 ### Working with Relationships
+
 ```python
 # Get all tracks for an album
 tracks = album.tracks
@@ -144,6 +156,7 @@ electronic_tracks = genre.tracks
 ```
 
 ## Best Practices
+
 - Access models through repositories rather than directly
 - Use SQLAlchemy's relationship loading strategies appropriately
 - Define clear relationship cascades for proper deletion behavior

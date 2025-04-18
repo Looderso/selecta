@@ -1,10 +1,13 @@
 # Repositories Documentation
 
 ## Overview
+
 This directory contains repository classes that provide a clean, abstracted interface for database operations in Selecta. Each repository encapsulates the data access logic for a specific domain entity, following the Repository pattern.
 
 ## Repository Pattern
+
 The Repository pattern provides several benefits in Selecta:
+
 1. **Abstraction**: Shields application code from database implementation details
 2. **Centralized Data Logic**: Keeps query and transaction logic in one place
 3. **Testability**: Makes data access code easier to mock and test
@@ -13,6 +16,7 @@ The Repository pattern provides several benefits in Selecta:
 ## Core Repositories
 
 ### TrackRepository
+
 - **File**: `track_repository.py`
 - **Purpose**: Manages track data and relationships
 - **Key Features**:
@@ -23,6 +27,7 @@ The Repository pattern provides several benefits in Selecta:
   - Genre and tag association
 
 ### PlaylistRepository
+
 - **File**: `playlist_repository.py`
 - **Purpose**: Manages playlists and track collections
 - **Key Features**:
@@ -33,6 +38,7 @@ The Repository pattern provides several benefits in Selecta:
   - Export/import functionality
 
 ### SettingsRepository
+
 - **File**: `settings_repository.py`
 - **Purpose**: Manages application settings and platform credentials
 - **Key Features**:
@@ -42,6 +48,7 @@ The Repository pattern provides several benefits in Selecta:
   - Configuration persistence
 
 ### ImageRepository
+
 - **File**: `image_repository.py`
 - **Purpose**: Manages artwork for tracks and albums
 - **Key Features**:
@@ -51,6 +58,7 @@ The Repository pattern provides several benefits in Selecta:
   - Platform image synchronization
 
 ### VinylRepository
+
 - **File**: `vinyl_repository.py`
 - **Purpose**: Manages vinyl record metadata (Discogs integration)
 - **Key Features**:
@@ -61,7 +69,9 @@ The Repository pattern provides several benefits in Selecta:
 ## Common Repository Patterns
 
 ### CRUD Operations
+
 All repositories implement standard Create, Read, Update, Delete operations:
+
 ```python
 # Create
 entity = repo.create(entity_data)
@@ -78,7 +88,9 @@ repo.delete(entity_id)
 ```
 
 ### Search and Filter
+
 Repositories provide methods for searching and filtering entities:
+
 ```python
 # Basic search
 results, count = repo.search(query, limit=20, offset=0)
@@ -92,7 +104,9 @@ results = repo.filter_by(
 ```
 
 ### Relationship Management
+
 Repositories handle relationship operations:
+
 ```python
 # Adding associations
 repo.add_genre(track_id, genre_id)
@@ -103,7 +117,9 @@ repo.link_to_platform(track_id, platform, platform_id, platform_data)
 ```
 
 ### Batch Operations
+
 Repositories support efficient batch operations:
+
 ```python
 # Bulk creation
 repo.create_many(entity_data_list)
@@ -118,26 +134,34 @@ repo.delete_many(delete_criteria)
 ## Implementation Details
 
 ### Base Repository
+
 Most repositories inherit from `BaseRepository[T]` which provides:
+
 - Generic type parameters for model classes
 - Common CRUD operations
 - Session management and transaction boundaries
 - Error handling and logging
 
 ### Session Management
+
 Repositories implement two session management approaches:
+
 1. **Internal session**: Repository creates and manages its own session
 2. **External session**: Repository accepts a session from the caller
 
 ### Query Construction
+
 Repositories use SQLAlchemy's query builder patterns:
+
 - Composable filter conditions
 - Eager loading configuration
 - Ordering and pagination
 - Result transformation
 
 ### Transaction Safety
+
 Repositories handle transaction boundaries:
+
 - Automatic commits on successful operations
 - Rollback on exceptions
 - Context managers for multi-operation transactions
@@ -145,6 +169,7 @@ Repositories handle transaction boundaries:
 ## Usage Examples
 
 ### Basic Repository Usage
+
 ```python
 # Creating a track
 track_repo = TrackRepository()
@@ -165,6 +190,7 @@ tracks, count = track_repo.search("electronic", limit=20, offset=0)
 ```
 
 ### Advanced Usage
+
 ```python
 # Using transaction context
 from selecta.core.data.database import session_scope
@@ -182,6 +208,7 @@ with session_scope() as session:
 ```
 
 ## Best Practices
+
 - Use repositories instead of direct SQLAlchemy queries
 - Prefer batch operations for better performance
 - Use appropriate eager loading to prevent N+1 query problems

@@ -5,6 +5,7 @@ A unified music library manager for Rekordbox, Spotify, and Discogs that helps y
 ## Overview
 
 Selecta synchronizes your music libraries and playlists between:
+
 - **Rekordbox**: Your local DJ library
 - **Spotify**: Your streaming playlists
 - **Discogs**: Your vinyl collection
@@ -46,6 +47,7 @@ The database is stored in your user application data directory by default.
 For detailed documentation on database management, schema issues, and troubleshooting, see [DATABASE.md](DATABASE.md).
 
 Key features:
+
 - Cross-platform playlist management and synchronization
 - Intelligent track matching between different platforms
 - Vinyl collection tracking with Discogs integration

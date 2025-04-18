@@ -1,9 +1,11 @@
 # YouTube Platform Integration Documentation
 
 ## Overview
+
 The YouTube integration connects Selecta with YouTube's API, allowing users to access music videos, create playlists, and synchronize YouTube content with the local music library. This integration enables visualization of music through videos and provides an alternative platform for music discovery and organization.
 
 ## Architecture
+
 The YouTube integration follows a layered architecture:
 
 1. **Authentication Layer**:
@@ -29,6 +31,7 @@ The YouTube integration follows a layered architecture:
 ## Components
 
 ### YouTubeAuth
+
 - **File**: `auth.py`
 - **Purpose**: Manages OAuth2 authentication with Google API
 - **Features**:
@@ -38,6 +41,7 @@ The YouTube integration follows a layered architecture:
   - Credential validation and verification
 
 ### YouTubeClient
+
 - **File**: `client.py`
 - **Purpose**: Core client implementing AbstractPlatform for YouTube
 - **Features**:
@@ -47,6 +51,7 @@ The YouTube integration follows a layered architecture:
   - Adaptation of YouTube concepts to Selecta's model
 
 ### YouTubeModels
+
 - **File**: `models.py`
 - **Purpose**: Data models for YouTube entities
 - **Key Models**:
@@ -56,6 +61,7 @@ The YouTube integration follows a layered architecture:
   - Conversion methods to/from local database models
 
 ### YouTubeSync
+
 - **File**: `sync.py`
 - **Purpose**: Specialized synchronization logic for YouTube
 - **Features**:
@@ -67,14 +73,18 @@ The YouTube integration follows a layered architecture:
 ## YouTube Data Model Adaptation
 
 ### Videos as Tracks
+
 YouTube videos are represented as tracks in Selecta:
+
 - Video metadata is mapped to track attributes
 - Thumbnails are used as track artwork
 - Duration and other properties are preserved
 - Video IDs and URLs are stored for direct access
 
 ### YouTube Playlists
+
 YouTube playlists are represented natively:
+
 - Playlist metadata (title, description) is preserved
 - Video ordering within playlists is maintained
 - Public/private/unlisted status is respected
@@ -83,7 +93,9 @@ YouTube playlists are represented natively:
 ## API Integration
 
 ### YouTube API Endpoints
+
 The integration primarily uses YouTube Data API v3:
+
 - `/search`: Find videos, channels, playlists
 - `/playlists`: Manage playlists
 - `/playlistItems`: Manage videos within playlists
@@ -91,13 +103,17 @@ The integration primarily uses YouTube Data API v3:
 - `/channels`: Get channel information
 
 ### Authentication Scopes
+
 The OAuth2 authentication requires these scopes:
+
 - `youtube.readonly`: Read access to YouTube data
 - `youtube`: Full access to manage YouTube account
 - `youtube.force-ssl`: Secure access to YouTube API
 
 ### Quota Management
+
 YouTube API has strict quota limitations:
+
 - Daily quota allocation is limited (typically 10,000 units)
 - Different operations consume different quota amounts
 - The integration implements quota-aware operations and caching
@@ -105,6 +121,7 @@ YouTube API has strict quota limitations:
 ## Data Flow
 
 ### Importing a YouTube Playlist
+
 1. `YouTubeClient.import_playlist_to_local()` is called
 2. Client fetches playlist metadata from YouTube API
 3. Client fetches all videos in the playlist (with pagination)
@@ -113,6 +130,7 @@ YouTube API has strict quota limitations:
 6. Playlist and videos are saved to local database with YouTube IDs
 
 ### Searching for Music Videos
+
 1. `YouTubeClient.search_tracks()` is called with query string
 2. Client sends search request to YouTube API with music category filter
 3. Results are fetched with pagination if needed
@@ -120,6 +138,7 @@ YouTube API has strict quota limitations:
 5. Results are returned for display or further processing
 
 ### Creating YouTube Playlist
+
 1. `YouTubeClient.create_playlist()` is called with playlist details
 2. Client creates new playlist via YouTube API
 3. If specified, videos are added to the playlist
@@ -129,24 +148,28 @@ YouTube API has strict quota limitations:
 ## Implementation Details
 
 ### Metadata Extraction
+
 - Intelligent parsing of video titles to extract artist and track info
 - Utilization of video description for additional metadata
 - Category and tag analysis for genre identification
 - Duration and publication date extraction
 
 ### Quota Optimization
+
 - Strategic caching of responses to reduce API calls
 - Batch operations for playlist management
 - Partial resource requests (fields parameter) to minimize quota usage
 - Pagination handling with appropriate page sizes
 
 ### Content Restrictions
+
 - Handling region-restricted videos
 - Age restriction detection and management
 - Copyright claim and muted content identification
 - Alternative video suggestion for restricted content
 
 ## Dependencies
+
 - **Internal**:
   - `core.data.repositories`: For storing YouTube metadata
   - `core.utils.cache_manager`: For API response caching
@@ -158,6 +181,7 @@ YouTube API has strict quota limitations:
 ## Usage Examples
 
 ### Authentication
+
 ```python
 # Create auth manager
 auth_manager = YouTubeAuth(settings_repo)
@@ -172,6 +196,7 @@ if client.is_authenticated():
 ```
 
 ### Playlist Operations
+
 ```python
 # Get all user playlists
 playlists = client.get_all_playlists()
@@ -194,6 +219,7 @@ client.add_tracks_to_playlist(
 ```
 
 ### Search Operations
+
 ```python
 # Search for music videos
 results = client.search_tracks("artist name song title", limit=20)
@@ -211,6 +237,7 @@ video = client.get_track_by_id(video_id)
 ```
 
 ### Import/Export
+
 ```python
 # Import a YouTube playlist to local database
 playlist, tracks = client.import_playlist_to_local(playlist_id)
@@ -226,6 +253,7 @@ youtube_id = client.export_tracks_to_playlist(
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Authentication failures**:
    - OAuth2 token expiration or revocation
    - Insufficient permissions/scopes requested
@@ -247,6 +275,7 @@ youtube_id = client.export_tracks_to_playlist(
    - User-generated content with non-standard formatting
 
 ## Best Practices
+
 - Always check authentication before performing operations
 - Monitor quota usage and implement adaptive throttling
 - Cache search results and video metadata when possible
@@ -256,6 +285,7 @@ youtube_id = client.export_tracks_to_playlist(
 - Use music-specific search parameters for better results
 
 ## Extending the YouTube Integration
+
 - Adding channel subscriptions: Follow artists and labels
 - Implementing live stream support: For music performances
 - Enhancing metadata extraction: More sophisticated title parsing

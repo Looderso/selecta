@@ -1,9 +1,11 @@
 # Rekordbox Platform Integration Documentation
 
 ## Overview
+
 The Rekordbox integration connects Selecta with Pioneer DJ's Rekordbox library, allowing users to import playlists, access track metadata, and synchronize their DJ collection with the local database. Unlike other integrations that connect to web APIs, the Rekordbox integration directly accesses the local Rekordbox database.
 
 ## Architecture
+
 The Rekordbox integration follows a layered approach:
 
 1. **Database Access Layer**:
@@ -29,6 +31,7 @@ The Rekordbox integration follows a layered approach:
 ## Components
 
 ### RekordboxClient
+
 - **File**: `client.py`
 - **Purpose**: Core client implementing AbstractPlatform for Rekordbox
 - **Features**:
@@ -41,6 +44,7 @@ The Rekordbox integration follows a layered approach:
   - DJ-specific metadata preservation
 
 ### RekordboxAuth
+
 - **File**: `auth.py`
 - **Purpose**: Handles authentication via database path
 - **Features**:
@@ -49,6 +53,7 @@ The Rekordbox integration follows a layered approach:
   - Path management for different OS environments
 
 ### RekordboxModels
+
 - **File**: `models.py`
 - **Purpose**: Data models for Rekordbox entities
 - **Key Models**:
@@ -60,7 +65,9 @@ The Rekordbox integration follows a layered approach:
 ## Database Integration
 
 ### Rekordbox Database Structure
+
 The integration works with Rekordbox's SQLite database, focusing on these key tables:
+
 - `djmdContent`: Main track information
 - `djmdPlaylist`: Playlist definitions
 - `djmdPlaylistContent`: Playlist-track associations
@@ -69,11 +76,14 @@ The integration works with Rekordbox's SQLite database, focusing on these key ta
 - `djmdCue`: Cue points and loop information
 
 ### Schema Compatibility
+
 The integration handles different Rekordbox versions:
+
 - Rekordbox 5.x: Legacy database schema
 - Rekordbox 6.x: Current database schema with expanded metadata
 
 ### Access Patterns
+
 - Read-only access to preserve Rekordbox data integrity
 - Periodic reconnection to handle database locking
 - Direct SQL queries optimized for performance
@@ -82,7 +92,9 @@ The integration handles different Rekordbox versions:
 ## DJ-Specific Metadata
 
 ### Track Metadata
+
 The integration preserves DJ-specific metadata in local tracks:
+
 - Beat grid information (BPM, grid offset)
 - Musical key detection
 - Energy level and track color
@@ -90,6 +102,7 @@ The integration preserves DJ-specific metadata in local tracks:
 - Play count and date last played
 
 ### Performance Data
+
 - Hot cue points and their names/colors
 - Memory points for track navigation
 - Loop points and saved loops
@@ -98,6 +111,7 @@ The integration preserves DJ-specific metadata in local tracks:
 ## Data Flow
 
 ### Importing a Rekordbox Playlist
+
 1. `RekordboxClient.import_playlist_to_local()` is called
 2. Client queries Rekordbox database for playlist metadata and tracks
 3. Playlist details are converted to local model format
@@ -106,6 +120,7 @@ The integration preserves DJ-specific metadata in local tracks:
 6. All data is passed to PlatformSyncManager for database storage
 
 ### Rekordbox Database Discovery
+
 1. `RekordboxAuth.find_rekordbox_database()` searches standard locations
 2. Validates database files by checking schema
 3. Returns valid database path for client connection
@@ -113,23 +128,27 @@ The integration preserves DJ-specific metadata in local tracks:
 ## Implementation Details
 
 ### Connection Management
+
 - Uses SQLAlchemy for type-safe database access
 - Implements connection pooling for efficient database usage
 - Handles database locking scenarios (when Rekordbox is running)
 - Automatically reconnects if connection is lost
 
 ### File Path Resolution
+
 - Maps Rekordbox file paths to local file system
 - Handles different path formats between platforms
 - Verifies file existence and accessibility
 - Enables proper file linking for playback
 
 ### Schema Version Detection
+
 - Detects Rekordbox database version from schema
 - Adapts queries to match specific schema version
 - Provides consistent data model regardless of version
 
 ## Dependencies
+
 - **Internal**:
   - `core.data.repositories`: For storing track and playlist data
   - `core.utils.path_helper`: For file path resolution
@@ -140,6 +159,7 @@ The integration preserves DJ-specific metadata in local tracks:
 ## Usage Examples
 
 ### Authentication
+
 ```python
 # Initialize auth manager
 auth_manager = RekordboxAuth()
@@ -155,6 +175,7 @@ client = RekordboxClient(auth_manager)
 ```
 
 ### Playlist Operations
+
 ```python
 # Get all playlists
 playlists = client.get_all_playlists()
@@ -167,6 +188,7 @@ playlist, tracks = client.import_playlist_to_local("playlist_id")
 ```
 
 ### Track Operations
+
 ```python
 # Get track details
 track = client.get_track("track_id")
@@ -182,6 +204,7 @@ results = client.search_tracks("track title", limit=20)
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Database access errors**:
    - Check if Rekordbox is currently running (may lock database)
    - Verify database path is correct
@@ -197,6 +220,7 @@ results = client.search_tracks("track title", limit=20)
    - Check for schema version detection and query adaptation
 
 ## Best Practices
+
 - Always check authentication before performing operations
 - Handle database locking scenarios gracefully (Rekordbox running)
 - Perform read-only operations to preserve Rekordbox database integrity
@@ -204,6 +228,7 @@ results = client.search_tracks("track title", limit=20)
 - Use the sync manager for complex operations instead of direct client usage
 
 ## Extending the Rekordbox Integration
+
 - Adding support for new Rekordbox versions: Update schema detection
 - Supporting additional metadata: Extend models and queries
 - Improving performance: Optimize database queries and caching

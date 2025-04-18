@@ -1,15 +1,18 @@
 # UI Module Documentation
 
 ## Overview
+
 The UI module contains all user interface components for Selecta. It's built using PyQt6 and follows a component-based architecture. The UI provides views for browsing, searching, playing, and managing music across multiple platforms.
 
 ## Key Components
+
 - **SelectaMainWindow**: Main application window class that sets up the overall UI structure
 - **Dialogs**: Specialized dialog windows for specific tasks (creating playlists, importing data)
 - **Components**: Reusable UI components that make up the interface (see components/README.md)
 - **Themes**: Theme management and styling for consistent appearance
 
 ## File Structure
+
 - `app.py`: Main window implementation and application entry point
 - `components/`: UI component modules (see components/README.md)
   - Core layout components (navigation, content areas)
@@ -27,7 +30,9 @@ The UI module contains all user interface components for Selecta. It's built usi
 - `widgets/`: Base widget implementations and utilities
 
 ## UI Layout Structure
+
 The main window is organized in the following layout:
+
 ```
 ┌───────────────────────────────────────────────────────┐
 │                     NavigationBar                     │
@@ -47,10 +52,12 @@ The main window is organized in the following layout:
 ```
 
 ## Dependencies
+
 - Internal: core.platform for platform integration, core.data for database access
 - External: PyQt6 for UI framework, loguru for logging
 
 ## Common Tasks
+
 - **Adding a new view**: Create a new component and update dynamic_content.py
 - **Improving platform integration UI**: Update platform-specific components
 - **Modifying layout**: Update app.py and the appropriate container components
@@ -58,6 +65,7 @@ The main window is organized in the following layout:
 - **Theme changes**: Update themes/style.py and themes/theme_manager.py
 
 ## Implementation Notes
+
 - The UI is built around a central QSplitter layout with adjustable panels
 - Platform switching happens through a common interface in the navigation bar
 - Dynamic content is loaded in the right panel based on context
@@ -65,6 +73,7 @@ The main window is organized in the following layout:
 - Authentication state is checked when switching platforms
 
 ## Change History
+
 - Initial UI implementation with basic layout
 - Added platform-specific components and views
 - Added audio player implementation
