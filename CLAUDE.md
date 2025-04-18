@@ -186,3 +186,106 @@ Selecta follows a consistent approach for platform integration:
 - Create TypeGuard functions for type narrowing with attribute checks
 
 For detailed typing guidelines, see TYPING_GUIDELINES.md
+
+## Documentation System and Token Optimization
+
+### Documentation Hierarchy
+Selecta implements a comprehensive documentation system to optimize token usage and speed up development:
+
+1. **Top-Level Documentation**
+   - **CLAUDE.md** (this file): Project overview and architectural guidance
+   - **CODE_INDEX.md**: Quick reference for locating features and files
+   - **SESSION_RULES.md**: Configuration for the current session
+
+2. **Module-Level Documentation**
+   - Each major module contains a **README.md** with module-specific details:
+     - Module purpose and architecture
+     - Component relationships
+     - File structure and responsibilities
+     - Usage patterns and examples
+
+3. **Sub-Module Documentation**
+   - Complex modules have additional READMEs in subdirectories
+   - Platform integrations each have their own detailed documentation
+   - UI component groups have specialized guides
+
+### Documentation Content
+Each README follows a consistent format:
+- **Overview**: High-level description of the module's purpose
+- **Architecture**: Component structure and relationships
+- **File Structure**: Detailed listing of files and their purposes
+- **Common Tasks**: How to accomplish typical development tasks
+- **Implementation Notes**: Key design patterns and approaches
+- **Dependencies**: Internal and external dependencies
+- **Usage Examples**: Code examples demonstrating common operations
+- **Change History**: Record of significant updates
+
+### Token Optimization Strategy
+
+#### Navigation Process
+Follow this sequence to minimize token usage:
+
+1. **Start with CODE_INDEX.md**
+   - Locate the general area you need to work with
+   - Find references to specific module documentation
+
+2. **Read Module README.md**
+   - Understand the module's architecture and patterns
+   - Identify specific files relevant to your task
+
+3. **Read Sub-Module README.md** (if applicable)
+   - Get detailed information about specific components
+   - Find exact file locations for your changes
+
+4. **Examine Specific Files**
+   - Only after understanding the context through documentation
+   - Focus on relevant sections rather than entire files
+
+5. **Make Targeted Changes**
+   - With full understanding of the architecture and file purposes
+   - Following established patterns from the documentation
+
+#### Searching Strategy
+- **Avoid broad searches** (e.g., "find all occurrences of X")
+- **Use targeted searches** guided by documentation
+- **Follow the documentation path** to locate functionality
+- **Use CODE_INDEX.md** as your primary navigation tool
+
+### Documentation Update Process
+Maintaining documentation is crucial for continued token optimization:
+
+1. **Update README.md** when making significant changes to a module
+2. **Update CODE_INDEX.md** when adding new files or changing structure
+3. **Add new README.md files** for new modules or significant components
+4. **Follow the template format** for consistency across documentation
+5. **Document changes** in the Change History section of affected READMEs
+
+### Documentation Usage Examples
+
+#### Finding and Modifying Platform Integration Code
+```
+1. Check CODE_INDEX.md → Platform Integrations → Spotify
+2. Read src/selecta/core/platform/spotify/README.md
+3. Identify the specific component (Auth, Client, Models, Sync)
+4. Navigate to the specific file
+5. Make changes following established patterns
+6. Update documentation if necessary
+```
+
+#### Adding a New UI Feature
+```
+1. Check CODE_INDEX.md → UI Components
+2. Read src/selecta/ui/README.md for overall UI architecture
+3. Locate relevant component area (Playlist, Player, etc.)
+4. Read component-specific README.md
+5. Create new component following established patterns
+6. Update documentation to include the new component
+```
+
+### Navigation Workflow Summary
+1. Start with top-level documentation
+2. Find relevant module in CODE_INDEX.md
+3. Read module README.md for architecture understanding
+4. Check sub-module README.md for component details
+5. Only then read and modify specific code files
+6. Update documentation to reflect your changes
