@@ -52,8 +52,19 @@ class PlatformIconDelegate(QStyledItemDelegate):
         # First, let the base class handle selection background etc.
         super().paint(painter, option, index)
 
-        # Get the platforms from the model
+        # Get the platforms from the model - ALWAYS get fresh data, never cache
+        # This is critical for showing updated platform icons
         platforms = index.data(Qt.ItemDataRole.UserRole)
+        
+        # Get track info for logging
+        track_info = ""
+        track_data = index.model().data(index.model().index(index.row(), 0), Qt.ItemDataRole.UserRole)
+        if isinstance(track_data, dict) and "track_id" in track_data:
+            track_info = f"track_id={track_data['track_id']}"
+            
+        from loguru import logger
+        logger.debug(f"Drawing platform icons for {track_info}: {platforms}")
+            
         if not platforms:
             return
 

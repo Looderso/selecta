@@ -1,6 +1,8 @@
 from datetime import datetime
+import time
 from typing import Any
 
+from loguru import logger
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
@@ -106,16 +108,75 @@ class LocalTrackItem(TrackItem):
         Returns:
             Dictionary with track data
         """
+        # Time-based cache with 100ms expiry to prevent excessive calls
+        current_time = time.time()
+        if hasattr(self, '_display_data_cache') and hasattr(self, '_display_cache_time'):
+            # Only use cache if it's been less than 100ms since the last call
+            if current_time - self._display_cache_time < 0.1:  # 100ms cache
+                # This prevents excessive calls during UI painting
+                return self._display_data_cache
+            
+            # If many calls happen in a short time, log it (but only occasionally)
+            if not hasattr(self, '_last_cache_log_time') or current_time - self._last_cache_log_time > 5:
+                call_count = getattr(self, '_display_data_call_count', 0) + 1
+                if call_count > 10:
+                    logger.warning(f"to_display_data called {call_count} times for track {self.track_id}")
+                    self._last_cache_log_time = current_time
+                    self._display_data_call_count = 0
+                else:
+                    self._display_data_call_count = call_count
+            
         # Get platform icons and prepare tooltip
         platforms = []
         platform_tooltips = []
 
         # Check which platforms this track is available on
-        has_spotify = any(info.get("platform") == "spotify" for info in self.platform_info)
-        has_rekordbox = any(info.get("platform") == "rekordbox" for info in self.platform_info)
-        has_discogs = any(info.get("platform") == "discogs" for info in self.platform_info)
-        has_youtube = any(info.get("platform") == "youtube" for info in self.platform_info)
+        # Handle both dict and TrackPlatformInfo objects
+        has_spotify = False
+        has_rekordbox = False
+        has_discogs = False
+        has_youtube = False
+        
+        # First check platform_info if available
+        if hasattr(self, 'platform_info') and self.platform_info:
+            for info in self.platform_info:
+                # Handle both dict and TrackPlatformInfo objects
+                if hasattr(info, 'platform'):
+                    # It's a TrackPlatformInfo object
+                    platform_name = info.platform
+                elif isinstance(info, dict) and 'platform' in info:
+                    # It's a dictionary
+                    platform_name = info.get('platform', '')
+                else:
+                    # Unknown format
+                    continue
+                    
+                if platform_name == 'spotify':
+                    has_spotify = True
+                elif platform_name == 'rekordbox':
+                    has_rekordbox = True
+                elif platform_name == 'discogs':
+                    has_discogs = True
+                elif platform_name == 'youtube':
+                    has_youtube = True
+        
+        # Also check if we have a platforms list attribute (added by the table model)
+        if hasattr(self, 'platforms') and self.platforms:
+            for platform in self.platforms:
+                if platform == 'spotify':
+                    has_spotify = True
+                elif platform == 'rekordbox':
+                    has_rekordbox = True
+                elif platform == 'discogs':
+                    has_discogs = True
+                elif platform == 'youtube':
+                    has_youtube = True
+                elif platform == 'wantlist':
+                    self.in_wantlist = True
+                elif platform == 'collection':
+                    self.in_collection = True
 
+        # Build platform list and tooltips
         if has_spotify:
             platforms.append("spotify")
             platform_tooltips.append("Available on Spotify")
@@ -138,23 +199,59 @@ class LocalTrackItem(TrackItem):
             platforms.append("collection")
             platform_tooltips.append("In Discogs Collection")
 
-        # Format BPM value
-        bpm_str = f"{self.bpm:.1f}" if self.bpm is not None else ""
+        # Format BPM value - ensuring it's properly formatted
+        bpm_str = ""
+        if self.bpm is not None:
+            try:
+                if isinstance(self.bpm, str) and self.bpm.strip():
+                    # Convert string BPM to float if possible
+                    try:
+                        bpm_float = float(self.bpm)
+                        bpm_str = f"{bpm_float:.1f}"
+                    except ValueError:
+                        bpm_str = self.bpm
+                elif isinstance(self.bpm, (int, float)) and self.bpm > 0:
+                    bpm_str = f"{self.bpm:.1f}"
+            except (ValueError, TypeError):
+                pass
+
+        # Format genre - ensure it's a string
+        genre_str = ""
+        if self.genre:
+            if isinstance(self.genre, list):
+                genre_str = ", ".join(self.genre)
+            else:
+                genre_str = str(self.genre)
 
         # Format tags
-        tags_str = ", ".join(self.tags) if self.tags else ""
+        tags_str = ""
+        if self.tags:
+            if isinstance(self.tags, list):
+                tags_str = ", ".join(self.tags)
+            elif isinstance(self.tags, str):
+                # Handle tags as a comma-separated string
+                tags_str = self.tags
+            else:
+                tags_str = str(self.tags)
 
         # Map quality rating to a user-friendly string for tooltip
         quality_map = {-1: "Not Rated", 1: "Very Poor", 2: "Poor", 3: "OK", 4: "Good", 5: "Great"}
         quality_str = quality_map.get(self.quality, "Not Rated")
 
-        return {
+        # Debug log - but only once per track to avoid spam
+        if not hasattr(self, '_logged_display_data'):
+            if bpm_str or genre_str:
+                logger.debug(f"Display data for track {self.track_id}: BPM={bpm_str}, Genre={genre_str}")
+            self._logged_display_data = True
+
+        # Create the display data dictionary
+        display_data = {
             "id": self.track_id,
             "title": self.title,
             "artist": self.artist,
             "album": self.album or "",
             "duration": self.duration_str,
-            "genre": self.genre or "",
+            "genre": genre_str,
             "bpm": bpm_str,
             "tags": tags_str,
             "quality": self.quality,
@@ -167,6 +264,19 @@ class LocalTrackItem(TrackItem):
             "in_wantlist": self.in_wantlist,
             "in_collection": self.in_collection,
         }
+        
+        # Cache the result with timestamp to avoid recomputing it repeatedly
+        self._display_data_cache = display_data
+        self._display_cache_time = time.time()
+        
+        return display_data
+        
+    def clear_display_cache(self) -> None:
+        """Clear the display data cache to force regeneration."""
+        if hasattr(self, '_display_data_cache'):
+            delattr(self, '_display_data_cache')
+        if hasattr(self, '_logged_display_data'):
+            delattr(self, '_logged_display_data')
 
     def _get_platform_icons(self, platforms: list[str]) -> QWidget:
         """Get icons for platforms.

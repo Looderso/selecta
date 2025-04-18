@@ -1,6 +1,7 @@
 import sys
 from typing import Any
 
+from loguru import logger
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -853,6 +854,20 @@ def run_app():
 
     # Apply theming
     ThemeManager.apply_theme(app, Theme.DARK)
+    
+    # Initialize PyQtToast if available
+    try:
+        from pyqttoast import Toast, ToastPosition
+        # Set global toast settings
+        Toast.setPosition(ToastPosition.BOTTOM_MIDDLE)
+        Toast.setMaximumOnScreen(3)  # Max 3 toasts at once
+        Toast.setSpacing(15)  # Space between toasts
+        Toast.setOffset(30, 60)  # Offset from edges
+        logger.info("Initialized PyQtToast for notifications")
+    except ImportError:
+        logger.warning("PyQtToast not available, will use fallback notifications")
+    except Exception as e:
+        logger.error(f"Error initializing PyQtToast: {e}")
 
     # Create and show the main window
     window = SelectaMainWindow()

@@ -26,11 +26,11 @@ from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.utils.type_helpers import column_to_int, has_artist_and_title
 from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.discogs.discogs_track_item import DiscogsTrackItem
-from selecta.ui.components.loading_widget import LoadableWidget
+from selecta.ui.components.platform_search_panel import PlatformSearchPanel
 from selecta.ui.components.search_bar import SearchBar
 
 
-class DiscogsSearchPanel(LoadableWidget):
+class DiscogsSearchPanel(PlatformSearchPanel):
     """Panel for searching and displaying Discogs releases."""
 
     track_linked = pyqtSignal(dict)  # Emitted when a track is linked
@@ -79,15 +79,7 @@ class DiscogsSearchPanel(LoadableWidget):
         # Setup the UI in the content widget
         self._setup_ui(content_widget)
 
-        # Use the shared selection state - import here to avoid circular imports
-        from selecta.ui.components.selection_state import SelectionState
-
-        self.selection_state = SelectionState()
-
-        # Connect to selection state signals
-        self.selection_state.playlist_selected.connect(self._on_global_playlist_selected)
-        self.selection_state.track_selected.connect(self._on_global_track_selected)
-        self.selection_state.data_changed.connect(self._on_data_changed)
+        # SelectionState is already initialized in the parent class
 
     def _setup_ui(self, content_widget: QWidget) -> None:
         """Set up the UI components.
@@ -432,17 +424,11 @@ class DiscogsSearchPanel(LoadableWidget):
         Args:
             release_data: The release data that was linked
         """
-        # Emit signal with the linked track
-        self.track_linked.emit(release_data)
-
-        # Notify that data has changed
-        self.selection_state.notify_data_changed()
-
-        # Show success message
-        self.show_message(f"Track linked: {release_data.get('title')}")
-
-        # Wait a moment, then restore the search results
-        QTimer.singleShot(2000, lambda: self._on_search(self.search_bar.get_search_text()))
+        # Get title for display
+        title = release_data.get('title', '')
+        
+        # Use the standardized implementation from the base class
+        super()._handle_link_complete(release_data, title)
 
     def _handle_link_error(self, error_msg: str) -> None:
         """Handle error during track linking.
