@@ -279,6 +279,7 @@ class PlaylistComponent(QWidget):
 
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
+    play_track = pyqtSignal(object)  # Emits when track should be played
 
     def __init__(
         self, data_provider: PlaylistDataProvider | None = None, parent: QWidget | None = None
@@ -404,6 +405,9 @@ class PlaylistComponent(QWidget):
             self.tracks_table.setItemDelegateForColumn(
                 quality_column_index, TrackQualityDelegate(self.tracks_table)
             )
+
+        # Enable double-click on tracks to play them
+        self.tracks_table.doubleClicked.connect(self._on_track_double_clicked)
 
     def _apply_splitter_ratio(self) -> None:
         """Apply the desired ratio to the splitter after widget initialization."""
@@ -1129,6 +1133,18 @@ class PlaylistComponent(QWidget):
                 # If the track isn't in our current view, we'll do a targeted refresh
                 # of the current playlist's tracks instead of a full refresh
                 self._refresh_current_playlist_tracks()
+
+    def _on_track_double_clicked(self, index) -> None:
+        """Handle double-click on a track to play it.
+
+        Args:
+            index: The index of the clicked item
+        """
+        row = index.row()
+        track = self.tracks_model.get_track(row)
+        if track:
+            # Emit signal to play the track
+            self.play_track.emit(track)
 
     def _refresh_current_playlist_tracks(self) -> None:
         """Refresh only the tracks for the current playlist."""
