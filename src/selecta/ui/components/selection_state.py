@@ -58,7 +58,9 @@ class SelectionState(QObject):
             new_id = getattr(playlist, "item_id", None) if playlist else None
 
             self.current_playlist = playlist
-            logger.debug(f"Global playlist selection changed: {old_id} -> {new_id}")
+            # Reduce log output
+            if old_id is not None or new_id is not None:
+                logger.debug(f"Global playlist selection changed: {old_id} -> {new_id}")
 
             # Emit signal
             self.playlist_selected.emit(playlist)
@@ -74,7 +76,9 @@ class SelectionState(QObject):
             new_id = getattr(track, "track_id", None) if track else None
 
             self.current_track = track
-            logger.debug(f"Global track selection changed: {old_id} -> {new_id}")
+            # Only log meaningful track changes
+            if old_id is not None and new_id is not None and old_id != new_id:
+                logger.debug(f"Global track selection changed: {old_id} -> {new_id}")
 
             # Emit signal
             self.track_selected.emit(track)
@@ -83,13 +87,14 @@ class SelectionState(QObject):
         """Notify all observers that the underlying data has changed."""
         # Add debouncing to prevent notification storms
         import time
+
         current_time = time.time()
-        
+
         # Only allow one notification per 0.5 seconds
         if current_time - self._last_data_change_time < 0.5:
             logger.debug("Data change notification throttled")
             return
-            
+
         self._last_data_change_time = current_time
         logger.debug("Data change notification sent")
         self.data_changed.emit()
@@ -102,26 +107,23 @@ class SelectionState(QObject):
         """
         # Add debouncing to prevent notification storms for the same track
         import time
+
         current_time = time.time()
-        
+
         # Only allow one notification per track per 0.5 seconds
-        if track_id in self._last_track_update_times and current_time - self._last_track_update_times[track_id] < 0.5:
+        if (
+            track_id in self._last_track_update_times
+            and current_time - self._last_track_update_times[track_id] < 0.5
+        ):
             logger.debug(f"Track update notification throttled for track_id={track_id}")
             return
-            
+
         self._last_track_update_times[track_id] = current_time
-        logger.debug(f"Track update notification sent for track_id={track_id}")
-        
-        # Force a refresh of the track via full database lookup with a bit of delay
-        # This ensures we get completely fresh data including all platform links
-        from PyQt6.QtCore import QTimer
-        
-        def emit_after_delay():
-            logger.debug(f"Delayed track update signal emitted for track_id={track_id}")
-            self.track_updated.emit(track_id)
-            
-        # Small delay to ensure database writes are complete
-        QTimer.singleShot(100, emit_after_delay)
+        # Reduce log spam
+        # logger.debug(f"Track update notification sent for track_id={track_id}")
+
+        # Emit track updated signal immediately - no need for delay
+        self.track_updated.emit(track_id)
 
     def get_selected_playlist_id(self) -> Any:
         """Get the ID of the currently selected playlist.

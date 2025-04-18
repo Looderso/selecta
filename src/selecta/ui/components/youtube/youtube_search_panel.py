@@ -729,7 +729,7 @@ class YouTubeSearchPanel(PlatformSearchPanel):
         # Extract title for display
         snippet = video_data.get("snippet", {})
         title = snippet.get("title", "")
-        
+
         # Use the standardized implementation from the base class
         super()._handle_link_complete(video_data, title)
 

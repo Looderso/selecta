@@ -1,5 +1,5 @@
-from datetime import datetime
 import time
+from datetime import datetime
 from typing import Any
 
 from loguru import logger
@@ -108,24 +108,23 @@ class LocalTrackItem(TrackItem):
         Returns:
             Dictionary with track data
         """
-        # Time-based cache with 100ms expiry to prevent excessive calls
-        current_time = time.time()
-        if hasattr(self, '_display_data_cache') and hasattr(self, '_display_cache_time'):
-            # Only use cache if it's been less than 100ms since the last call
-            if current_time - self._display_cache_time < 0.1:  # 100ms cache
-                # This prevents excessive calls during UI painting
-                return self._display_data_cache
+        # Very aggressive caching strategy - always use cached data if available
+        # The cache will be explicitly cleared when data changes
+        if hasattr(self, "_display_data_cache"):
+            # Just return the cached data immediately without any timing checks
+            # This eliminates all unnecessary recalculations during UI painting
+            return self._display_data_cache
             
-            # If many calls happen in a short time, log it (but only occasionally)
-            if not hasattr(self, '_last_cache_log_time') or current_time - self._last_cache_log_time > 5:
-                call_count = getattr(self, '_display_data_call_count', 0) + 1
-                if call_count > 10:
-                    logger.warning(f"to_display_data called {call_count} times for track {self.track_id}")
-                    self._last_cache_log_time = current_time
-                    self._display_data_call_count = 0
-                else:
-                    self._display_data_call_count = call_count
+        # Count display data calls for debugging if needed
+        if hasattr(self, "_display_data_call_count"):
+            self._display_data_call_count += 1
+        else:
+            self._display_data_call_count = 1
             
+        # Only log extremely excessive calls, to reduce debug noise
+        if self._display_data_call_count % 1000 == 0:
+            logger.debug(f"to_display_data called {self._display_data_call_count} times for track {self.track_id}")
+
         # Get platform icons and prepare tooltip
         platforms = []
         platform_tooltips = []
@@ -136,44 +135,44 @@ class LocalTrackItem(TrackItem):
         has_rekordbox = False
         has_discogs = False
         has_youtube = False
-        
+
         # First check platform_info if available
-        if hasattr(self, 'platform_info') and self.platform_info:
+        if hasattr(self, "platform_info") and self.platform_info:
             for info in self.platform_info:
                 # Handle both dict and TrackPlatformInfo objects
-                if hasattr(info, 'platform'):
+                if hasattr(info, "platform"):
                     # It's a TrackPlatformInfo object
                     platform_name = info.platform
-                elif isinstance(info, dict) and 'platform' in info:
+                elif isinstance(info, dict) and "platform" in info:
                     # It's a dictionary
-                    platform_name = info.get('platform', '')
+                    platform_name = info.get("platform", "")
                 else:
                     # Unknown format
                     continue
-                    
-                if platform_name == 'spotify':
+
+                if platform_name == "spotify":
                     has_spotify = True
-                elif platform_name == 'rekordbox':
+                elif platform_name == "rekordbox":
                     has_rekordbox = True
-                elif platform_name == 'discogs':
+                elif platform_name == "discogs":
                     has_discogs = True
-                elif platform_name == 'youtube':
+                elif platform_name == "youtube":
                     has_youtube = True
-        
+
         # Also check if we have a platforms list attribute (added by the table model)
-        if hasattr(self, 'platforms') and self.platforms:
+        if hasattr(self, "platforms") and self.platforms:
             for platform in self.platforms:
-                if platform == 'spotify':
+                if platform == "spotify":
                     has_spotify = True
-                elif platform == 'rekordbox':
+                elif platform == "rekordbox":
                     has_rekordbox = True
-                elif platform == 'discogs':
+                elif platform == "discogs":
                     has_discogs = True
-                elif platform == 'youtube':
+                elif platform == "youtube":
                     has_youtube = True
-                elif platform == 'wantlist':
+                elif platform == "wantlist":
                     self.in_wantlist = True
-                elif platform == 'collection':
+                elif platform == "collection":
                     self.in_collection = True
 
         # Build platform list and tooltips
@@ -239,10 +238,16 @@ class LocalTrackItem(TrackItem):
         quality_str = quality_map.get(self.quality, "Not Rated")
 
         # Debug log - but only once per track to avoid spam
-        if not hasattr(self, '_logged_display_data'):
+        # Use current time to decide when to log again
+        current_time = time.time()
+        last_log_time = getattr(self, "_last_cache_log_time", 0)
+        
+        if current_time - last_log_time > 120:  # Log at most once every 2 minutes per track
             if bpm_str or genre_str:
-                logger.debug(f"Display data for track {self.track_id}: BPM={bpm_str}, Genre={genre_str}")
-            self._logged_display_data = True
+                logger.debug(
+                    f"Display data for track {self.track_id}: BPM={bpm_str}, Genre={genre_str}"
+                )
+            self._last_cache_log_time = current_time
 
         # Create the display data dictionary
         display_data = {
@@ -264,19 +269,25 @@ class LocalTrackItem(TrackItem):
             "in_wantlist": self.in_wantlist,
             "in_collection": self.in_collection,
         }
-        
-        # Cache the result with timestamp to avoid recomputing it repeatedly
+
+        # Cache the result - we'll use permanent caching with explicit invalidation
+        # rather than time-based expiry
         self._display_data_cache = display_data
-        self._display_cache_time = time.time()
-        
+
         return display_data
-        
+
     def clear_display_cache(self) -> None:
         """Clear the display data cache to force regeneration."""
-        if hasattr(self, '_display_data_cache'):
-            delattr(self, '_display_data_cache')
-        if hasattr(self, '_logged_display_data'):
-            delattr(self, '_logged_display_data')
+        if hasattr(self, "_display_data_cache"):
+            delattr(self, "_display_data_cache")
+        
+        # Clean up any other cache-related attributes
+        for attr in ["_logged_display_data", "_display_cache_time", "_last_cache_log_time", "_display_data_call_count"]:
+            if hasattr(self, attr):
+                delattr(self, attr)
+                
+        # Log the cache clearing for debugging
+        logger.debug(f"Cleared display cache for track {self.track_id}")
 
     def _get_platform_icons(self, platforms: list[str]) -> QWidget:
         """Get icons for platforms.

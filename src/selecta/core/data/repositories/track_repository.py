@@ -126,7 +126,9 @@ class TrackRepository(BaseRepository[Track]):
         self.session.commit()
         return track
 
-    def update(self, track_id: int, track_data: dict[str, Any], preserve_existing: bool = True) -> Track | None:
+    def update(
+        self, track_id: int, track_data: dict[str, Any], preserve_existing: bool = True
+    ) -> Track | None:
         """Update an existing track.
 
         Args:
@@ -146,7 +148,7 @@ class TrackRepository(BaseRepository[Track]):
             # Skip None values always
             if value is None:
                 continue
-                
+
             # If preserving existing values, only update if the current value is None/empty
             if preserve_existing:
                 current_value = getattr(track, key, None)
@@ -161,7 +163,7 @@ class TrackRepository(BaseRepository[Track]):
                         continue
                     if not isinstance(current_value, (str, int, float)) and current_value:
                         continue
-            
+
             # Set the value if we didn't skip it
             setattr(track, key, value)
 

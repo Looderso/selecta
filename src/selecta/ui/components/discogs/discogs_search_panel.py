@@ -425,8 +425,8 @@ class DiscogsSearchPanel(PlatformSearchPanel):
             release_data: The release data that was linked
         """
         # Get title for display
-        title = release_data.get('title', '')
-        
+        title = release_data.get("title", "")
+
         # Use the standardized implementation from the base class
         super()._handle_link_complete(release_data, title)
 
