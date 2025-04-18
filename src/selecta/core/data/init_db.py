@@ -68,7 +68,7 @@ def verify_schema(db_path: Path | str) -> bool:
             "platform_id",
             "uri",
             "platform_data",
-            "last_synced",
+            "last_linked",
             "needs_update",
         ]
 
@@ -125,7 +125,7 @@ def fix_track_platform_info_schema(db_path: Path | str, existing_columns: list[s
                 platform_id VARCHAR(255) NOT NULL,
                 uri VARCHAR(512),
                 platform_data TEXT,
-                last_synced DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_linked DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 needs_update BOOLEAN NOT NULL DEFAULT 0,
                 FOREIGN KEY(track_id) REFERENCES tracks(id)
             )
@@ -138,7 +138,7 @@ def fix_track_platform_info_schema(db_path: Path | str, existing_columns: list[s
 
             cursor.execute(f"""
                 INSERT INTO track_platform_info_new (
-                    {cols}, last_synced, needs_update
+                    {cols}, last_linked, needs_update
                 )
                 SELECT
                     {cols}, CURRENT_TIMESTAMP, 0

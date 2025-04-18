@@ -387,6 +387,23 @@ class SelectaMainWindow(QMainWindow):
                 playlist_component = widget
                 break
 
+        # Initialize audio player in the bottom section if it's not already there
+        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
+
+        # Check if we already have an audio player
+        audio_player = None
+        for i in range(self.bottom_layout.count()):
+            widget = self.bottom_layout.itemAt(i).widget()
+            if isinstance(widget, AudioPlayerComponent):
+                audio_player = widget
+                break
+
+        # Create audio player if it doesn't exist
+        if not audio_player:
+            audio_player = AudioPlayerComponent()
+            self.set_bottom_content(audio_player)
+            self.audio_player = audio_player
+
         # If we don't have a playlist component yet, create one
         if not playlist_component:
             playlist_component = PlaylistComponent()
@@ -394,6 +411,16 @@ class SelectaMainWindow(QMainWindow):
 
             # Make sure we have the dynamic content set up
             self._setup_search_panels()
+
+        # Make sure the play_track signal is connected to the audio player
+        # First disconnect any existing connections to avoid duplicates
+        from contextlib import suppress
+
+        with suppress(Exception):
+            playlist_component.play_track.disconnect(self.audio_player.load_track)
+
+        # Connect the signal
+        playlist_component.play_track.connect(self.audio_player.load_track)
 
         # Update the data provider in the existing component
         playlist_component.set_data_provider(data_provider)
@@ -474,16 +501,19 @@ class SelectaMainWindow(QMainWindow):
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
-        from selecta.ui.components.bottom_content import BottomContent
+        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
         from selecta.ui.components.playlist_content import PlaylistContent
 
         # Create playlist content
         playlist_content = PlaylistContent()
         self.set_playlist_content(playlist_content)
 
-        # Create bottom content
-        bottom_content = BottomContent()
-        self.set_bottom_content(bottom_content)
+        # Create audio player for bottom content
+        audio_player = AudioPlayerComponent()
+        self.set_bottom_content(audio_player)
+
+        # Store reference to audio player
+        self.audio_player = audio_player
 
         # Set up the search panels if they don't exist yet
         self._setup_search_panels()
@@ -491,6 +521,9 @@ class SelectaMainWindow(QMainWindow):
         # Store a reference to the details panel for switching later
         if has_details_panel(playlist_content):
             self.track_details_panel = playlist_content.playlist_component.details_panel
+
+            # Connect track double-click to the audio player
+            playlist_content.playlist_component.play_track.connect(self.audio_player.load_track)
 
         # Switch to the current platform
         self.switch_platform(getattr(self, "current_platform", "local"))

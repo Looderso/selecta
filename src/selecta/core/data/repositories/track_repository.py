@@ -184,7 +184,7 @@ class TrackRepository(BaseRepository[Track]):
         info.platform_id = platform_id
         info.uri = uri
         info.platform_data = metadata
-        info.last_synced = datetime.now(UTC)
+        info.last_linked = datetime.now(UTC)
         info.needs_update = False
         return info
 
@@ -229,8 +229,8 @@ class TrackRepository(BaseRepository[Track]):
             if metadata is not None:
                 # Use platform_data instead of metadata
                 existing.platform_data = metadata
-            # Update sync timestamp
-            existing.last_synced = datetime.now(UTC)
+            # Update link timestamp
+            existing.last_linked = datetime.now(UTC)
             existing.needs_update = False
 
             self.session.commit()

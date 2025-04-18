@@ -113,3 +113,27 @@ def get_resource_path(relative_path: str) -> Path:
 
     # Fallback
     return Path(relative_path)
+
+
+def get_resources_path() -> Path:
+    """Get the path to the resources directory.
+
+    Returns:
+        Path: The absolute path to the resources directory
+    """
+    root = get_project_root()
+
+    # First, check if running as a package (resources inside package)
+    if (root / "src" / "selecta" / "resources").exists():
+        return root / "src" / "selecta" / "resources"
+
+    # Then check for resources at the project root level
+    if (root / "resources").exists():
+        return root / "resources"
+
+    # Finally, check relative to the executable
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "resources"
+
+    # Fallback
+    return Path("resources")
