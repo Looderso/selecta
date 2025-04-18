@@ -1394,8 +1394,9 @@ class PlaylistComponent(QWidget):
 
         # Force a UI update immediately without scheduling another check
         from PyQt6.QtWidgets import QApplication
+
         QApplication.processEvents()
-        
+
         # Do final check immediately instead of with a timer - avoids recursive timer calls
         self._final_visibility_check()
 

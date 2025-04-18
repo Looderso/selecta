@@ -854,10 +854,11 @@ def run_app():
 
     # Apply theming
     ThemeManager.apply_theme(app, Theme.DARK)
-    
+
     # Initialize PyQtToast if available
     try:
         from pyqttoast import Toast, ToastPosition
+
         # Set global toast settings
         Toast.setPosition(ToastPosition.BOTTOM_MIDDLE)
         Toast.setMaximumOnScreen(3)  # Max 3 toasts at once

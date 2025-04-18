@@ -52,7 +52,7 @@ class LoadingWidget(QWidget):
             message: The new message to display
         """
         self.message_label.setText(message)
-        
+
     def showEvent(self, event: Any) -> None:
         """Handle show event to start animation.
 

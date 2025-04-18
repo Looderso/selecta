@@ -1,4 +1,5 @@
 """Dialog for importing covers from audio metadata."""
+
 import time
 
 from loguru import logger

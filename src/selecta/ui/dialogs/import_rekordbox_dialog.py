@@ -1,4 +1,5 @@
 """Dialog for importing tracks from Rekordbox."""
+
 import os
 import shutil
 import time
@@ -110,7 +111,9 @@ class ImportThread(QThread):
                     if self._import_track(track):
                         # Add to collection playlist if created
                         if collection_playlist_id:
-                            self.playlist_repo.add_track_to_playlist(track.id, collection_playlist_id)
+                            self.playlist_repo.add_track_to_playlist(
+                                track.id, collection_playlist_id
+                            )
                         self.imported_count += 1
                     else:
                         self.failed_count += 1
@@ -125,9 +128,7 @@ class ImportThread(QThread):
 
             # Final update
             self.progress_update.emit(100, "Import complete")
-            self.import_complete.emit(
-                self.imported_count, self.failed_count, self.error_messages
-            )
+            self.import_complete.emit(self.imported_count, self.failed_count, self.error_messages)
 
         except Exception as e:
             logger.exception(f"Error in import thread: {e}")
