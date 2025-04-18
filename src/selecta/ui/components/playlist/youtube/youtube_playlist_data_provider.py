@@ -17,7 +17,7 @@ from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
 from selecta.ui.components.playlist.youtube.youtube_playlist_item import YouTubePlaylistItem
 from selecta.ui.components.playlist.youtube.youtube_track_item import YouTubeTrackItem
-from selecta.ui.create_playlist_dialog import CreatePlaylistDialog
+from selecta.ui.dialogs import CreatePlaylistDialog
 
 
 class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
@@ -32,7 +32,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         """
         # Initialize with client first so that our self.client will be set
         super().__init__(client=client, cache_timeout=cache_timeout)
-        
+
         # Store as youtube_client as well for convenience
         if client is None:
             youtube_client = cast(YouTubeClient, PlatformFactory.create("youtube"))
@@ -41,10 +41,10 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             self.client = youtube_client
         else:
             self.youtube_client = client
-            
+
         self._playlists: list[YouTubePlaylist] = []
         self._playlist_tracks: dict[str, list[dict[str, Any]]] = {}
-        
+
         # Log initialization state
         logger.debug(f"YouTube provider initialized with client: {self.youtube_client}")
         logger.debug(f"Authentication status: {self.is_connected()}")
@@ -118,7 +118,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         playlist_items = []
 
         logger.debug("Fetching YouTube playlists...")
-        
+
         # If not connected, try to connect
         if not self.is_connected():
             logger.info("Not connected to YouTube, attempting connection...")
@@ -126,7 +126,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
                 logger.warning("Failed to connect to YouTube")
                 return []
             logger.info("Successfully connected to YouTube")
-        
+
         try:
             # Fetch playlists from YouTube
             logger.debug("Calling get_playlists()")
@@ -176,7 +176,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             logger.debug(f"Calling get_playlist_tracks() for {playlist_id}")
             videos = self.youtube_client.get_playlist_tracks(playlist_id)
             logger.info(f"Fetched {len(videos)} videos from YouTube playlist")
-            
+
             # Convert to raw data for caching
             self._playlist_tracks[playlist_id] = [video.__dict__ for video in videos]
             logger.debug(f"Cached data for {len(videos)} videos")
@@ -186,7 +186,7 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
                 video_id = video_data.get("id", "")
                 video_title = video_data.get("title", "")
                 logger.debug(f"Processing video: {video_id} - {video_title}")
-                
+
                 track_item = YouTubeTrackItem(
                     id=video_id,
                     title=video_title,

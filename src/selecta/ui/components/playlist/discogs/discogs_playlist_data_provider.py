@@ -21,7 +21,7 @@ from selecta.ui.components.playlist.discogs.discogs_playlist_item import Discogs
 from selecta.ui.components.playlist.discogs.discogs_track_item import DiscogsTrackItem
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
-from selecta.ui.import_export_playlist_dialog import ImportExportPlaylistDialog
+from selecta.ui.dialogs import ImportExportPlaylistDialog
 
 
 class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):

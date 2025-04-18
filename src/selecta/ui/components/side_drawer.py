@@ -1,8 +1,8 @@
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from selecta.ui.components.folder_selection_widget import FolderSelectionWidget
 from selecta.ui.components.platform_auth_panel import PlatformAuthPanel
+from selecta.ui.widgets.folder_selection_widget import FolderSelectionWidget
 
 
 class SideDrawer(QWidget):

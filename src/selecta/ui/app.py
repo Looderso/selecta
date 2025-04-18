@@ -22,7 +22,7 @@ from selecta.core.utils.type_helpers import (
 )
 from selecta.ui.components.navigation_bar import NavigationBar
 from selecta.ui.components.side_drawer import SideDrawer
-from selecta.ui.import_rekordbox_dialog import ImportRekordboxDialog
+from selecta.ui.dialogs import ImportRekordboxDialog
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
 
@@ -829,7 +829,7 @@ class SelectaMainWindow(QMainWindow):
             return
 
         # Create and show the import dialog
-        from selecta.ui.import_covers_dialog import ImportCoversDialog
+        from selecta.ui.dialogs import ImportCoversDialog
 
         import_dialog = ImportCoversDialog(self)
 
@@ -854,10 +854,11 @@ def run_app():
 
     # Apply theming
     ThemeManager.apply_theme(app, Theme.DARK)
-    
+
     # Initialize PyQtToast if available
     try:
         from pyqttoast import Toast, ToastPosition
+
         # Set global toast settings
         Toast.setPosition(ToastPosition.BOTTOM_MIDDLE)
         Toast.setMaximumOnScreen(3)  # Max 3 toasts at once

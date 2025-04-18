@@ -1,15 +1,18 @@
-# src/selecta/ui/components/folder_selection_widget.py
+"""Widget for selecting and managing the local database folder."""
 
-# Add to existing imports
 from pathlib import Path
 
 from loguru import logger
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
+    QProgressDialog,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -17,6 +20,7 @@ from PyQt6.QtWidgets import (
 
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.platform_factory import PlatformFactory
+from selecta.core.utils.folder_scanner import LocalFolderScanner
 
 
 class FolderSelectionWidget(QWidget):
@@ -312,7 +316,6 @@ class FolderSelectionWidget(QWidget):
 
             self._update_management_status("Ready to manage local files")
 
-    # Add method to update management status
     def _update_management_status(self, message: str, error: bool = False):
         """Update the management status label with a message.
 
@@ -326,7 +329,6 @@ class FolderSelectionWidget(QWidget):
         )
         self.management_status_label.setText(message)
 
-    # Add method to handle scan folder button
     def _on_scan_folder(self):
         """Handle scan folder button click."""
         folder_path = self.settings_repo.get_local_database_folder()
@@ -335,15 +337,6 @@ class FolderSelectionWidget(QWidget):
             return
 
         # Create a dialog to show scan options
-        from PyQt6.QtWidgets import (
-            QDialog,
-            QHBoxLayout,
-            QLabel,
-            QPushButton,
-            QRadioButton,
-            QVBoxLayout,
-        )
-
         scan_dialog = QDialog(self)
         scan_dialog.setWindowTitle("Scan Folder")
         scan_dialog.setMinimumWidth(400)
@@ -394,9 +387,6 @@ class FolderSelectionWidget(QWidget):
         Args:
             folder_path: Path to scan
         """
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QMessageBox, QProgressDialog
-
         try:
             # Create a progress dialog
             progress = QProgressDialog("Scanning folder...", "Cancel", 0, 100, self)
@@ -405,9 +395,7 @@ class FolderSelectionWidget(QWidget):
             progress.setMinimumDuration(0)  # Show immediately
             progress.setValue(10)
 
-            # Import and create scanner
-            from selecta.core.utils.folder_scanner import LocalFolderScanner
-
+            # Create scanner
             scanner = LocalFolderScanner(folder_path)
 
             # Update progress
@@ -415,8 +403,6 @@ class FolderSelectionWidget(QWidget):
             progress.setLabelText("Analyzing files...")
 
             # Process events to keep UI responsive
-            from PyQt6.QtCore import QCoreApplication
-
             QCoreApplication.processEvents()
 
             # Scan folder
@@ -461,8 +447,6 @@ class FolderSelectionWidget(QWidget):
                 QMessageBox.information(self, "Scan Complete", message)
 
         except Exception as e:
-            from loguru import logger
-
             logger.exception(f"Error scanning folder: {e}")
             QMessageBox.critical(
                 self, "Scan Error", f"An error occurred during scanning:\n\n{str(e)}"
@@ -474,9 +458,6 @@ class FolderSelectionWidget(QWidget):
         Args:
             folder_path: Path to scan
         """
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QMessageBox, QProgressDialog
-
         try:
             # Create a progress dialog
             progress = QProgressDialog("Scanning and importing files...", "Cancel", 0, 100, self)
@@ -485,9 +466,7 @@ class FolderSelectionWidget(QWidget):
             progress.setMinimumDuration(0)  # Show immediately
             progress.setValue(10)
 
-            # Import and create scanner
-            from selecta.core.utils.folder_scanner import LocalFolderScanner
-
+            # Create scanner
             scanner = LocalFolderScanner(folder_path)
 
             # Update progress
@@ -495,8 +474,6 @@ class FolderSelectionWidget(QWidget):
             progress.setLabelText("Analyzing files...")
 
             # Process events to keep UI responsive
-            from PyQt6.QtCore import QCoreApplication
-
             QCoreApplication.processEvents()
 
             # Scan folder
@@ -548,8 +525,6 @@ class FolderSelectionWidget(QWidget):
             self.folder_changed.emit(folder_path)
 
         except Exception as e:
-            from loguru import logger
-
             logger.exception(f"Error importing files: {e}")
             QMessageBox.critical(
                 self, "Import Error", f"An error occurred during import:\n\n{str(e)}"

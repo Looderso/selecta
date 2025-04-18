@@ -35,7 +35,7 @@ from selecta.ui.components.playlist.local.local_playlist_item import LocalPlayli
 from selecta.ui.components.playlist.local.local_track_item import LocalTrackItem
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
-from selecta.ui.import_export_playlist_dialog import ImportExportPlaylistDialog
+from selecta.ui.dialogs import ImportExportPlaylistDialog
 
 
 class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):

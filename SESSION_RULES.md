@@ -3,10 +3,12 @@
 This file contains session-specific rules and instructions for Claude Code to follow when working on the Selecta project.
 
 ## Current Session Focus
-<!-- Specify the current development focus, e.g., "Fixing YouTube integration bugs" -->
-Token optimization and efficient code navigation
+
+Refactor of the GUI module.
+There are some modules like dialoges and widgets which are currently not used but could be. I also believe some of the Elements in the gui module are not structured very well.
 
 ## Token Optimization Rules
+
 1. **Documentation-First Approach**
    - Always consult documentation before reading code files
    - Follow the documentation hierarchy (top-level → module → component)
@@ -38,6 +40,7 @@ Token optimization and efficient code navigation
    - Use documentation to understand component relationships
 
 ## Documentation and File Access Workflow
+
 1. Start by consulting these top-level guides:
    - CLAUDE.md: General project information and token optimization strategy
    - CODE_INDEX.md: Quick reference to find key files and documentation
@@ -62,20 +65,51 @@ Token optimization and efficient code navigation
    - Ensure your changes are consistent with the documented architecture and patterns
 
 ## Session-Specific Rules
-<!-- Add any specific rules for this session -->
-1.
-2.
-3.
+
+### GUI Module Refactoring Plan
+
+1. **Move Dialogs to Dedicated Directory**
+   - Move all dialog classes to `src/selecta/ui/dialogs/` directory
+   - Update import statements across the codebase
+   - Maintain existing functionality and interfaces
+
+2. **Move Reusable Widgets to Widgets Directory**
+   - Extract `LoadingWidget` from `playlist_component.py` to `widgets/`
+   - Move `folder_selection_widget.py` from components to widgets
+   - Create base dialog classes for common patterns
+
+3. **Split Large Files**
+   - Break down `playlist_component.py` (1785 lines)
+   - Split `local_playlist_data_provider.py` (1089 lines)
+   - Refactor search panels (YouTube, Spotify, Discogs)
+   - Reorganize `app.py` into smaller logical units
+
+4. **Apply PyQt Best Practices**
+   - Standardize signal/slot patterns
+   - Improve layout management
+   - Ensure proper widget lifecycle
+   - Follow type safety guidelines
+
+5. **Implement Common Patterns**
+   - Create base classes for UI patterns
+   - Standardize dialog and menu creation
+   - Develop reusable mixins for common functionality
 
 ## Code Style Rules
+
 - Follow Python type hints strictly
 - Maintain consistent error handling patterns
 - Use SQLAlchemy 2.0 style for database operations
 
 ## Testing Requirements
-<!-- Specify any testing requirements for this session -->
-- Run appropriate tests after modifications
-- Use `ruff check src` to verify code quality
 
-## Notes
-<!-- Add any other information Claude should know -->
+- Visually verify each refactored component
+- Ensure functionality remains intact after changes
+- Run `ruff check src` to verify code quality
+
+## Implementation Strategy
+
+1. Start with moving dialogs to dedicated directory
+2. Then extract and move reusable widgets
+3. Split large files incrementally, focusing on one at a time
+4. Apply best practices during each refactoring step
