@@ -81,7 +81,7 @@ This file serves as a quick reference guide for common features and their implem
 - PlaylistDataProvider: `src/selecta/ui/components/playlist/playlist_data_provider.py`
 - Playlist Tree Model: `src/selecta/ui/components/playlist/playlist_tree_model.py`
 - Tracks Table Model: `src/selecta/ui/components/playlist/tracks_table_model.py`
-- Track Details: `src/selecta/ui/components/playlist/track_details_panel.py`
+- Track Details Panel: `src/selecta/ui/components/playlist/track_details_panel.py` (includes metadata editing with platform integration)
 
 ### Player Components
 - Audio Player: `src/selecta/ui/components/player/audio_player_component.py`

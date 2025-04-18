@@ -134,7 +134,8 @@ class TrackRepository(BaseRepository[Track]):
         Args:
             track_id: The track ID
             track_data: Dictionary with updated track data
-            preserve_existing: If True, only update fields that are empty or None in the existing track
+            preserve_existing: If True, only update fields that are
+                empty or None in the existing track
 
         Returns:
             The updated track if found, None otherwise
@@ -159,9 +160,9 @@ class TrackRepository(BaseRepository[Track]):
                 if current_value is not None:
                     if isinstance(current_value, str) and current_value.strip():
                         continue
-                    if isinstance(current_value, (int, float)) and current_value > 0:
+                    if isinstance(current_value, int | float) and current_value > 0:
                         continue
-                    if not isinstance(current_value, (str, int, float)) and current_value:
+                    if not isinstance(current_value, str | int | float) and current_value:
                         continue
 
             # Set the value if we didn't skip it
@@ -777,4 +778,36 @@ class TrackRepository(BaseRepository[Track]):
             .filter(Track.local_path != "")
             .order_by(Track.artist, Track.title)
             .all()
+        )
+
+    def refresh_track(self, track_id: int) -> Track | None:
+        """Refresh a track from the database.
+
+        This method is useful when a track's relationships have changed,
+        such as when a new image has been added.
+
+        Args:
+            track_id: The track ID
+
+        Returns:
+            The refreshed track if found, None otherwise
+        """
+        if self.session is None:
+            return None
+
+        # First expire the track instance to ensure we get fresh data
+        self.session.expire_all()
+
+        # Then reload the track with all its relationships
+        return (
+            self.session.query(Track)
+            .options(
+                joinedload(Track.platform_info),
+                joinedload(Track.genres),
+                joinedload(Track.tags),
+                joinedload(Track.images),
+                joinedload(Track.album),
+            )
+            .filter(Track.id == track_id)
+            .first()
         )

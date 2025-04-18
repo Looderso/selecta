@@ -6,8 +6,7 @@ The dialogs in Selecta are modal windows that handle specific user interactions 
 
 ## Current Dialog Files
 
-Note: These files are currently at the ui/ root level but could be organized into a dedicated dialogs/ folder in the future.
-
+- `cover_selection_dialog.py`: Dialog for selecting cover images from different platforms
 - `create_playlist_dialog.py`: Dialog for creating new playlists or folders
 - `import_rekordbox_dialog.py`: Dialog for importing playlists and tracks from Rekordbox
 - `import_covers_dialog.py`: Dialog for importing album artwork from audio file metadata
@@ -49,9 +48,27 @@ Each dialog follows a consistent pattern:
 - For long-running operations, show progress and allow cancellation
 - Follow Qt's dialog design patterns for consistency
 
+### Cover Selection Dialog
+
+The `CoverSelectionDialog` provides a dedicated interface for selecting cover images from various platforms:
+
+- Shows available cover images from different music platforms (Spotify, Discogs, etc.)
+- Displays image metadata like dimensions and source
+- Provides a preview of the selected image before confirming
+- Uses a horizontal layout for easy browsing of available images
+- Maintains consistent visual styling with platform-specific indicators
+- Downloads images in the background with progress tracking
+- Updates image display as downloads complete
+- Handles network issues gracefully with fallback to platform icons
+
 ## Future Improvements
 
-- Organize dialogs into a dedicated subdirectory
+- ✅ Organize dialogs into a dedicated subdirectory
 - Create base dialog classes for common patterns
 - Add more sophisticated validation
 - Improve theming and visual consistency
+- ✅ Add image downloading capability to CoverSelectionDialog
+- ✅ Implement real-time image loading in dialogs
+- Support drag-and-drop for images and other content
+- Add image caching to avoid repeated downloads
+- Add support for selecting multiple images at once
