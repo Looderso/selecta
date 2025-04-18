@@ -508,9 +508,9 @@ class Playlist(Base):
     is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)  # Position within parent
 
-    # Link settings
-    link_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_linked: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Link settings (column names remain as sync_* for compatibility)
+    link_enabled: Mapped[bool] = mapped_column("sync_enabled", Boolean, default=True)
+    last_linked: Mapped[datetime | None] = mapped_column("last_synced", DateTime, nullable=True)
 
     # Relationships
     children: Mapped[list["Playlist"]] = relationship(
