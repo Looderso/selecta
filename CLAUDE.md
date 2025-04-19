@@ -183,7 +183,6 @@ Selecta follows a consistent approach for platform integration:
 
 - Run app: `selecta-gui`
 - Reset database: `selecta database init --force`
-- Linting/type checking: `ruff check src`
 - Run all tests: `pytest`
 - Run specific test: `pytest -m [rekordbox|spotify|discogs]`
 

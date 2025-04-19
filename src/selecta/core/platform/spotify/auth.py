@@ -29,6 +29,11 @@ class SpotifyAuthManager:
         "playlist-read-collaborative",
         "playlist-modify-public",
         "playlist-modify-private",
+        "streaming",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-private",  # Added for account type info
+        "user-read-email",  # Added for email info
     ]
 
     def __init__(
