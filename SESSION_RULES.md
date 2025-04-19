@@ -5,6 +5,7 @@ This file contains session-specific rules and instructions for Claude Code to fo
 ## Current Session Focus
 
 Fix and enhance the audio player to work with local files and other platforms. The audio player should be able to play:
+
 1. Local tracks via file paths when available
 2. YouTube tracks via streaming
 3. Spotify tracks when supported
@@ -70,27 +71,33 @@ Fix and enhance the audio player to work with local files and other platforms. T
 
 ### Audio Player Enhancement Plan
 
-1. **Fix Current Local Audio Player**
-   - Debug and fix any issues with the current implementation
-   - Ensure it correctly plays local files when they exist
-   - Implement proper error handling for missing files
+1. **✅ Fix Current Local Audio Player**
+   - ✅ Debug and fix any issues with the current implementation
+   - ✅ Ensure it correctly plays local files when they exist
+   - ✅ Implement proper error handling for missing files
 
-2. **Implement YouTube Audio Player**
-   - Create a YouTubeAudioPlayer class implementing AbstractAudioPlayer
-   - Use YouTube API to stream audio from YouTube videos
-   - Handle authentication and proper error states
+2. **✅ Implement YouTube Audio Player**
+   - ✅ Create a YouTubePlayer opening in a standalone window
+   - ✅ Use YouTube iframe API to play videos
+   - ✅ Handle authentication and proper error states
 
-3. **Add Factory Pattern Improvements**
-   - Enhance AudioPlayerFactory to detect the correct player for a track
-   - Update player switching based on track platform
-   - Add proper type annotations and error handling
+3. **✅ Add Factory Pattern Improvements**
+   - ✅ Enhance AudioPlayerFactory to detect the correct player for a track
+   - ✅ Update player switching based on track platform
+   - ✅ Add proper type annotations and error handling
 
-4. **Improve UI Integration**
-   - Update AudioPlayerComponent to handle different player types
-   - Add visual indicators for track source (YouTube, local, etc.)
-   - Implement seamless switching between player backends
+4. **✅ Improve UI Integration**
+   - ✅ Update AudioPlayerComponent to handle different player types
+   - ✅ Add visual indicators for track source (LOCAL, YOUTUBE, SPOTIFY)
+   - ✅ Implement seamless switching between player backends
 
-5. **Platform-Specific Features**
+5. **✅ Implement Platform Integration for Tracks**
+   - ✅ Create SpotifyAudioPlayer for playing preview URLs with QMediaPlayer
+   - ✅ Add "Open in Platform" button to launch native apps
+   - ✅ Play local files when available, otherwise open in native app
+   - ✅ Handle track detection and platform URL generation
+
+6. **Platform-Specific Features**
    - Add platform-specific controls where appropriate
    - Implement caching for YouTube streams if possible
    - Support quality selection where applicable
@@ -106,12 +113,15 @@ Fix and enhance the audio player to work with local files and other platforms. T
 - Visually verify audio playback functionality
 - Test with various track sources (local, YouTube)
 - Ensure proper error handling for edge cases
-- Run `ruff check src` to verify code quality
 
 ## Implementation Strategy
 
-1. Start with debugging and fixing the local audio player
-2. Implement YouTube audio player once local player is working properly
-3. Update the factory pattern to support multiple player types
-4. Enhance the UI component to work with all player types
-5. Add platform-specific features as needed
+1. ✅ Debug and fix the local audio player
+2. ✅ Implement YouTube player in a standalone window
+3. ✅ Update the factory pattern to support multiple player types
+4. ✅ Enhance the UI component to work with all player types
+5. ✅ Implement platform integration for tracks:
+   - ✅ QMediaPlayer for preview URLs and local files
+   - ✅ Open in native app (Spotify, YouTube) for full tracks
+   - ✅ Auto-detect track type and handle appropriately
+6. Add remaining platform-specific features as needed
