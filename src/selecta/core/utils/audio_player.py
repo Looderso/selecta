@@ -322,7 +322,22 @@ class AudioPlayerFactory:
         # Future implementations:
         # elif platform == "spotify":
         #     return SpotifyAudioPlayer()
-        # elif platform == "youtube":
-        #     return YouTubeAudioPlayer()
         else:
             raise ValueError(f"Audio player for platform '{platform}' not implemented")
+
+    @staticmethod
+    def create_player_for_track(track) -> AbstractAudioPlayer:
+        """Create the appropriate player based on the track type.
+
+        Args:
+            track: Track object to determine the appropriate player
+
+        Returns:
+            Audio player instance appropriate for the track
+
+        Raises:
+            ValueError: If cannot determine appropriate player
+        """
+        # For all tracks, we now use the local player
+        # YouTube tracks will be handled separately with the YouTube player window
+        return LocalAudioPlayer()

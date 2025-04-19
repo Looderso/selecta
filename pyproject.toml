@@ -23,19 +23,22 @@ classifiers = [
 ]
 
 dependencies = [
-    "PyQt6",         # Modern PyQt version
-    "PyQt6-Qt6",     # Qt6 bindings
-    "PyQt6-sip",     # SIP bindings
-    "qtstylish",     # For modern styling
-    "pyqtspinner",   # Loading spinner
-    "pyqtdarktheme", # Dark theme support
-    "pillow",        # PIL fork
+    "PyQt6",           # Modern PyQt version
+    "PyQt6-Qt6",       # Qt6 bindings
+    "PyQt6-sip",       # SIP bindings
+    "PyQt6-WebEngine", # Web Player
+    "qtstylish",       # For modern styling
+    "pyqtspinner",     # Loading spinner
+    "pyqtdarktheme",   # Dark theme support
+    "pyqttoast",       # Toast notifications
+    "pillow",          # PIL fork
     # Garden packages will be added later once the core setup is working
     # API clients
-    "spotipy",     # Spotify API client
-    "pyrekordbox", # Rekordbox API client
+    "spotipy",                  # Spotify API client
+    "pyrekordbox",              # Rekordbox API client
     "google-api-python-client", # Google APIs client library
-    "google-auth-oauthlib",    # Google OAuth library
+    "google-auth-oauthlib",     # Google OAuth library
+    "pytube",                   # YouTube video downloading/streaming
     # Database and data handling
     "sqlalchemy",   # ORM for database access
     "alembic",      # Database migrations

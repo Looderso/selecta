@@ -4,8 +4,10 @@ This file contains session-specific rules and instructions for Claude Code to fo
 
 ## Current Session Focus
 
-Refactor of the GUI module.
-There are some modules like dialoges and widgets which are currently not used but could be. I also believe some of the Elements in the gui module are not structured very well.
+Fix and enhance the audio player to work with local files and other platforms. The audio player should be able to play:
+1. Local tracks via file paths when available
+2. YouTube tracks via streaming
+3. Spotify tracks when supported
 
 ## Token Optimization Rules
 
@@ -66,34 +68,32 @@ There are some modules like dialoges and widgets which are currently not used bu
 
 ## Session-Specific Rules
 
-### GUI Module Refactoring Plan
+### Audio Player Enhancement Plan
 
-1. **Move Dialogs to Dedicated Directory**
-   - Move all dialog classes to `src/selecta/ui/dialogs/` directory
-   - Update import statements across the codebase
-   - Maintain existing functionality and interfaces
+1. **Fix Current Local Audio Player**
+   - Debug and fix any issues with the current implementation
+   - Ensure it correctly plays local files when they exist
+   - Implement proper error handling for missing files
 
-2. **Move Reusable Widgets to Widgets Directory**
-   - Extract `LoadingWidget` from `playlist_component.py` to `widgets/`
-   - Move `folder_selection_widget.py` from components to widgets
-   - Create base dialog classes for common patterns
+2. **Implement YouTube Audio Player**
+   - Create a YouTubeAudioPlayer class implementing AbstractAudioPlayer
+   - Use YouTube API to stream audio from YouTube videos
+   - Handle authentication and proper error states
 
-3. **Split Large Files**
-   - Break down `playlist_component.py` (1785 lines)
-   - Split `local_playlist_data_provider.py` (1089 lines)
-   - Refactor search panels (YouTube, Spotify, Discogs)
-   - Reorganize `app.py` into smaller logical units
+3. **Add Factory Pattern Improvements**
+   - Enhance AudioPlayerFactory to detect the correct player for a track
+   - Update player switching based on track platform
+   - Add proper type annotations and error handling
 
-4. **Apply PyQt Best Practices**
-   - Standardize signal/slot patterns
-   - Improve layout management
-   - Ensure proper widget lifecycle
-   - Follow type safety guidelines
+4. **Improve UI Integration**
+   - Update AudioPlayerComponent to handle different player types
+   - Add visual indicators for track source (YouTube, local, etc.)
+   - Implement seamless switching between player backends
 
-5. **Implement Common Patterns**
-   - Create base classes for UI patterns
-   - Standardize dialog and menu creation
-   - Develop reusable mixins for common functionality
+5. **Platform-Specific Features**
+   - Add platform-specific controls where appropriate
+   - Implement caching for YouTube streams if possible
+   - Support quality selection where applicable
 
 ## Code Style Rules
 
@@ -103,13 +103,15 @@ There are some modules like dialoges and widgets which are currently not used bu
 
 ## Testing Requirements
 
-- Visually verify each refactored component
-- Ensure functionality remains intact after changes
+- Visually verify audio playback functionality
+- Test with various track sources (local, YouTube)
+- Ensure proper error handling for edge cases
 - Run `ruff check src` to verify code quality
 
 ## Implementation Strategy
 
-1. Start with moving dialogs to dedicated directory
-2. Then extract and move reusable widgets
-3. Split large files incrementally, focusing on one at a time
-4. Apply best practices during each refactoring step
+1. Start with debugging and fixing the local audio player
+2. Implement YouTube audio player once local player is working properly
+3. Update the factory pattern to support multiple player types
+4. Enhance the UI component to work with all player types
+5. Add platform-specific features as needed

@@ -1,5 +1,6 @@
 """Audio player component for the bottom section of the main window."""
 
+from loguru import logger
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from selecta.core.data.models.db import Track
 from selecta.core.utils.audio_player import AudioPlayerFactory, PlayerState
+from selecta.ui.components.youtube.youtube_player import create_youtube_player_window
 
 
 class AudioPlayerComponent(QWidget):
@@ -29,11 +31,13 @@ class AudioPlayerComponent(QWidget):
         super().__init__(parent)
         self.current_track = None
 
+        # Keep track of YouTube player window if opened
+        self.youtube_window = None
+
         # Flag to track if slider is being dragged by user
         self._slider_being_dragged = False
 
-        # Initialize the local audio player for now
-        # Future: We'll use the AudioPlayerFactory with platform detection
+        # Initialize the local audio player
         self.player = AudioPlayerFactory.create_player("local")
 
         # Set up UI
@@ -151,12 +155,30 @@ class AudioPlayerComponent(QWidget):
         self.progress_slider.sliderReleased.connect(self._on_slider_released)
         self.volume_slider.valueChanged.connect(self._set_volume)
 
+        # Connect player signals
+        self._connect_player_signals()
+
+    def _connect_player_signals(self) -> None:
+        """Connect signals for the current player."""
         # Player signals
         self.player.state_changed.connect(self._on_player_state_changed)
         self.player.position_changed.connect(self._on_position_changed)
         self.player.duration_changed.connect(self._on_duration_changed)
         self.player.track_changed.connect(self._on_track_changed)
         self.player.error_occurred.connect(self._on_player_error)
+
+    def _disconnect_player_signals(self) -> None:
+        """Disconnect signals from the current player."""
+        try:
+            self.player.state_changed.disconnect(self._on_player_state_changed)
+            self.player.position_changed.disconnect(self._on_position_changed)
+            self.player.duration_changed.disconnect(self._on_duration_changed)
+            self.player.track_changed.disconnect(self._on_track_changed)
+            self.player.error_occurred.disconnect(self._on_player_error)
+        except (TypeError, RuntimeError) as e:
+            # This can happen if the signals were never connected
+            logger.debug(f"Error disconnecting player signals: {e}")
+            pass
 
     def _format_time(self, milliseconds: int) -> str:
         """Format milliseconds as MM:SS.
@@ -285,9 +307,6 @@ class AudioPlayerComponent(QWidget):
         # Update track info label
         self.track_label.setText(f"{track.artist} - {track.title}")
 
-        # Update platform label
-        self.platform_label.setText("LOCAL")
-
         # Signal that track was loaded
         self.track_loaded.emit(True)
 
@@ -301,13 +320,108 @@ class AudioPlayerComponent(QWidget):
         self.track_label.setText(f"Error: {error}")
         self.track_loaded.emit(False)
 
+    def _get_youtube_id(self, track) -> str | None:
+        """Extract YouTube ID from a track.
+
+        Args:
+            track: The track to analyze
+
+        Returns:
+            YouTube video ID or None if not found
+        """
+        youtube_id = None
+
+        # Check platform info directly
+        if hasattr(track, "platform_info"):
+            for info in track.platform_info:
+                if info.platform == "youtube":
+                    youtube_id = info.platform_id
+                    logger.info(f"Found YouTube platform info: {youtube_id}")
+                    return youtube_id
+
+        # Check for direct YouTube ID attributes
+        if hasattr(track, "video_id") and track.video_id:
+            youtube_id = track.video_id
+        elif hasattr(track, "youtube_id") and track.youtube_id:
+            youtube_id = track.youtube_id
+        # Check for platform metadata
+        elif hasattr(track, "get_platform_metadata"):
+            try:
+                youtube_metadata = track.get_platform_metadata("youtube")
+                if youtube_metadata and "id" in youtube_metadata:
+                    youtube_id = youtube_metadata["id"]
+            except Exception as e:
+                logger.error(f"Error getting platform metadata: {e}")
+        # Check if this is a YouTubeVideo model
+        elif hasattr(track, "id") and hasattr(track, "channel_id"):
+            youtube_id = track.id
+
+        return youtube_id
+
+    def _is_youtube_track(self, track) -> bool:
+        """Check if a track should be played with the YouTube player.
+
+        Args:
+            track: The track to check
+
+        Returns:
+            True if the track is a YouTube track, False otherwise
+        """
+        youtube_id = self._get_youtube_id(track)
+        if youtube_id:
+            return True
+
+        # Also check if the track has any YouTube-related attributes
+        if hasattr(track, "__dict__"):
+            track_dict = track.__dict__
+            for key, value in track_dict.items():
+                if isinstance(value, str) and "youtube" in key.lower() and value:
+                    return True
+
+        return False
+
     @pyqtSlot(object)
     def load_track(self, track) -> None:
-        """Load a track for playback and start playing immediately.
+        """Load a track for playback.
 
         Args:
             track: Track to load
         """
+        if not track:
+            self.track_label.setText("No track provided")
+            self.track_loaded.emit(False)
+            return
+
+        # Check if this is a YouTube track
+        if self._is_youtube_track(track):
+            youtube_id = self._get_youtube_id(track)
+            if youtube_id:
+                # Update track label
+                self.track_label.setText(f"{track.artist} - {track.title} (YouTube)")
+                self.platform_label.setText("YOUTUBE")
+                self.track_loaded.emit(True)
+
+                # Launch YouTube player window
+                if self.youtube_window:
+                    # If a window already exists, close it first
+                    try:
+                        self.youtube_window.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing existing YouTube window: {e}")
+
+                # Create new YouTube window
+                self.youtube_window = create_youtube_player_window(youtube_id, self.window())
+                return
+            else:
+                logger.warning("Could not find YouTube ID for track")
+                self.track_label.setText("Error: Missing YouTube ID")
+                self.track_loaded.emit(False)
+                return
+
+        # For non-YouTube tracks, use the local player
+        self.platform_label.setText("LOCAL")
+
+        # Load with local player
         if self.player.load_track(track):
             # Track loaded successfully, player.track_changed signal will be emitted
             # Start playing immediately
