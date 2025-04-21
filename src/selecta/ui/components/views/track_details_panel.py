@@ -22,6 +22,7 @@ from selecta.core.utils.path_helper import get_resource_path
 from selecta.ui.components.common.image_loader import DatabaseImageLoader
 from selecta.ui.components.common.selection_state import SelectionState
 from selecta.ui.components.playlist.base_items import BaseTrackItem
+from selecta.ui.components.views.track_display_config import TrackDisplayConfig
 
 
 class PlatformButton(QPushButton):
@@ -471,13 +472,21 @@ class TrackDetailsPanel(QWidget):
             self._platform_info = {}
 
     def _create_metadata_fields(self, track: BaseTrackItem) -> None:
-        """Create metadata fields from track data.
+        """Create metadata fields from track data based on platform.
 
         Args:
             track: Track item to create fields for
         """
         # Get track data
         display_data = track.to_display_data()
+
+        # Determine the platform of the track
+        platform = getattr(track, "platform", "default")
+        platform = platform.lower() if platform else "default"
+
+        from loguru import logger
+
+        logger.debug(f"Creating metadata fields for platform: {platform}")
 
         # Get genres and tags for this track
         genres = []
@@ -500,28 +509,44 @@ class TrackDetailsPanel(QWidget):
                 country = platform_metadata["country"]
                 break
 
-        # Create fields with current values
-        fields_config = [
-            ("title", "Title", display_data.get("title", "")),
-            ("artist", "Artist", display_data.get("artist", "")),
-            ("album", "Album", display_data.get("album_name", "")),
-            ("year", "Year", str(display_data.get("year", "")) if display_data.get("year") else ""),
-            ("bpm", "BPM", str(display_data.get("bpm", "")) if display_data.get("bpm") else ""),
-            ("country", "Country", country),
-            ("genres", "Genres", ", ".join(genres)),
-            ("tags", "Tags", ", ".join(tags)),
-        ]
+        # Create a dictionary of available values
+        available_values = {
+            "title": display_data.get("title", ""),
+            "artist": display_data.get("artist", ""),
+            "album": display_data.get("album_name", ""),
+            "year": str(display_data.get("year", "")) if display_data.get("year") else "",
+            "bpm": str(display_data.get("bpm", "")) if display_data.get("bpm") else "",
+            "country": country,
+            "genres": ", ".join(genres),
+            "tags": ", ".join(tags),
+            "duration": display_data.get("duration", ""),
+            "quality": display_data.get("quality", ""),
+        }
 
-        for field_name, display_name, value in fields_config:
+        # Get platform-specific field configuration
+        platform_fields = TrackDisplayConfig.get_fields_for_platform(platform)
+
+        # Show/hide update button based on platform
+        self.update_from_platforms_button.setVisible(TrackDisplayConfig.should_show_platform_update_button(platform))
+
+        # Create fields for this platform
+        for field_key, display_name in platform_fields:
+            # Skip fields with no value
+            if field_key not in available_values or not available_values[field_key]:
+                continue
+
             # Create field widget
-            field = MetadataField(field_name, display_name, value)
+            value = available_values[field_key]
+            field = MetadataField(field_key, display_name, value)
             field.value_changed.connect(self._on_field_value_changed)
 
             # Add to layout
             self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, field)
 
             # Save reference
-            self._metadata_fields[field_name] = field
+            self._metadata_fields[field_key] = field
+
+        logger.debug(f"Created {len(self._metadata_fields)} metadata fields for platform {platform}")
 
     def _on_field_value_changed(self, field_name: str, new_value: str) -> None:
         """Handle field value changes.

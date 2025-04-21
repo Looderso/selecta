@@ -14,9 +14,11 @@ from selecta.ui.components.views.side_drawer import SideDrawer
 __all__ = [
     "BottomContent",
     "DynamicContent",
+    "DynamicContentNavigationBar",
     "MainContent",
     "NavigationBar",
     "PlaylistContent",
+    "PlaylistDetailsPanel",
     "SideDrawer",
     "TrackDetailsPanel",
 ]
@@ -26,6 +28,10 @@ __all__ = [
 def __getattr__(name):
     if name == "DynamicContent":
         return import_module("selecta.ui.components.views.dynamic_content").DynamicContent
+    elif name == "DynamicContentNavigationBar":
+        return import_module("selecta.ui.components.views.dynamic_content_navigation").DynamicContentNavigationBar
+    elif name == "PlaylistDetailsPanel":
+        return import_module("selecta.ui.components.views.playlist_details_panel").PlaylistDetailsPanel
     elif name == "TrackDetailsPanel":
         return import_module("selecta.ui.components.views.track_details_panel").TrackDetailsPanel
     raise AttributeError(f"module {__name__} has no attribute {name}")
