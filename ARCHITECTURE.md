@@ -1,261 +1,297 @@
-# Selecta Architecture Guide
+# Selecta Architecture
 
-This document outlines the architectural patterns and design principles for the Selecta music library management application.
+## Overview
 
-## System Overview
+Selecta is a unified music library manager that integrates multiple platforms into a single interface, allowing users to seamlessly work with playlists across:
 
-Selecta is a unified music library manager that integrates multiple music platforms:
 - Rekordbox (DJ library)
-- Spotify (streaming service)
+- Spotify (streaming playlists)
 - Discogs (vinyl collection)
-- Local music files
+- YouTube (playback and music discovery)
+- Local Library (Selecta's own database)
 
-The application provides a cohesive interface to manage music across these platforms, enabling seamless synchronization and organization of playlists and tracks.
+This document focuses on the architecture of the playlist component and its current refactoring to a more modular, capability-based design.
 
-**Recent Architecture Updates:**
-- Enhanced platform client implementations to consistently follow the AbstractPlatform interface
-- Completed implementation of the PlatformSyncManager for centralized synchronization logic
-- Standardized PlaylistDataProvider implementations for all platforms
-- Added comprehensive support for Discogs import/export operations
+## Playlist Component Architecture
 
-## Key Concepts
+### Before Refactoring: Fragmented Approach
 
-- **Syncing**: Bidirectional process of transferring playlists and tracks between platforms
-- **Linking**: Creating connections between representations of the same track across different platforms
-- **Import/Export**: Moving playlists and tracks between platforms and the local database
+The original playlist component architecture had several limitations:
 
-## Architecture
+1. **Platform-Specific Implementations**: Each platform had its own isolated implementation with duplicated code
+2. **Inconsistent Interfaces**: Different platforms implemented similar features in different ways
+3. **Limited Caching**: Issues with unnecessary reloads when switching between platforms
+4. **Tightly Coupled Components**: Platform-specific code scattered across UI components
+5. **Hardcoded Platform Logic**: Limited ability to add new platforms or features
 
-### Core Components
-
-1. **Platform Clients**: Responsible for direct communication with external services
-2. **Data Repositories**: Handle database operations and persistence
-3. **Sync Manager**: Coordinates synchronization between platforms
-4. **Data Providers**: Supply UI components with data from various sources
-5. **UI Components**: Present data and capture user interactions
-
-### Component Relationships
+This approach resulted in a fragmented codebase that was difficult to maintain and extend:
 
 ```
-┌───────────────────┐     ┌───────────────────┐     ┌───────────────────┐
-│   UI Components   │◄───►│ Data Providers    │────►│ Repositories      │
-└─────────┬─────────┘     └────────┬──────────┘     └─────────┬─────────┘
-          │                        │                          │
-          │                        ▼                          ▼
-          │              ┌───────────────────┐     ┌───────────────────┐
-          └─────────────►   PlatformSync    │────►│     Database       │
-                         │     Manager      │     └───────────────────┘
-                         └────────┬─────────┘
-                                  │
-                                  ▼
-                         ┌───────────────────┐
-                         │  Platform Clients  │
-                         └───────────────────┘
+src/selecta/ui/components/playlist/
+├── spotify/
+│   ├── spotify_playlist_data_provider.py  (Spotify-specific implementation)
+│   ├── spotify_playlist_item.py
+│   └── spotify_track_item.py
+├── rekordbox/
+│   ├── rekordbox_playlist_data_provider.py  (Rekordbox-specific implementation)
+│   ├── rekordbox_playlist_item.py
+│   └── rekordbox_track_item.py
+├── discogs/...  (Similar pattern for Discogs)
+├── youtube/...  (Similar pattern for YouTube)
+├── library/...  (Local library implementation)
+└── abstract_playlist_data_provider.py  (Incomplete abstraction)
 ```
 
-## Platform Integration Architecture
+Each platform had its own version of:
 
-### AbstractPlatform (Interface)
+- Playlist data providers (managing platform data)
+- Playlist items (representing playlists)
+- Track items (representing tracks)
 
-The base class for all platform integrations, defining a standard interface for:
-- Authentication
+This led to code duplication, inconsistent behavior across platforms, and difficulty in adding new features.
+
+### After Refactoring: Unified Platform Architecture
+
+The new architecture introduces a clear separation of concerns with well-defined interfaces, base implementations, and a central registry:
+
+```
+src/selecta/ui/components/playlist/
+├── interfaces.py  (Core interfaces/protocols for all platforms)
+├── base_items.py  (Base implementation of playlist/track items)
+├── base_platform_provider.py  (Common provider implementation)
+├── cache_manager.py  (Enhanced caching with persistence)
+├── platform_registry.py  (Central registry for all platforms)
+├── platform_init.py  (Platform initialization)
+├── spotify/
+│   ├── spotify_playlist_data_provider.py  (Extends BasePlatformDataProvider)
+│   ├── spotify_playlist_item.py  (Extends BasePlaylistItem)
+│   └── spotify_track_item.py  (Extends BaseTrackItem)
+├── rekordbox/...  (Similar pattern using base classes)
+├── discogs/...  (Similar pattern using base classes)
+├── youtube/...  (Similar pattern using base classes)
+└── library/
+    └── library_provider.py  (Reference implementation)
+```
+
+#### Key Components
+
+1. **Interfaces** (`interfaces.py`)
+   - `IPlatformDataProvider`: Core interface for all platform data providers
+   - `IPlaylistItem`: Protocol for playlist items across platforms
+   - `ITrackItem`: Protocol for track items across platforms
+   - `IPlatformClient`: Interface for platform clients
+   - `ICacheManager`: Interface for cache managers
+   - `ISyncManager`: Interface for synchronization
+   - `PlatformCapability`: Enum of supported capabilities
+
+2. **Base Implementations**
+   - `BasePlatformDataProvider`: Common implementation for data providers
+   - `BasePlaylistItem`: Standard implementation for playlist items
+   - `BaseTrackItem`: Standard implementation for track items
+
+3. **Platform Registry**
+   - Central registry for all platform providers
+   - Singleton pattern for access across the application
+   - Lazy initialization of platform clients and providers
+   - Capability-based feature detection
+
+4. **Enhanced Caching**
+   - More robust caching with proper invalidation
+   - Optional disk persistence for improved performance
+   - Background refresh to prevent UI blocking
+
+### Library as a Special Platform
+
+The Library is treated as a platform in the new architecture, but with some special considerations:
+
+1. **No External Client**: Unlike other platforms that connect to external services, the Library connects directly to Selecta's database
+2. **Central Collection**: The Library manages the "Collection" playlist that contains all tracks in the system
+3. **Target for Imports**: The Library serves as the destination for imports from other platforms
+4. **Source for Exports**: The Library is the source for exports to other platforms
+
+The `LibraryDataProvider` provides a reference implementation of the new architecture, demonstrating how to implement:
+
 - Playlist and track operations
-- Synchronization primitives
+- Context menus
+- Sync operations
+- Platform capability reporting
+
+## Comparing Old and New Library Implementations
+
+### Old Implementation
+
+The old implementation of the Library data provider had several limitations:
+
+1. **Inheritance-Based Approach**: Extended the `AbstractPlaylistDataProvider`, which itself extended `PlaylistDataProvider`
+2. **Direct Platform Client References**: Directly referenced other platform clients (Spotify, Rekordbox, Discogs)
+3. **Hardcoded Platform Logic**: Explicit checks for each platform with hardcoded platform names
+4. **Limited Error Handling**: Inconsistent error handling across different operations
+5. **Basic Caching**: Simple caching with limited invalidation strategies
+
+Key characteristics:
 
 ```python
-class AbstractPlatform(ABC, Generic[T, P]):
-    @abstractmethod
-    def is_authenticated(self) -> bool: ...
+class LibraryPlaylistDataProvider(AbstractPlaylistDataProvider):
+    # Direct references to other platform clients
+    self._spotify_client = None
+    self._rekordbox_client = None
+    self._discogs_client = None
 
-    @abstractmethod
-    def authenticate(self) -> bool: ...
+    # Hardcoded platform checks
+    if self._is_exported_to_spotify(playlist.id) and "spotify" not in synced_platforms:
+        synced_platforms.append("spotify")
 
-    @abstractmethod
-    def get_all_playlists(self) -> list[P]: ...
+    if self._is_exported_to_rekordbox(playlist.id) and "rekordbox" not in synced_platforms:
+        synced_platforms.append("rekordbox")
 
-    @abstractmethod
-    def get_playlist_tracks(self, playlist_id: str) -> list[T]: ...
-
-    @abstractmethod
-    def search_tracks(self, query: str, limit: int = 10) -> list[T]: ...
-
-    @abstractmethod
-    def create_playlist(self, name: str, description: str = "") -> P: ...
-
-    @abstractmethod
-    def add_tracks_to_playlist(self, playlist_id: str, track_ids: list[str]) -> bool: ...
-
-    @abstractmethod
-    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: list[str]) -> bool: ...
-
-    @abstractmethod
-    def import_playlist_to_local(self, platform_playlist_id: str) -> tuple[list[T], P]: ...
-
-    @abstractmethod
-    def export_tracks_to_playlist(
-        self,
-        playlist_name: str,
-        track_ids: list[str],
-        existing_playlist_id: str | None = None
-    ) -> str: ...
+    # Similar checks for other platforms...
 ```
 
-### PlatformSyncManager
+The old implementation split the functionality into three files:
+- `library_playlist_data_provider.py`: Main provider implementation
+- `library_playlist_item.py`: Playlist item implementation
+- `library_track_item.py`: Track item implementation
 
-Centralizes synchronization logic between the local database and external platforms:
-- Handles conversion between platform-specific and local data models
-- Manages the linking of tracks across platforms
-- Provides a consistent interface for import/export operations
+### New Implementation
+
+The new implementation (`LibraryDataProvider`) offers several improvements:
+
+1. **Protocol-Based Design**: Implements well-defined protocols from `interfaces.py`
+2. **Capability Declaration**: Explicitly declares supported features
+3. **Base Class Extension**: Extends common `BasePlatformDataProvider`
+4. **Platform Registry**: Uses the platform registry instead of direct client references
+5. **Enhanced Caching**: Better caching with in-memory and optional disk persistence
+6. **Improved Error Handling**: Consistent error handling throughout
+
+Key improvements:
 
 ```python
-class PlatformSyncManager:
-    def __init__(self, platform_client: AbstractPlatform, ...): ...
+class LibraryDataProvider(BasePlatformDataProvider):
+    # Explicit capability declaration
+    def get_capabilities(self) -> list[PlatformCapability]:
+        return [
+            PlatformCapability.IMPORT_PLAYLISTS,
+            PlatformCapability.EXPORT_PLAYLISTS,
+            PlatformCapability.SYNC_PLAYLISTS,
+            # Other capabilities...
+        ]
 
-    def import_track(self, platform_track: Any) -> Track: ...
-    def import_playlist(self, platform_playlist_id: str) -> tuple[Playlist, list[Track]]: ...
-    def export_playlist(self, local_playlist_id: int, platform_playlist_id: str = None) -> str: ...
-    def sync_playlist(self, local_playlist_id: int) -> tuple[int, int]: ...
-    def link_tracks(self, local_track_id: int, platform_track: Any) -> bool: ...
+    # Dynamic platform handling via registry
+    registry = get_platform_registry()
+    search_platforms = registry.get_platforms_with_capability(PlatformCapability.SEARCH)
+
+    # Better handling of sync relationships
+    if (hasattr(playlist_item, "is_imported") and
+        callable(playlist_item.is_imported) and
+        playlist_item.is_imported()):
+        # Handle imported playlist...
 ```
 
-### PlaylistDataProvider (Interface)
+Currently, the new implementation contains all components in a single file:
+- `new_libary_provider.py`: Contains `LibraryDataProvider`, `LibraryPlaylistItem`, and `LibraryTrackItem`
 
-Provides a consistent interface for the UI to access and manipulate playlist data:
-- Methods for retrieving playlists and tracks
-- Handles caching of remote data
-- Provides UI-specific operations like context menus
-- Delegates synchronization to PlatformSyncManager
+### Splitting Components for Better Maintainability
+
+To improve readability and maintainability, we should split the new implementation into separate files:
+
+1. **`library_data_provider.py`**: Contains only the `LibraryDataProvider` class
+   - Main provider implementation
+   - Platform capability declaration
+   - Caching and refresh logic
+   - UI interactions (context menus, etc.)
+
+2. **`library_playlist_item.py`**: Contains only the `LibraryPlaylistItem` class
+   - Extends `BasePlaylistItem`
+   - Playlist-specific properties and methods
+   - Icon handling and display logic
+
+3. **`library_track_item.py`**: Contains only the `LibraryTrackItem` class
+   - Extends `BaseTrackItem`
+   - Track-specific properties and methods
+   - Formatting and display logic
+
+This separation of concerns will make the code easier to read, understand, and maintain, while also facilitating parallel development by different team members.
+
+## Capability-Based Feature Activation
+
+One of the key improvements in the new architecture is the capability-based approach to feature activation:
 
 ```python
-class PlaylistDataProvider(ABC):
-    @abstractmethod
-    def get_all_playlists(self) -> list[PlaylistItem]: ...
+# Platform declares its capabilities
+def get_capabilities(self) -> list[PlatformCapability]:
+    return [
+        PlatformCapability.IMPORT_PLAYLISTS,
+        PlatformCapability.EXPORT_PLAYLISTS,
+        PlatformCapability.SYNC_PLAYLISTS,
+        # Other capabilities...
+    ]
 
-    @abstractmethod
-    def get_playlist_tracks(self, playlist_id: Any) -> list[TrackItem]: ...
-
-    @abstractmethod
-    def get_platform_name(self) -> str: ...
-
-    @abstractmethod
-    def show_playlist_context_menu(self, tree_view: QTreeView, position: Any) -> None: ...
-
-    @abstractmethod
-    def refresh(self) -> None: ...
-
-    def refresh_playlist(self, playlist_id: Any) -> None: ...
-    def import_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool: ...
-    def export_playlist(self, playlist_id: Any, target_platform: str, parent: QWidget | None = None) -> bool: ...
-    def sync_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool: ...
-    def create_new_playlist(self, parent: QWidget | None = None) -> bool: ...
+# UI adapts based on capabilities
+if PlatformCapability.IMPORT_PLAYLISTS in provider.get_capabilities():
+    # Show import option in UI
 ```
 
-## Data Flow
+This allows:
 
-### Importing a Playlist
+1. Each platform to declare what it can and cannot do
+2. The UI to adapt dynamically based on available features
+3. New capabilities to be added without modifying existing code
+4. Clear documentation of platform limitations
 
-1. User initiates playlist import from UI
-2. PlaylistDataProvider calls PlatformSyncManager.import_playlist()
-3. PlatformSyncManager:
-   - Uses platform client to fetch playlist data
-   - Creates local database records
-   - Handles track matching and linking
-   - Returns the newly created playlist
-4. PlaylistDataProvider refreshes the UI
+## Implementation Status
 
-### Exporting a Playlist
+The refactoring is following a phased approach:
 
-1. User selects a playlist to export
-2. PlaylistDataProvider calls PlatformSyncManager.export_playlist()
-3. PlatformSyncManager:
-   - Retrieves tracks from local database
-   - Filters tracks that have metadata for the target platform
-   - Uses platform client to create/update playlist
-   - Updates local playlist with platform identifier
-4. PlaylistDataProvider refreshes the UI
+1. ✅ Core interfaces and base classes have been created
+2. ✅ Platform registry and initialization utilities are in place
+3. ✅ Library provider (reference implementation) has been created
+4. 🔄 Migration of other platform providers is in progress
+   - Spotify: Not started
+   - Rekordbox: Not started
+   - Discogs: Not started
+   - YouTube: Not started
+5. 🔄 Update of main component to use registry is pending
+6. 🔄 Removal of legacy code is pending
 
-### Synchronizing a Playlist
+## Next Steps
 
-1. User initiates playlist sync
-2. PlaylistDataProvider calls PlatformSyncManager.sync_playlist()
-3. PlatformSyncManager:
-   - Imports new tracks from platform
-   - Exports new local tracks to platform
-   - Updates metadata for existing tracks
-   - Handles conflict resolution
-4. PlaylistDataProvider refreshes the UI
+To complete the migration:
 
-## Implementation Guidelines
+1. Implement platform-specific providers for each platform
+   - Create playlist items extending the base classes
+   - Create track items extending the base classes
+   - Implement the data provider with appropriate capabilities
 
-1. **Separation of Concerns**
-   - Platform clients should only handle API communication
-   - Repositories should only handle database operations
-   - SyncManager should handle conversion between platforms
-   - UI components should only handle presentation and user interaction
+2. Update the main playlist component to use the platform registry
+   - Replace direct provider instantiation with registry lookups
+   - Implement capability-based UI adaptation
 
-2. **Error Handling**
-   - Platform clients should handle API-specific errors
-   - SyncManager should handle synchronization conflicts
-   - All components should provide meaningful error messages
+3. Test thoroughly
+   - Each provider in isolation
+   - Interactions between providers
+   - UI behavior with the new providers
 
-3. **Type Safety**
-   - Use generic types for platform-specific models
-   - Use type hints consistently
-   - Use TypedDict and Protocol for structural typing
+4. Complete the transition by removing legacy code
+   - Remove original platform-specific implementations
+   - Remove `abstract_playlist_data_provider.py`
 
-4. **Consistency**
-   - Follow the same patterns across all platform integrations
-   - Use the same method names and signatures for similar operations
-   - Handle errors in a consistent way
+## Benefits of the New Architecture
 
-## Platform-Specific Considerations
+The unified platform architecture provides several benefits:
 
-### Spotify
-- Uses OAuth2 authentication
-- Has well-defined API with rate limits
-- Requires refresh token management
-- Supports full playlist synchronization
+1. **Consistency**: All platforms behave predictably with the same interface
+2. **Reduced Code Duplication**: Common functionality shared in base classes
+3. **Improved Caching**: Better performance with smarter caching
+4. **Dynamic Feature Adaptation**: UI adapts based on platform capabilities
+5. **Easier Maintenance**: Clear interfaces for future extensions
+6. **Better Error Handling**: Standardized error handling across platforms
+7. **Simpler Testing**: Consistent interface makes testing more straightforward
 
-### Rekordbox
-- Uses local database access
-- Limited API, primarily read operations
-- Requires careful handling of file paths
-- Supports playlist import/export
+## Challenges
 
-### Discogs
-- Uses OAuth for authentication
-- Has strict rate limiting
-- Primarily for collection/wantlist management, not playlists
-- Focus on metadata enrichment rather than playback
+Implementing this architecture presents some challenges:
 
-## Database Model
-
-### Core Entities
-
-- **Track**: Central entity representing a music track
-- **Playlist**: Collection of tracks with ordering
-- **TrackPlatformInfo**: Links tracks to their platform-specific representations
-- **Settings**: Application configuration and platform credentials
-
-### Key Relationships
-
-- A Track can have multiple TrackPlatformInfo records (one per platform)
-- A Playlist can contain multiple Tracks (through PlaylistTrack)
-- A Playlist can be linked to a platform-specific playlist via platform_id
-
-## Future Development
-
-1. **Enhanced Synchronization**
-   - Conflict resolution improvements
-   - Smarter track matching across platforms
-   - Selective synchronization
-
-2. **Platform Expansion**
-   - Support for additional music platforms
-   - More comprehensive metadata integration
-   - Improved local file management
-
-3. **User Experience**
-   - Improved sync progress reporting
-   - Better visualization of cross-platform relationships
-   - Advanced playlist management features
+1. **Backward Compatibility**: Maintaining existing functionality during migration
+2. **Platform Peculiarities**: Handling platform-specific edge cases
+3. **Testing Complexity**: Ensuring all platforms work correctly with the new architecture
+4. **Performance Optimization**: Balancing caching with fresh data
