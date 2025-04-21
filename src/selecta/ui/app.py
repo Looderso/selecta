@@ -20,8 +20,8 @@ from selecta.core.utils.type_helpers import (
     has_is_authenticated,
     has_platform_clients,
 )
-from selecta.ui.components.navigation_bar import NavigationBar
-from selecta.ui.components.side_drawer import SideDrawer
+from selecta.ui.components.views.navigation_bar import NavigationBar
+from selecta.ui.components.views.side_drawer import SideDrawer
 from selecta.ui.dialogs import ImportRekordboxDialog
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
@@ -128,7 +128,7 @@ class SelectaMainWindow(QMainWindow):
         self.current_platform = "library"
 
         # Initialize selection state
-        from selecta.ui.components.selection_state import SelectionState
+        from selecta.ui.components.common.selection_state import SelectionState
 
         self.selection_state = SelectionState()
 
@@ -373,7 +373,7 @@ class SelectaMainWindow(QMainWindow):
                 break
 
         # Initialize audio player in the bottom section if it's not already there
-        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
+        from selecta.ui.components.player.audio_player import AudioPlayerComponent
 
         # Check if we already have an audio player
         audio_player = None
@@ -486,8 +486,8 @@ class SelectaMainWindow(QMainWindow):
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
-        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
-        from selecta.ui.components.playlist_content import PlaylistContent
+        from selecta.ui.components.player.audio_player import AudioPlayerComponent
+        from selecta.ui.components.views.playlist_panel import PlaylistContent
 
         # Create playlist content
         playlist_content = PlaylistContent()
@@ -515,7 +515,8 @@ class SelectaMainWindow(QMainWindow):
 
     def _setup_search_panels(self):
         """Set up the dynamic content component in the right container."""
-        from selecta.ui.components.dynamic_content import DynamicContent
+        # Import inside method to avoid any circular imports
+        from selecta.ui.components.views import DynamicContent
 
         # Create the dynamic content component
         self.dynamic_content = DynamicContent()
@@ -555,21 +556,7 @@ class SelectaMainWindow(QMainWindow):
 
     def show_tracks(self):
         """Show tracks content."""
-        from selecta.ui.components.main_content import MainContent
-
-        # Add main content to playlist area for now
-        self.set_playlist_content(MainContent())
-
-        # Make sure dynamic content is set up
-        self._setup_search_panels()
-
-        # Clear right side
-        empty_widget = QWidget()
-        self.set_right_content(empty_widget)
-
-    def show_vinyl(self):
-        """Show vinyl content."""
-        from selecta.ui.components.main_content import MainContent
+        from selecta.ui.components.views.main_panel import MainContent
 
         # Add main content to playlist area for now
         self.set_playlist_content(MainContent())

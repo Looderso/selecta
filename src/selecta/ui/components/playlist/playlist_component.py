@@ -27,10 +27,11 @@ from selecta.ui.components.playlist.icons.track_quality_delegate import TrackQua
 from selecta.ui.components.playlist.interfaces import IPlatformDataProvider
 from selecta.ui.components.playlist.model.playlist_tree_model import PlaylistTreeModel
 from selecta.ui.components.playlist.model.tracks_table_model import TracksTableModel
-from selecta.ui.components.playlist.track.track_details_panel import TrackDetailsPanel
-from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.dialogs.collection_management_dialog import CollectionManagementDialog
 from selecta.ui.widgets.loading_widget import LoadingWidget
+
+# Import TrackDetailsPanel inside the class to avoid circular imports
+from selecta.ui.widgets.search_bar import SearchBar
 
 
 class PlaylistTreeContainer(QWidget):
@@ -228,6 +229,9 @@ class PlaylistComponent(QWidget):
         self.current_playlist_id: int | None = None
         self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
 
+        # Import TrackDetailsPanel here to avoid circular imports
+        from selecta.ui.components.views.track_details_panel import TrackDetailsPanel
+
         # Create the details panel but don't add it to our layout
         # It will be managed by the main window
         self.details_panel = TrackDetailsPanel()
@@ -238,7 +242,7 @@ class PlaylistComponent(QWidget):
         self.details_panel.quality_changed.connect(self._on_track_quality_changed)
 
         # Use the shared selection state - import here to avoid circular imports
-        from selecta.ui.components.selection_state import SelectionState
+        from selecta.ui.components.common.selection_state import SelectionState
 
         self.selection_state = SelectionState()
         self.selection_state.data_changed.connect(self._on_data_changed)

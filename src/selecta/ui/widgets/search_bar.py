@@ -1,4 +1,4 @@
-# src/selecta/ui/components/search_bar.py
+# src/selecta/ui/widgets/search_bar.py
 from collections.abc import Callable
 
 from PyQt6.QtCore import Qt, pyqtSignal

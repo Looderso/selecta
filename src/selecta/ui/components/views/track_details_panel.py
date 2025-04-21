@@ -19,7 +19,8 @@ from selecta.core.data.database import get_session
 from selecta.core.data.models.db import ImageSize, Track
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.path_helper import get_resource_path
-from selecta.ui.components.image_loader import DatabaseImageLoader
+from selecta.ui.components.common.image_loader import DatabaseImageLoader
+from selecta.ui.components.common.selection_state import SelectionState
 from selecta.ui.components.playlist.base_items import BaseTrackItem
 
 
@@ -351,8 +352,6 @@ class TrackDetailsPanel(QWidget):
         layout.addWidget(button_container)
 
         # Connect to the global selection state
-        from selecta.ui.components.selection_state import SelectionState
-
         self.selection_state = SelectionState()
         self.selection_state.track_updated.connect(self._on_track_updated)
 
@@ -973,8 +972,6 @@ class TrackDetailsPanel(QWidget):
                 self.quality_changed.emit(self._current_track_id, quality)
 
                 # Notify the global selection state that this track was updated
-                from selecta.ui.components.selection_state import SelectionState
-
                 SelectionState().notify_track_updated(self._current_track_id)
             else:
                 logger.error(f"Failed to update quality for track {self._current_track_id}")
@@ -1323,8 +1320,6 @@ class TrackDetailsPanel(QWidget):
                 self._saved_image_track_id = track.id
 
                 # Notify UI of update WITHOUT triggering a full refresh
-                from selecta.ui.components.selection_state import SelectionState
-
                 SelectionState().notify_track_updated(track.id)
 
                 return True

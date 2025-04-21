@@ -68,9 +68,7 @@ class DatabaseImageLoader(QObject):
         worker = thread_manager.run_task(self._load_track_image_task, track_id, size, cache_key)
 
         # Connect signals
-        worker.signals.error.connect(
-            lambda err: self._handle_track_image_error(track_id, err, cache_key)
-        )
+        worker.signals.error.connect(lambda err: self._handle_track_image_error(track_id, err, cache_key))
         worker.signals.finished.connect(lambda: self._loading.discard(cache_key))
 
     def load_album_image(self, album_id: int, size: ImageSize = ImageSize.THUMBNAIL) -> None:
@@ -102,14 +100,10 @@ class DatabaseImageLoader(QObject):
         worker = thread_manager.run_task(self._load_album_image_task, album_id, size, cache_key)
 
         # Connect signals
-        worker.signals.error.connect(
-            lambda err: self._handle_album_image_error(album_id, err, cache_key)
-        )
+        worker.signals.error.connect(lambda err: self._handle_album_image_error(album_id, err, cache_key))
         worker.signals.finished.connect(lambda: self._loading.discard(cache_key))
 
-    def _load_track_image_task(
-        self, track_id: int, size: ImageSize, cache_key: str
-    ) -> QPixmap | None:
+    def _load_track_image_task(self, track_id: int, size: ImageSize, cache_key: str) -> QPixmap | None:
         """Task function for loading a track's image using ThreadManager.
 
         Args:
@@ -156,9 +150,7 @@ class DatabaseImageLoader(QObject):
         logger.error(f"Error loading track image {track_id}: {error}")
         self.track_image_failed.emit(track_id, error)
 
-    def _load_album_image_task(
-        self, album_id: int, size: ImageSize, cache_key: str
-    ) -> QPixmap | None:
+    def _load_album_image_task(self, album_id: int, size: ImageSize, cache_key: str) -> QPixmap | None:
         """Task function for loading an album's image using ThreadManager.
 
         Args:

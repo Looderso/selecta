@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from selecta.ui.components.platform_auth_panel import PlatformAuthPanel
+from selecta.ui.components.auth.platform_auth_panel import PlatformAuthPanel
 from selecta.ui.widgets.folder_selection_widget import FolderSelectionWidget
 
 
@@ -71,9 +71,7 @@ class SideDrawer(QWidget):
 
         # Adjust layout to position close button at the top right
         title_layout = QVBoxLayout()
-        title_layout.addWidget(
-            close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
-        )
+        title_layout.addWidget(close_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         layout.insertLayout(0, title_layout)
 
         # Create scroll area
@@ -153,18 +151,14 @@ class SideDrawer(QWidget):
 
         # Update parent reference size in case the window was resized
         target_x = self._parent.width() - self.width()
-        self.animation.setStartValue(
-            QRect(self._parent.width(), 0, self.width(), self._parent.height())
-        )
+        self.animation.setStartValue(QRect(self._parent.width(), 0, self.width(), self._parent.height()))
         self.animation.setEndValue(QRect(target_x, 0, self.width(), self._parent.height()))
         self.animation.start()
 
     def hide_drawer(self):
         """Hide the drawer with animation."""
         self.animation.setStartValue(self.geometry())
-        self.animation.setEndValue(
-            QRect(self._parent.width(), 0, self.width(), self._parent.height())
-        )
+        self.animation.setEndValue(QRect(self._parent.width(), 0, self.width(), self._parent.height()))
         self.animation.start()
 
         # Hide the drawer after animation finishes

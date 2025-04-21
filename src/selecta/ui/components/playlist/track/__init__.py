@@ -1,5 +1,5 @@
 """Track-related components for playlist UI."""
 
-from selecta.ui.components.playlist.track.track_details_panel import TrackDetailsPanel
+# TrackDetailsPanel has been moved to selecta.ui.components.views.track_details_panel
 
-__all__ = ["TrackDetailsPanel"]
+__all__ = []

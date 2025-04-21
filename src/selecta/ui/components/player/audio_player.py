@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 from selecta.core.data.models.db import ImageSize
 from selecta.ui.components.common.image_loader import DatabaseImageLoader
+from selecta.ui.dialogs.spotify_device_dialog import SpotifyDeviceDialog
 
 
 class ClickableSlider(QSlider):
@@ -127,7 +128,6 @@ class ClickableSlider(QSlider):
 from selecta.core.data.models.db import Track
 from selecta.core.utils.audio_player import AudioPlayerFactory, PlayerState, SpotifyAudioPlayer
 from selecta.ui.components.player.youtube_player import create_youtube_player_window
-from selecta.ui.dialogs.spotify_device_dialog import SpotifyDeviceDialog
 
 
 class AudioPlayerComponent(QWidget):

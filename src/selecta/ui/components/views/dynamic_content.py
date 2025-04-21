@@ -21,9 +21,11 @@ from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.abstract_platform import AbstractPlatform
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.utils.worker import ThreadManager
-from selecta.ui.components.loading_widget import LoadableWidget
-from selecta.ui.components.playlist.track.track_details_panel import TrackDetailsPanel
-from selecta.ui.components.search import DiscogsSearchPanel, SpotifySearchPanel, YouTubeSearchPanel
+from selecta.ui.components.search.platform.discogs import DiscogsSearchPanel
+from selecta.ui.components.search.platform.spotify import SpotifySearchPanel
+from selecta.ui.components.search.platform.youtube import YouTubeSearchPanel
+from selecta.ui.components.views.track_details_panel import TrackDetailsPanel
+from selecta.ui.widgets.loading_widget import LoadableWidget
 
 
 class DynamicContent(LoadableWidget):
@@ -58,7 +60,7 @@ class DynamicContent(LoadableWidget):
         self.youtube_search_panel.track_added.connect(self._handle_track_added)
 
         # Import here to avoid circular imports
-        from selecta.ui.components.selection_state import SelectionState
+        from selecta.ui.components.common.selection_state import SelectionState
 
         self.selection_state = SelectionState()
         self.selection_state.track_selected.connect(self._on_track_selected)

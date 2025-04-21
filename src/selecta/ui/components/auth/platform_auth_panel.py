@@ -8,7 +8,7 @@ from selecta.core.data.repositories.settings_repository import SettingsRepositor
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.auth import RekordboxAuthManager
 from selecta.core.utils.type_helpers import has_switch_platform
-from selecta.ui.components.platform_auth_widget import PlatformAuthWidget
+from selecta.ui.widgets.platform_auth_widget import PlatformAuthWidget
 
 
 class PlatformAuthPanel(QWidget):
@@ -92,12 +92,7 @@ class PlatformAuthPanel(QWidget):
             if rekordbox_client:
                 # Try to authenticate first if we have a key
                 auth_manager = RekordboxAuthManager(settings_repo=self.settings_repo)
-                if auth_manager.get_stored_key():
-                    # Force authentication check with stored key
-                    is_authenticated = rekordbox_client.is_authenticated()
-                else:
-                    # No key yet, need to authenticate
-                    is_authenticated = False
+                is_authenticated = rekordbox_client.is_authenticated() if auth_manager.get_stored_key() else False
             else:
                 is_authenticated = False
 
@@ -174,9 +169,7 @@ class PlatformAuthPanel(QWidget):
         try:
             import psutil
 
-            rekordbox_running = any(
-                "rekordbox" in p.name().lower() for p in psutil.process_iter(["name"])
-            )
+            rekordbox_running = any("rekordbox" in p.name().lower() for p in psutil.process_iter(["name"]))
             if rekordbox_running:
                 # Show warning about Rekordbox running
                 response = QMessageBox.warning(
@@ -213,6 +206,7 @@ class PlatformAuthPanel(QWidget):
 
             # Force processing of events so message shows up
             from PyQt6.QtCore import QCoreApplication
+
             QCoreApplication.processEvents()
 
             try:
@@ -262,8 +256,7 @@ class PlatformAuthPanel(QWidget):
                     QMessageBox.critical(
                         self,
                         "Rekordbox Client Error",
-                        "Failed to create Rekordbox client.\n\n"
-                        "Please check that Rekordbox is installed correctly.",
+                        "Failed to create Rekordbox client.\n\nPlease check that Rekordbox is installed correctly.",
                     )
             except Exception as e:
                 # Close progress message
@@ -329,7 +322,7 @@ class PlatformAuthPanel(QWidget):
                         QMessageBox.warning(
                             self,
                             "YouTube Authentication Failed",
-                            "Could not authenticate with YouTube.\n\n" "Please try again later.",
+                            "Could not authenticate with YouTube.\n\nPlease try again later.",
                         )
                 else:
                     # Close progress message

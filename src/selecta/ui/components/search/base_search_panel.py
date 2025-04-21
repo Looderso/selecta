@@ -15,10 +15,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from selecta.ui.components.loading_widget import LoadableWidget
+from selecta.ui.components.common.selection_state import SelectionState
 from selecta.ui.components.search.base_search_result import BaseSearchResult
-from selecta.ui.components.search_bar import SearchBar
-from selecta.ui.components.selection_state import SelectionState
+from selecta.ui.widgets.loading_widget import LoadableWidget
+from selecta.ui.widgets.search_bar import SearchBar
 
 
 class BaseSearchPanel(LoadableWidget):

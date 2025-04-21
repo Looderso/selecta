@@ -17,8 +17,8 @@ from selecta.ui.components.playlist.model import PlaylistTreeModel, TracksTableM
 from selecta.ui.components.playlist.platform import get_platform_registry, initialize_platforms
 from selecta.ui.components.playlist.playlist_component import PlaylistComponent
 
-# Import track components
-from selecta.ui.components.playlist.track import TrackDetailsPanel
+# We avoid importing TrackDetailsPanel here to prevent circular imports
+# The TrackDetailsPanel is now imported inside PlaylistComponent instead
 
 __all__ = [
     # Core components
@@ -36,6 +36,4 @@ __all__ = [
     "PlaylistIconDelegate",
     "TrackImageDelegate",
     "TrackQualityDelegate",
-    # Track components
-    "TrackDetailsPanel",
 ]

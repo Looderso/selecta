@@ -5,7 +5,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QItemDelegate, QStyle
 
 from selecta.core.data.models.db import ImageSize
-from selecta.ui.components.image_loader import DatabaseImageLoader
+from selecta.ui.components.common.image_loader import DatabaseImageLoader
 
 
 class TrackImageDelegate(QItemDelegate):

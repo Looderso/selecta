@@ -52,9 +52,7 @@ class SelectionState(QObject):
             playlist: The selected playlist object
         """
         if self.current_playlist != playlist:
-            old_id = (
-                getattr(self.current_playlist, "item_id", None) if self.current_playlist else None
-            )
+            old_id = getattr(self.current_playlist, "item_id", None) if self.current_playlist else None
             new_id = getattr(playlist, "item_id", None) if playlist else None
 
             self.current_playlist = playlist
@@ -111,10 +109,7 @@ class SelectionState(QObject):
         current_time = time.time()
 
         # Only allow one notification per track per 0.5 seconds
-        if (
-            track_id in self._last_track_update_times
-            and current_time - self._last_track_update_times[track_id] < 0.5
-        ):
+        if track_id in self._last_track_update_times and current_time - self._last_track_update_times[track_id] < 0.5:
             logger.debug(f"Track update notification throttled for track_id={track_id}")
             return
 
