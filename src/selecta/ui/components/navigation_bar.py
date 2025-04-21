@@ -10,7 +10,7 @@ class NavigationBar(QWidget):
     settings_button_clicked = pyqtSignal()
 
     # Add platform selection signals
-    local_button_clicked = pyqtSignal()
+    library_button_clicked = pyqtSignal()  # Renamed from local_button_clicked
     spotify_button_clicked = pyqtSignal()
     rekordbox_button_clicked = pyqtSignal()
     discogs_button_clicked = pyqtSignal()
@@ -75,14 +75,14 @@ class NavigationBar(QWidget):
     def _add_platform_buttons(self, layout):
         """Add platform selection buttons."""
         # Create platform buttons
-        self.local_button = QPushButton("Local")
+        self.library_button = QPushButton("Library")  # Renamed from local_button
         self.spotify_button = QPushButton("Spotify")
         self.rekordbox_button = QPushButton("Rekordbox")
         self.discogs_button = QPushButton("Discogs")
         self.youtube_button = QPushButton("YouTube")
 
         # Connect signals
-        self.local_button.clicked.connect(self.local_button_clicked)
+        self.library_button.clicked.connect(self.library_button_clicked)  # Updated signal
         self.spotify_button.clicked.connect(self.spotify_button_clicked)
         self.rekordbox_button.clicked.connect(self.rekordbox_button_clicked)
         self.discogs_button.clicked.connect(self.discogs_button_clicked)
@@ -90,7 +90,7 @@ class NavigationBar(QWidget):
 
         # Set cursor and add to layout
         for button in [
-            self.local_button,
+            self.library_button,  # Updated variable name
             self.spotify_button,
             self.rekordbox_button,
             self.discogs_button,
@@ -103,11 +103,11 @@ class NavigationBar(QWidget):
         """Set the active platform button.
 
         Args:
-            platform: Platform name ('local', 'spotify', 'rekordbox', 'discogs')
+            platform: Platform name ('library', 'spotify', 'rekordbox', 'discogs')
         """
         # Remove active class from all buttons
         for button in [
-            self.local_button,
+            self.library_button,  # Updated variable name
             self.spotify_button,
             self.rekordbox_button,
             self.discogs_button,
@@ -117,9 +117,9 @@ class NavigationBar(QWidget):
             button.setStyleSheet("")
 
         # Set active class for the selected platform
-        if platform == "local":
-            self.local_button.setProperty("class", "active")
-            self.local_button.setStyleSheet(
+        if platform == "library" or platform == "local":  # Support both names during transition
+            self.library_button.setProperty("class", "active")
+            self.library_button.setStyleSheet(
                 "background-color: rgba(255, 255, 255, 0.2); color: white; font-weight: bold;"
             )
         elif platform == "spotify":

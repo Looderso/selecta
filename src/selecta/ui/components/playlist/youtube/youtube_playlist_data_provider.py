@@ -3,13 +3,14 @@
 from typing import Any, cast
 
 from loguru import logger
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMenu, QMessageBox, QTreeView, QWidget
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QMessageBox, QWidget
 
+from selecta.core.data.types import SyncResult
 from selecta.core.platform.platform_factory import PlatformFactory
+from selecta.core.platform.sync_manager import PlatformSyncManager
 from selecta.core.platform.youtube.client import YouTubeClient
 from selecta.core.platform.youtube.models import YouTubePlaylist
-from selecta.core.platform.youtube.sync import import_youtube_playlist
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
@@ -20,8 +21,12 @@ from selecta.ui.components.playlist.youtube.youtube_track_item import YouTubeTra
 from selecta.ui.dialogs import CreatePlaylistDialog
 
 
-class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
+class YouTubePlaylistDataProvider(QObject, AbstractPlaylistDataProvider):
     """Data provider for YouTube playlists."""
+
+    # Signals for notifying view updates
+    playlists_updated = pyqtSignal()  # Signal for when all playlists are updated
+    playlist_updated = pyqtSignal(str)  # Signal for when a specific playlist is updated
 
     def __init__(self, client: YouTubeClient | None = None, cache_timeout: float = 300.0) -> None:
         """Initialize the YouTube playlist data provider.
@@ -30,8 +35,11 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             client: YouTube client instance
             cache_timeout: Cache timeout in seconds (default: 5 minutes)
         """
-        # Initialize with client first so that our self.client will be set
-        super().__init__(client=client, cache_timeout=cache_timeout)
+        # Initialize base classes properly
+        # Note: Using super() isn't straightforward with multiple inheritance,
+        # so we explicitly initialize each parent class
+        QObject.__init__(self)
+        AbstractPlaylistDataProvider.__init__(self, client=client, cache_timeout=cache_timeout)
 
         # Store as youtube_client as well for convenience
         if client is None:
@@ -127,6 +135,30 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
                 return []
             logger.info("Successfully connected to YouTube")
 
+        # Import repositories here to avoid circular imports
+        from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+        # Get all imported YouTube playlists
+        imported_youtube_ids = set()
+        try:
+            # Create repository to check if playlists are imported
+            playlist_repo = PlaylistRepository()
+
+            # Get all playlists linked to YouTube
+            imported_playlists = playlist_repo.get_playlists_by_platform("youtube")
+
+            # Extract the platform_ids
+            for playlist in imported_playlists:
+                # Get the platform ID
+                # (from new platform_info if available, otherwise from legacy field)
+                platform_id = playlist.get_platform_id("youtube")
+                if platform_id:
+                    imported_youtube_ids.add(platform_id)
+
+            logger.debug(f"Found {len(imported_youtube_ids)} imported YouTube playlists")
+        except Exception as e:
+            logger.warning(f"Error fetching imported YouTube playlists: {e}")
+
         try:
             # Fetch playlists from YouTube
             logger.debug("Calling get_playlists()")
@@ -136,12 +168,16 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             # Convert to UI playlist items
             for playlist in self._playlists:
                 logger.debug(f"Processing playlist: {playlist.id} - {playlist.title}")
+                # Check if this playlist has been imported
+                is_imported = playlist.id in imported_youtube_ids
+
                 playlist_item = YouTubePlaylistItem(
                     id=playlist.id,
                     title=playlist.title,
                     description=playlist.description,
                     track_count=playlist.video_count,
                     thumbnail_url=playlist.thumbnail_url,
+                    is_imported=is_imported,
                 )
                 playlist_items.append(playlist_item)
 
@@ -202,35 +238,9 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             logger.exception(f"Error fetching YouTube playlist tracks: {e}")
             return []
 
-    def show_playlist_context_menu(
-        self, tree_view: QTreeView, position: Any, parent: QWidget | None = None
-    ) -> None:
-        """Show a context menu for a YouTube playlist.
-
-        Args:
-            tree_view: The tree view containing the playlist
-            position: Position where to show the menu
-            parent: Parent widget for dialogs
-        """
-        index = tree_view.indexAt(position)
-        if not index.isValid():
-            return
-
-        item = index.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(item, YouTubePlaylistItem):
-            return
-
-        menu = QMenu()
-        import_action = menu.addAction("Import to Library")
-        refresh_action = menu.addAction("Refresh")
-
-        # Show the menu and handle the selected action
-        action = menu.exec(tree_view.viewport().mapToGlobal(position))
-
-        if action == import_action:
-            self.import_playlist(item.id, parent)
-        elif action == refresh_action:
-            self.refresh_playlist(item.id)
+    # Use the default implementations from AbstractPlaylistDataProvider for:
+    # - show_playlist_context_menu
+    # - show_track_context_menu
 
     def refresh(self) -> None:
         """Refresh all playlists."""
@@ -276,8 +286,11 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
                     "Importing YouTube playlist. This may take a moment...",
                 )
 
+            # Create a sync manager to import the playlist
+            sync_manager = PlatformSyncManager(self.youtube_client)
+
             # Import the playlist
-            local_playlist, tracks = import_youtube_playlist(self.youtube_client, playlist_id)
+            local_playlist, tracks = sync_manager.import_playlist(playlist_id)
 
             # Show success message
             if parent:
@@ -313,8 +326,50 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         Returns:
             True if successfully exported
         """
-        # This method is not directly used for YouTube - handled by sync manager
-        return False
+        if not self.is_connected():
+            if parent:
+                QMessageBox.warning(
+                    parent,
+                    "Not Connected",
+                    "Not connected to YouTube. Please connect first.",
+                )
+            return False
+
+        try:
+            # Show a progress dialog
+            if parent:
+                QMessageBox.information(
+                    parent,
+                    "Exporting Playlist",
+                    "Exporting playlist to YouTube. This may take a moment...",
+                )
+
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.youtube_client)
+
+            # Export the playlist - ignoring returned ID since we don't use it
+            _ = sync_manager.export_playlist(int(playlist_id))
+
+            # Show success message
+            if parent:
+                QMessageBox.information(
+                    parent,
+                    "Export Successful",
+                    "Successfully exported playlist to YouTube.",
+                )
+
+            # Signal that playlists have changed
+            self.playlists_updated.emit()
+            return True
+        except Exception as e:
+            logger.exception(f"Error exporting playlist to YouTube: {e}")
+            if parent:
+                QMessageBox.critical(
+                    parent,
+                    "Export Failed",
+                    f"Failed to export playlist: {str(e)}",
+                )
+            return False
 
     def sync_playlist(self, playlist_id: str, parent: QWidget | None = None) -> bool:
         """Synchronize a local playlist with its platform counterpart.
@@ -326,8 +381,63 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
         Returns:
             True if successfully synced
         """
-        # This method is not directly used for YouTube - handled by sync manager
-        return False
+        if not self.is_connected():
+            if parent:
+                QMessageBox.warning(
+                    parent,
+                    "Not Connected",
+                    "Not connected to YouTube. Please connect first.",
+                )
+            return False
+
+        try:
+            # Show a progress dialog
+            if parent:
+                QMessageBox.information(
+                    parent,
+                    "Syncing Playlist",
+                    "Syncing playlist with YouTube. This may take a moment...",
+                )
+
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.youtube_client)
+
+            # Sync the playlist
+            sync_result = sync_manager.sync_playlist(
+                local_playlist_id=int(playlist_id), apply_all_changes=True
+            )
+
+            # Extract results from SyncResult
+            if isinstance(sync_result, SyncResult):
+                tracks_added_to_library = sync_result.library_additions_applied
+                tracks_added_to_platform = sync_result.platform_additions_applied
+            else:
+                # This should not happen when apply_all_changes=True, but just in case
+                tracks_added_to_library = 0
+                tracks_added_to_platform = 0
+
+            # Show success message
+            if parent:
+                QMessageBox.information(
+                    parent,
+                    "Sync Successful",
+                    f"Successfully synced playlist with YouTube.\n"
+                    f"Added {tracks_added_to_library} tracks to library, "
+                    f"added {tracks_added_to_platform} tracks to YouTube.",
+                )
+
+            # Signal that playlists have changed
+            self.local_playlists_changed.emit()
+            return True
+        except Exception as e:
+            logger.exception(f"Error syncing playlist with YouTube: {e}")
+            if parent:
+                QMessageBox.critical(
+                    parent,
+                    "Sync Failed",
+                    f"Failed to sync playlist: {str(e)}",
+                )
+            return False
 
     def create_new_playlist(self, parent: QWidget | None = None) -> bool:
         """Create a new playlist on the platform.
@@ -351,8 +461,10 @@ class YouTubePlaylistDataProvider(AbstractPlaylistDataProvider):
             # Show create playlist dialog
             dialog = CreatePlaylistDialog(parent)
             if dialog.exec():
-                name = dialog.get_name()
-                description = dialog.get_description()
+                # Get the values from the dialog
+                values = dialog.get_values()
+                name = values["name"]
+                description = ""  # Description is not collected in the standard dialog
 
                 # Create the playlist
                 self.youtube_client.create_playlist(

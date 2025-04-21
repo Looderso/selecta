@@ -139,7 +139,6 @@ known-third-party = ["kivy", "spotipy", "python3-discogs_client", "sqlalchemy"]
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
 python_files = "test_*.py"
-addopts = "--cov=selecta"
 markers = [
     "integration: marks tests as integration tests",
     "gui: marks tests that require a GUI",

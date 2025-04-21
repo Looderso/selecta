@@ -19,6 +19,7 @@ class SpotifyPlaylistItem(PlaylistItem):
         is_public: bool = True,
         track_count: int = 0,
         images: list[dict] | None = None,
+        is_imported: bool = False,
     ):
         """Initialize a Spotify playlist item.
 
@@ -31,6 +32,7 @@ class SpotifyPlaylistItem(PlaylistItem):
             is_public: Whether this playlist is public
             track_count: Number of tracks in the playlist
             images: List of playlist cover images
+            is_imported: Whether this playlist has been imported to the library
         """
         super().__init__(name, item_id, None)  # Spotify doesn't have parent playlists
         self.owner = owner
@@ -39,6 +41,7 @@ class SpotifyPlaylistItem(PlaylistItem):
         self.is_public = is_public
         self.track_count = track_count
         self.images = images or []
+        self.is_imported = is_imported
 
     def get_icon(self) -> QIcon:
         """Get the icon for this item.
@@ -46,9 +49,8 @@ class SpotifyPlaylistItem(PlaylistItem):
         Returns:
             QIcon appropriate for this type of item
         """
-        # Use a Spotify-specific icon if available
-        # For now, fallback to generic icon
-        return QIcon.fromTheme("audio-x-generic")
+        # Use Spotify icon
+        return QIcon("resources/icons/spotify.png")
 
     def is_folder(self) -> bool:
         """Check if this item is a folder.
@@ -74,3 +76,16 @@ class SpotifyPlaylistItem(PlaylistItem):
 
         # If no suitable image found, return the first one
         return self.images[0].get("url") if self.images else None
+
+    def get_platform_icons(self) -> list[str]:
+        """Get list of platform names for displaying sync icons.
+
+        For Spotify playlists, we only return "library" if the playlist
+        has been imported to the local library.
+
+        Returns:
+            List of platform names that this playlist is synced with
+        """
+        if self.is_imported:
+            return ["library"]
+        return []

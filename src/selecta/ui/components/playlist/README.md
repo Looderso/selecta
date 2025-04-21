@@ -30,7 +30,7 @@ The playlist module provides UI components for displaying, managing, and interac
 - `rekordbox/`: Rekordbox-specific playlist components
 - `discogs/`: Discogs-specific playlist components
 - `youtube/`: YouTube-specific playlist components
-- `local/`: Local playlist components
+- `library/`: Library playlist components (unified database)
 
 ## Dependencies
 
@@ -85,6 +85,9 @@ The panel also provides functionality for managing track cover images:
 
 ## Change History
 
+- Renamed "Local" to "Library" for better alignment with unified database concept
+- Added special handling for Collection playlist with dedicated management
+- Added automatic addition of tracks to Collection from all playlists
 - Added cover image selection and management from platforms to TrackDetailsPanel
 - Added CoverSelectionDialog for choosing cover images from different platforms
 - Refactored TrackDetailsPanel with metadata editing capabilities and platform integration

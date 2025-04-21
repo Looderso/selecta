@@ -1,20 +1,18 @@
 # src/selecta/ui/components/playlist/rekordbox/rekordbox_playlist_data_provider.py
 """Rekordbox playlist data provider implementation."""
 
-import datetime
-import json
 import os
 from typing import Any
 
 from loguru import logger
-from PyQt6.QtWidgets import QMenu, QMessageBox, QTreeView, QWidget
+from PyQt6.QtWidgets import QMessageBox, QWidget
 
-from selecta.core.data.models.db import Playlist, PlaylistTrack, Track, TrackPlatformInfo
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
 from selecta.core.data.repositories.settings_repository import SettingsRepository
-from selecta.core.data.repositories.track_repository import TrackRepository
+from selecta.core.data.types import SyncResult
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.rekordbox.client import RekordboxClient
+from selecta.core.platform.sync_manager import PlatformSyncManager
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
@@ -65,7 +63,30 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
             rekordbox_playlists = self.client.get_all_playlists()
             playlist_items = []
 
+            # Create repository to check if playlists are imported
+            playlist_repo = PlaylistRepository()
+
+            # Get all imported Rekordbox playlists
+            imported_rekordbox_ids = set()
+            try:
+                # Get all playlists linked to Rekordbox
+                imported_playlists = playlist_repo.get_playlists_by_platform("rekordbox")
+
+                # Extract the platform_ids
+                for playlist in imported_playlists:
+                    # Get the platform ID (from new platform_info if available,
+                    # otherwise from legacy field)
+                    platform_id = playlist.get_platform_id("rekordbox")
+                    if platform_id:
+                        imported_rekordbox_ids.add(platform_id)
+            except Exception as e:
+                logger.warning(f"Error fetching imported Rekordbox playlists: {e}")
+
             for rb_playlist in rekordbox_playlists:
+                # Check if this playlist has been imported
+                playlist_id = rb_playlist.id
+                is_imported = str(playlist_id) in imported_rekordbox_ids
+
                 # Convert to PlaylistItem
                 playlist_items.append(
                     RekordboxPlaylistItem(
@@ -76,6 +97,7 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
                         else None,
                         is_folder_flag=rb_playlist.is_folder,
                         track_count=len(rb_playlist.tracks),
+                        is_imported=is_imported,
                     )
                 )
 
@@ -137,34 +159,8 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
         """
         return "Rekordbox"
 
-    def show_playlist_context_menu(self, tree_view: QTreeView, position: Any) -> None:
-        """Show a context menu for a Rekordbox playlist.
-
-        Args:
-            tree_view: The tree view
-            position: Position where the context menu was requested
-        """
-        # Get the playlist item at this position
-        index = tree_view.indexAt(position)
-        if not index.isValid():
-            return
-
-        # Get the playlist item
-        playlist_item = index.internalPointer()
-        if not playlist_item or playlist_item.is_folder():
-            return
-
-        # Create context menu
-        menu = QMenu(tree_view)
-
-        # Add import action
-        import_action = menu.addAction("Import to Local Library")
-        import_action.triggered.connect(
-            lambda: self.import_playlist(playlist_item.item_id, tree_view)
-        )  # type: ignore
-
-        # Show the menu at the cursor position
-        menu.exec(tree_view.viewport().mapToGlobal(position))  # type: ignore
+    # Use the default implementation
+    # from AbstractPlaylistDataProvider for show_playlist_context_menu
 
     def import_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
         """Import a Rekordbox playlist to the local library.
@@ -185,10 +181,15 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
             return False
 
         try:
-            # First, get the playlist details from Rekordbox
-            rekordbox_tracks, rekordbox_playlist = self.client.import_playlist_to_local(
-                str(playlist_id)
-            )
+            # Get the playlist details first to get the name for the dialog
+            rekordbox_playlist = self.client.get_playlist_by_id(str(playlist_id))
+            if not rekordbox_playlist:
+                QMessageBox.critical(
+                    parent,
+                    "Playlist Not Found",
+                    f"Could not find Rekordbox playlist with ID {playlist_id}.",
+                )
+                return False
 
             # Show the import dialog to let the user set the playlist name
             dialog = ImportExportPlaylistDialog(
@@ -201,12 +202,13 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
             dialog_values = dialog.get_values()
             playlist_name = dialog_values["name"]
 
-            # Create repositories
-            track_repo = TrackRepository()
-            playlist_repo = PlaylistRepository()
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.client)
 
             # First check if a playlist with the same Rekordbox ID already exists
+            playlist_repo = PlaylistRepository()
             existing_playlist = playlist_repo.get_by_platform_id("rekordbox", str(playlist_id))
+
             if existing_playlist:
                 response = QMessageBox.question(
                     parent,
@@ -220,101 +222,23 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
                 if response != QMessageBox.StandardButton.Yes:
                     return False
 
-                # Use the existing playlist
-                local_playlist = existing_playlist
-                # But update the name if it changed
-                if playlist_name != local_playlist.name:
-                    local_playlist.name = playlist_name
-                    playlist_repo.session.commit()
-            else:
-                # Create a new local playlist linked to Rekordbox
-                local_playlist = Playlist(
-                    name=playlist_name,
-                    description="Imported from Rekordbox",
-                    is_local=False,
-                    source_platform="rekordbox",
-                    platform_id=str(playlist_id),
-                )
-                playlist_repo.session.add(local_playlist)
-                playlist_repo.session.commit()
+            # Import the playlist using the sync manager
+            local_playlist, imported_tracks = sync_manager.import_playlist(
+                platform_playlist_id=str(playlist_id), target_name=playlist_name
+            )
 
-            # Counter for tracks added/updated
-            tracks_added = 0
-            tracks_updated = 0
+            # Count tracks with local files
             tracks_with_local_files = 0
-
-            # Process each track
-            for rb_track in rekordbox_tracks:
-                # Check if this track already exists in our database
-                existing_track = track_repo.get_by_platform_id("rekordbox", str(rb_track.id))
-
-                if existing_track:
-                    # Track exists, make sure it's in the playlist
-                    tracks_updated += 1
-                    track = existing_track
-
-                    # Check if it has a local file
-                    if track.local_path and os.path.exists(track.local_path):
-                        tracks_with_local_files += 1
-                else:
-                    # Create a new track
-                    track = Track(
-                        title=rb_track.title,
-                        artist=rb_track.artist_name,
-                        duration_ms=rb_track.duration_ms,
-                        bpm=rb_track.bpm,
-                        year=None,  # Rekordbox doesn't provide year directly
-                        is_available_locally=False,  # Will update if file exists
-                    )
-
-                    # Check if the file exists (if path is provided)
-                    if rb_track.folder_path and os.path.exists(rb_track.folder_path):
-                        track.local_path = rb_track.folder_path
-                        track.is_available_locally = True
-                        tracks_with_local_files += 1
-
-                    track_repo.session.add(track)
-                    track_repo.session.flush()  # Get the ID
-
-                    # Add Rekordbox platform info
-                    platform_data = json.dumps(rb_track.to_dict())
-                    track_info = TrackPlatformInfo(
-                        track_id=track.id,
-                        platform="rekordbox",
-                        platform_id=str(rb_track.id),
-                        uri=None,
-                        platform_data=platform_data,
-                        last_synced=datetime.datetime.now(datetime.UTC),
-                        needs_update=False,
-                    )
-                    track_repo.session.add(track_info)
-                    track_repo.session.flush()
-
-                    tracks_added += 1
-
-                # Check if the track is already in the playlist
-                existing_playlist_track = (
-                    playlist_repo.session.query(PlaylistTrack)
-                    .filter(
-                        PlaylistTrack.playlist_id == local_playlist.id,
-                        PlaylistTrack.track_id == track.id,
-                    )
-                    .first()
-                )
-
-                if not existing_playlist_track:
-                    # Add to playlist
-                    playlist_repo.add_track(local_playlist.id, track.id)
-
-            # Commit all changes
-            playlist_repo.session.commit()
+            for track in imported_tracks:
+                if track.local_path and os.path.exists(track.local_path):
+                    tracks_with_local_files += 1
 
             # Show success message
             QMessageBox.information(
                 parent,
                 "Import Successful",
                 f"Playlist '{playlist_name}' imported successfully.\n"
-                f"{tracks_added} new tracks added, {tracks_updated} existing tracks found.\n"
+                f"{len(imported_tracks)} tracks imported.\n"
                 f"{tracks_with_local_files} tracks have local audio files available.",
             )
 
@@ -326,4 +250,172 @@ class RekordboxPlaylistDataProvider(AbstractPlaylistDataProvider):
         except Exception as e:
             logger.exception(f"Error importing Rekordbox playlist: {e}")
             QMessageBox.critical(parent, "Import Error", f"Failed to import playlist: {str(e)}")
+            return False
+
+    def export_playlist(
+        self, playlist_id: str, target_platform: str, parent: QWidget | None = None
+    ) -> bool:
+        """Export a local playlist to Rekordbox.
+
+        Args:
+            playlist_id: Local playlist ID
+            target_platform: Target platform name
+            parent: Parent widget for dialogs
+
+        Returns:
+            True if successfully exported
+        """
+        if not self._ensure_authenticated():
+            QMessageBox.warning(
+                parent,
+                "Authentication Error",
+                "You must be connected to Rekordbox to export playlists.",
+            )
+            return False
+
+        try:
+            # Get the source playlist details
+            playlist_repo = PlaylistRepository()
+            source_playlist = playlist_repo.get_by_id(int(playlist_id))
+
+            if not source_playlist:
+                QMessageBox.critical(
+                    parent,
+                    "Playlist Not Found",
+                    f"Could not find library playlist with ID {playlist_id}.",
+                )
+                return False
+
+            # Show the export dialog to let the user set the playlist name
+            dialog = ImportExportPlaylistDialog(
+                parent, mode="export", platform="rekordbox", default_name=source_playlist.name
+            )
+
+            if dialog.exec() != ImportExportPlaylistDialog.DialogCode.Accepted:
+                return False
+
+            dialog_values = dialog.get_values()
+            playlist_name = dialog_values["name"]
+
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.client)
+
+            # Check if this playlist is already linked to Rekordbox
+            platform_id = source_playlist.get_platform_id("rekordbox")
+
+            # Show progress information
+            QMessageBox.information(
+                parent,
+                "Exporting Playlist",
+                "Exporting playlist to Rekordbox. This may take a moment...",
+            )
+
+            # Export the playlist
+            _ = sync_manager.export_playlist(  # Ignoring the returned ID since we don't use it
+                local_playlist_id=int(playlist_id),
+                platform_playlist_id=platform_id,
+                platform_playlist_name=playlist_name,
+            )
+
+            # Show success message
+            QMessageBox.information(
+                parent,
+                "Export Successful",
+                f"Successfully exported playlist '{source_playlist.name}' "
+                f"to Rekordbox as '{playlist_name}'.",
+            )
+
+            # Refresh playlists
+            self.refresh()
+
+            return True
+        except Exception as e:
+            logger.exception(f"Error exporting playlist to Rekordbox: {e}")
+            QMessageBox.critical(parent, "Export Failed", f"Failed to export playlist: {str(e)}")
+            return False
+
+    def sync_playlist(self, playlist_id: str, parent: QWidget | None = None) -> bool:
+        """Synchronize a local playlist with its Rekordbox counterpart.
+
+        Args:
+            playlist_id: Local playlist ID
+            parent: Parent widget for dialogs
+
+        Returns:
+            True if successfully synced
+        """
+        if not self._ensure_authenticated():
+            QMessageBox.warning(
+                parent,
+                "Authentication Error",
+                "You must be connected to Rekordbox to sync playlists.",
+            )
+            return False
+
+        try:
+            # Get the playlist details
+            playlist_repo = PlaylistRepository()
+            source_playlist = playlist_repo.get_by_id(int(playlist_id))
+
+            if not source_playlist:
+                QMessageBox.critical(
+                    parent,
+                    "Playlist Not Found",
+                    f"Could not find library playlist with ID {playlist_id}.",
+                )
+                return False
+
+            # Check if this playlist is linked to Rekordbox
+            platform_id = source_playlist.get_platform_id("rekordbox")
+
+            if not platform_id:
+                QMessageBox.warning(
+                    parent,
+                    "Not Linked to Rekordbox",
+                    f"Playlist '{source_playlist.name}' is not linked to Rekordbox. "
+                    "Please export it first.",
+                )
+                return False
+
+            # Show progress information
+            QMessageBox.information(
+                parent,
+                "Syncing Playlist",
+                "Syncing playlist with Rekordbox. This may take a moment...",
+            )
+
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.client)
+
+            # Sync the playlist
+            sync_result = sync_manager.sync_playlist(
+                local_playlist_id=int(playlist_id),
+                apply_all_changes=True,  # Apply changes directly
+            )
+
+            # Extract results from SyncResult
+            if isinstance(sync_result, SyncResult):
+                tracks_added_to_library = sync_result.library_additions_applied
+                tracks_added_to_platform = sync_result.platform_additions_applied
+            else:
+                # This should not happen when apply_all_changes=True, but just in case
+                tracks_added_to_library = 0
+                tracks_added_to_platform = 0
+
+            # Show success message
+            QMessageBox.information(
+                parent,
+                "Sync Successful",
+                f"Successfully synced playlist '{source_playlist.name}' with Rekordbox.\n"
+                f"Added {tracks_added_to_library} tracks to library, "
+                f"added {tracks_added_to_platform} tracks to Rekordbox.",
+            )
+
+            # Refresh playlists
+            self.notify_refresh_needed()
+
+            return True
+        except Exception as e:
+            logger.exception(f"Error syncing playlist with Rekordbox: {e}")
+            QMessageBox.critical(parent, "Sync Failed", f"Failed to sync playlist: {str(e)}")
             return False

@@ -611,6 +611,32 @@ def has_is_authenticated(obj: Any) -> TypeGuard[HasIsAuthenticated]:
     return hasattr(obj, "is_authenticated") and callable(obj.is_authenticated)
 
 
+@runtime_checkable
+class HasSyncedPlatforms(Protocol):
+    """Protocol for objects with get_platform_icons method and synced_platforms attribute."""
+
+    synced_platforms: list[str]
+
+    def get_platform_icons(self) -> list[str]: ...
+
+
+def has_synced_platforms(obj: Any) -> TypeGuard[HasSyncedPlatforms]:
+    """Check if an object has synced_platforms attribute and get_platform_icons method.
+
+    Args:
+        obj: Object to check
+
+    Returns:
+        True if the object has synced_platforms attribute and get_platform_icons method
+    """
+    return (
+        hasattr(obj, "synced_platforms")
+        and isinstance(obj.synced_platforms, list)
+        and hasattr(obj, "get_platform_icons")
+        and callable(obj.get_platform_icons)
+    )
+
+
 # Type-safe dictionary access helpers
 def dict_get(data: dict[K, V], key: K, default: T) -> V | T:
     """Get a value from a dictionary with a default.

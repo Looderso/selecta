@@ -497,7 +497,7 @@ class Playlist(Base):
     # Whether this is a user-created playlist in Selecta or imported from a platform
     is_local: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # If not local, store platform information
+    # Kept for backwards compatibility - now platform info is stored in playlist_platform_info table
     # 'spotify', 'rekordbox', null for local
     source_platform: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # ID in the platform's system
@@ -529,6 +529,11 @@ class Playlist(Base):
         order_by="PlaylistTrack.position",
     )
 
+    # Platform-specific information and links
+    platform_info: Mapped[list["PlaylistPlatformInfo"]] = relationship(
+        "PlaylistPlatformInfo", back_populates="playlist", cascade="all, delete-orphan"
+    )
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
@@ -539,6 +544,110 @@ class Playlist(Base):
         """String representation of Playlist."""
         folder_str = " (Folder)" if self.is_folder else ""
         return f"<Playlist {self.id}: {self.name}{folder_str}>"
+
+    def get_platform_id(self, platform: str) -> str | None:
+        """Get platform ID for a specific platform.
+
+        Args:
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+
+        Returns:
+            Platform-specific ID or None if not linked to this platform
+        """
+        # First try the new platform_info relationship
+        for info in self.platform_info:
+            if info.platform == platform:
+                return info.platform_id
+
+        # Fall back to old source_platform and platform_id fields
+        if self.source_platform == platform and self.platform_id:
+            return self.platform_id
+
+        return None
+
+    def has_platform_link(self, platform: str) -> bool:
+        """Check if playlist is linked to a specific platform.
+
+        Args:
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+
+        Returns:
+            True if linked to the platform, False otherwise
+        """
+        # First check new platform_info relationship
+        for info in self.platform_info:
+            if info.platform == platform:
+                return True
+
+        # Fall back to old source_platform field
+        return self.source_platform == platform and bool(self.platform_id)
+
+
+class PlaylistPlatformInfo(Base):
+    """Platform-specific information for a playlist."""
+
+    __tablename__ = "playlist_platform_info"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    playlist_id: Mapped[int] = mapped_column(ForeignKey("playlists.id"), nullable=False)
+    # 'spotify', 'rekordbox', 'discogs', etc.
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ID in the platform's system
+    platform_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # URI/URL to the playlist in the platform
+    uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Platform-specific metadata (name, description) as JSON
+    platform_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When the platform data was last synced
+    last_linked: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+    # Whether this platform info needs to be updated
+    needs_update: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Whether this is a personal playlist (owned by the user)
+    is_personal_playlist: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relationships
+    playlist: Mapped["Playlist"] = relationship("Playlist", back_populates="platform_info")
+    sync_state: Mapped["PlaylistSyncState"] = relationship(
+        "PlaylistSyncState",
+        back_populates="platform_info",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    # For SQLAlchemy 2.0, help typechecking with __init__ key mapping for constructor
+    __init_key_mapping__: ClassVar[dict[str, str]] = {
+        "playlist_id": "playlist_id",
+        "platform": "platform",
+        "platform_id": "platform_id",
+        "uri": "uri",
+        "platform_data": "platform_data",
+        "last_linked": "last_linked",
+        "needs_update": "needs_update",
+        "is_personal_playlist": "is_personal_playlist",
+    }
+
+    # Ensure we don't have duplicates for the same playlist/platform combination
+    __table_args__ = ({"sqlite_autoincrement": True},)
+
+    def __repr__(self) -> str:
+        """String representation of PlaylistPlatformInfo."""
+        return f"<PlaylistPlatformInfo {self.platform}:{self.platform_id}>"
+
+    def get_metadata(self) -> dict[str, Any] | None:
+        """Get platform metadata as a parsed JSON object.
+
+        Returns:
+            Dictionary of metadata or None if not available
+        """
+        if not self.platform_data:
+            return None
+
+        try:
+            return json.loads(self.platform_data)
+        except json.JSONDecodeError:
+            return None
 
 
 class PlaylistTrack(Base):
@@ -609,6 +718,71 @@ class PlatformCredentials(Base):
         from selecta.core.data.database import utc_now
 
         return utc_now() > self.token_expiry
+
+
+class PlaylistSyncState(Base):
+    """Model for tracking playlist sync state for change detection.
+
+    This model stores a snapshot of the playlist's state at the time of the last sync,
+    allowing the sync manager to detect changes on both the library and platform sides.
+    """
+
+    __tablename__ = "playlist_sync_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Link to the PlaylistPlatformInfo record
+    platform_info_id: Mapped[int] = mapped_column(
+        ForeignKey("playlist_platform_info.id"), nullable=False, unique=True
+    )
+
+    # Sync metadata
+    last_synced: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    # Snapshot of tracks in the playlist at last sync (stored as JSON)
+    track_snapshot: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+    # Relationships
+    platform_info: Mapped["PlaylistPlatformInfo"] = relationship(
+        "PlaylistPlatformInfo", back_populates="sync_state"
+    )
+
+    # For SQLAlchemy 2.0, help typechecking with __init__ key mapping for constructor
+    __init_key_mapping__: ClassVar[dict[str, str]] = {
+        "platform_info_id": "platform_info_id",
+        "last_synced": "last_synced",
+        "track_snapshot": "track_snapshot",
+    }
+
+    def __repr__(self) -> str:
+        """String representation of PlaylistSyncState."""
+        return (
+            f"<PlaylistSyncState for platform_info {self.platform_info_id}, "
+            f"last_synced: {self.last_synced}>"
+        )
+
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get the track snapshot as a parsed JSON object.
+
+        Returns:
+            Dictionary containing the snapshot data structure
+        """
+        if not self.track_snapshot:
+            return {"library_tracks": {}, "platform_tracks": {}}
+
+        try:
+            return json.loads(self.track_snapshot)
+        except json.JSONDecodeError:
+            return {"library_tracks": {}, "platform_tracks": {}}
+
+    def set_snapshot(self, snapshot_data: dict[str, Any]) -> None:
+        """Save a new snapshot.
+
+        Args:
+            snapshot_data: Dictionary containing the snapshot data structure
+        """
+        self.track_snapshot = json.dumps(snapshot_data)
+        self.last_synced = datetime.now(UTC)
 
 
 class UserSettings(Base):

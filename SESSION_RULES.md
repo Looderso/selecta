@@ -4,124 +4,211 @@ This file contains session-specific rules and instructions for Claude Code to fo
 
 ## Current Session Focus
 
-Fix and enhance the audio player to work with local files and other platforms. The audio player should be able to play:
+Refactor the playlist view and handling system to improve cross-platform functionality and track management, with special focus on establishing a robust platform synchronization framework.
 
-1. Local tracks via file paths when available
-2. YouTube tracks via streaming
-3. Spotify tracks when supported
+## Refactoring Goals
 
-## Token Optimization Rules
+1. **Rename "Local" Platform to "Library"**
+   - Update all references from "Local" to "Library" to better reflect its role as the central unified database
+   - Update UI labels, component names, and documentation
 
-1. **Documentation-First Approach**
-   - Always consult documentation before reading code files
-   - Follow the documentation hierarchy (top-level → module → component)
-   - Use CODE_INDEX.md as your primary navigation tool
-   - Only read code files after understanding their context through documentation
+2. **Collection Playlist Improvements**
+   - Add special handling for the Collection playlist (the master list containing all tracks)
+   - Prevent Collection deletion and implement special context menu options
+   - Allow bulk import to Collection through dedicated routines (not direct user modification)
+   - Ensure all tracks in playlists are automatically in Collection
 
-2. **Search Optimization**
-   - Avoid broad searches across the entire codebase
-   - Use targeted searches based on documentation guidance
-   - Search within specific files or directories identified by documentation
-   - Prefer navigating through documentation links over search operations
+3. **Context Menu Refinement**
+   - Make context menus platform-aware (different options depending on current platform)
+   - Remove redundant options (e.g., don't show "Search on Spotify" when in Spotify view)
+   - Ensure Library view has the complete set of options while others are limited
+   - Implement proper platform-specific operations (import/export/sync)
 
-3. **File Reading Strategy**
-   - Read only the files necessary for your task
-   - Focus on relevant sections rather than entire files
-   - Use documentation to identify the specific components you need
-   - Scan file structure and imports before reading the entire content
+4. **Platform Synchronization Visualization**
+   - Add platform icons next to playlists to indicate sync status
+   - Show which platforms each playlist is currently synced with
+   - Update icons when sync status changes
 
-4. **Batch Operations**
-   - Use BatchTool to run multiple operations in parallel
-   - Group related file reads to minimize context switching
-   - Combine related edits into a single message when possible
-   - Make multiple small, focused changes rather than large, sweeping ones
+5. **Track Duplicate Detection and Linking**
+   - Implement detection of potential duplicate tracks across platforms
+   - Create a dialog for presenting and confirming matches
+   - Develop track merging functionality to combine platform-specific metadata
+   - Add scheduled/on-demand process to scan for potential duplicates
 
-5. **Code Comprehension**
-   - Understand the architecture through documentation first
-   - Look for patterns and conventions in similar code
-   - Focus on interfaces and public APIs before implementation details
-   - Use documentation to understand component relationships
+6. **Platform-Specific Operation Logic**
+   - Restrict metadata editing to Library view only
+   - Define clear import/export/sync operations for each platform
+   - Prevent invalid operations on specific platforms
 
-## Documentation and File Access Workflow
+7. **Discogs Integration Improvements**
+   - Add visual indicators for tracks in Discogs wantlist/collection
+   - Implement fuzzy matching for Discogs entries
+   - Add functionality to check unlinked items in wantlist/collection
 
-1. Start by consulting these top-level guides:
-   - CLAUDE.md: General project information and token optimization strategy
-   - CODE_INDEX.md: Quick reference to find key files and documentation
-   - SESSION_RULES.md (this file): Session-specific rules
+8. **Unified Platform Synchronization Architecture**
+   - Clarify the conceptual separation between track linking and playlist synchronization
+   - Refactor PlatformLinkManager to focus exclusively on track-level operations
+   - Enhance PlatformSyncManager to handle all playlist-level operations
+   - Ensure consistent implementation across all platforms (Spotify, Rekordbox, YouTube, Discogs)
+   - Standardize platform data providers to use a consistent synchronization approach
+   - Include all platforms (Spotify, Rekordbox, YouTube, Discogs) with consistent treatment
+   - Ensure YouTube videos are properly handled as tracks in the linking and synchronization system
 
-2. Once you identify the relevant module, check the module documentation:
-   - Each module has a README.md file with detailed information
-   - Module READMEs help locate specific files for particular functionality
-   - Read module documentation completely before examining any code
+## Implementation Sequence
 
-3. File access sequence:
-   - Use CODE_INDEX.md to locate the relevant module
-   - Check module README.md for architecture and component understanding
-   - Review sub-module README.md for specific component details
-   - Only then start reading and modifying actual code files
-   - Use precise, targeted searches based on documentation guidance
+### Phase 1: Unified Synchronization Architecture ✅
 
-4. After making changes, update documentation:
-   - Update any affected module README.md files when component functionality changes
-   - Update CODE_INDEX.md if new files or major structural changes are made
-   - Document significant changes in the Change History section of relevant README.md files
-   - Ensure your changes are consistent with the documented architecture and patterns
+- ✅ Refactor PlatformLinkManager to focus exclusively on track-level operations
+- ✅ Enhance PlatformSyncManager to handle all playlist-level operations
+- ✅ Create clear conceptual separation between track linking and playlist synchronization
+- ✅ Standardize platform data providers to use consistent synchronization (done for Spotify, Rekordbox, YouTube, Discogs)
+- ✅ Database schema changes implemented with PlaylistPlatformInfo model, database rebuilt
+- ✅ Ensure all platforms (Spotify, Rekordbox, YouTube, Discogs) are treated consistently
+- ✅ Added YouTube support in PlatformLinkManager for treating videos as tracks
 
-## Session-Specific Rules
+### Phase 2: Foundation Changes
 
-### Audio Player Enhancement Plan
+- ✅ Rename "Local" to "Library" across the codebase
+- ✅ Update PlaylistComponent to handle the Collection playlist specially
+- ✅ Modify LocalPlaylistDataProvider to be renamed as LibraryPlaylistDataProvider
+- ✅ Ensure Collection is loaded by default and cannot be deleted
 
-1. **✅ Fix Current Local Audio Player**
-   - ✅ Debug and fix any issues with the current implementation
-   - ✅ Ensure it correctly plays local files when they exist
-   - ✅ Implement proper error handling for missing files
+### Phase 3: UI Improvements
 
-2. **✅ Implement YouTube Audio Player**
-   - ✅ Create a YouTubePlayer opening in a standalone window
-   - ✅ Use YouTube iframe API to play videos
-   - ✅ Handle authentication and proper error states
+- ✅ Update context menu generation to be platform-aware
+- ✅ Implement platform-aware sync options in context menus
+- ✅ Add platform synchronization icons to playlist items
+- ✅ Implement playlist sync status tracking
+- ✅ Update UI components to reflect platform synchronization status
+- ✅ Ensure consistent visualization of platform connections (Spotify, Rekordbox, YouTube, Discogs)
 
-3. **✅ Add Factory Pattern Improvements**
-   - ✅ Enhance AudioPlayerFactory to detect the correct player for a track
-   - ✅ Update player switching based on track platform
-   - ✅ Add proper type annotations and error handling
+### Phase 4: Enhanced Synchronization ✅
 
-4. **✅ Improve UI Integration**
-   - ✅ Update AudioPlayerComponent to handle different player types
-   - ✅ Add visual indicators for track source (LOCAL, YOUTUBE, SPOTIFY)
-   - ✅ Implement seamless switching between player backends
+- ✅ Design and implement the improved synchronization preview dialog
+- ✅ Show detailed changes (additions/removals) before syncing
+- ✅ Allow users to selectively apply changes
+- ✅ Implement track-level change detection between platforms and library
+- ✅ Create snapshot mechanism to track playlist state between syncs
+- ✅ Add handling for personal vs. shared/public playlists
 
-5. **✅ Implement Platform Integration for Tracks**
-   - ✅ Create SpotifyAudioPlayer for playing preview URLs with QMediaPlayer
-   - ✅ Add "Open in Platform" button to launch native apps
-   - ✅ Play local files when available, otherwise open in native app
-   - ✅ Handle track detection and platform URL generation
+### Phase 5: Track Linking System
 
-6. **Platform-Specific Features**
-   - Add platform-specific controls where appropriate
-   - Implement caching for YouTube streams if possible
-   - Support quality selection where applicable
+- ✅ Fix album handling in PlatformLinkManager to properly create Album objects
+- Design and implement the track duplicate detection algorithm
+- Create a MatchConfirmationDialog for user review of potential matches
+- Implement track merging functionality
+- Add UI elements to trigger duplicate detection
+- Ensure linking works correctly between all platforms including YouTube videos
+
+### Phase 6: Collection Playlist Enhancement
+
+- ✅ Ensure all tracks imported from platforms are added to the Collection
+- ✅ Fix Collection icon display in playlist view
+- ✅ Add Collection track handling during sync operations
+- ✅ Ensure only Collection has a left icon for better visual alignment
+- Implement "Add Selected Tracks to Collection" context menu option
+- Add Collection statistics and auto-scanning for local tracks
+
+### Phase 7: Platform-Specific Logic
+
+- Update operations for platform-specific playlist handling
+- Ensure proper metadata editing restrictions
+- Implement improved sync/import/export operations
+- Add error handling for platform-specific operations
+- Include YouTube-specific operations for video playlists
+- Handle shared/public playlists differently from personal playlists
+
+### Phase 8: Discogs Integration
+
+- Add wantlist/collection indicators for tracks
+- Implement Discogs-specific matching functionality
+- Create visual indicators for Discogs status
+- Add process to check for unlinked Discogs items
 
 ## Code Style Rules
 
-- Follow Python type hints strictly
+- Follow Python typing guidelines as defined in the Typing Guidelines document
 - Maintain consistent error handling patterns
 - Use SQLAlchemy 2.0 style for database operations
-
-## Testing Requirements
-
-- Visually verify audio playback functionality
-- Test with various track sources (local, YouTube)
-- Ensure proper error handling for edge cases
+- Keep UI components modular and reusable
+- Ensure proper documentation of all new components and functions
+- Follow existing naming conventions
 
 ## Implementation Strategy
 
-1. ✅ Debug and fix the local audio player
-2. ✅ Implement YouTube player in a standalone window
-3. ✅ Update the factory pattern to support multiple player types
-4. ✅ Enhance the UI component to work with all player types
-5. ✅ Implement platform integration for tracks:
-   - ✅ QMediaPlayer for preview URLs and local files
-   - ✅ Open in native app (Spotify, YouTube) for full tracks
-   - ✅ Auto-detect track type and handle appropriately
-6. Add remaining platform-specific features as needed
+For each phase:
+
+1. First identify all affected files by examining relevant documentation
+2. Create a clear plan for changes needed in specific files
+3. Make changes in a consistent order: models → repositories → business logic → UI
+4. Test each component individually before integrating
+5. Update documentation to reflect changes
+
+## File Areas To Focus On
+
+- `src/selecta/core/platform/link_manager.py`: Track linking operations
+- `src/selecta/core/platform/sync_manager.py`: Playlist synchronization logic
+- `src/selecta/core/platform/youtube/client.py`: YouTube platform client
+- `src/selecta/core/platform/youtube/sync.py`: YouTube synchronization functionality
+- `src/selecta/ui/components/playlist/`: Playlist view components
+- `src/selecta/core/data/models/db.py`: Database model definitions
+- `src/selecta/core/data/repositories/`: Data access repositories
+- `src/selecta/ui/components/playlist/playlist_component.py`: Main playlist UI
+- `src/selecta/ui/components/playlist/*/playlist_data_provider.py`: Platform-specific data providers
+
+## Platform Synchronization Architecture
+
+### Conceptual Model
+
+1. **Track Linking (PlatformLinkManager)**
+   - Focus: Creating connections between individual tracks across platforms
+   - Operations: Import tracks, extract and store platform-specific metadata
+   - Data: TrackPlatformInfo model, Album model
+   - Principle: All platform "tracks" (Spotify tracks, Rekordbox tracks, YouTube videos, Discogs releases)
+     are treated as equivalent entities that can be linked to a library track
+   - Album Handling: When importing tracks, create proper Album objects and establish relationships between tracks and albums
+
+2. **Playlist Synchronization (PlatformSyncManager)**
+   - Focus: Managing playlists across platforms
+   - Operations: Import/export/sync playlists, handle platform-specific playlist operations
+   - Uses: PlatformLinkManager for track-level operations
+   - Data: Playlist model with platform source and ID
+   - Sync Process:
+     - Show the user a preview of changes (additions/removals) before applying
+     - Only sync tracks that have the appropriate platform metadata
+     - Treat personal playlists differently from shared/public playlists
+     - For personal playlists: Full bidirectional sync (additions and removals)
+     - For shared/public playlists: Import-only, no sync
+
+3. **UI Integration (PlaylistDataProvider)**
+   - Focus: Consistent platform operations in the UI
+   - Operations: Handle import/export/sync UI interactions
+   - Uses: PlatformSyncManager for all synchronization operations
+
+### Implementation Guide
+
+1. **PlatformLinkManager**
+   - Should handle ONLY track-level operations
+   - Primary methods: import_track, link_tracks, _get_or_create_album
+   - Responsible for TrackPlatformInfo management and Album object creation
+   - Ensures proper database relationships between Track and Album objects
+
+2. **PlatformSyncManager**
+   - Should handle ALL playlist-level operations
+   - Primary methods: import_playlist, export_playlist, sync_playlist
+   - Uses PlatformLinkManager for track operations
+   - Manages Playlist synchronization status
+
+3. **Platform Integration**
+   - All platforms must be treated equally (Spotify, Rekordbox, YouTube, Discogs)
+   - YouTube videos are treated as tracks, with the same linking and synchronization approach
+   - Rekordbox integration must be fully supported for DJ library management
+   - Platform data providers should use a consistent approach across all platforms
+
+### Database Notes
+
+- If schema changes are needed, rebuild the database rather than migrating
+- This can be done manually by the developer with:
+  ```bash
+  selecta database init --force
+  ```

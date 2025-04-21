@@ -23,11 +23,13 @@ from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.playlist.platform_icon_delegate import PlatformIconDelegate
 from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
+from selecta.ui.components.playlist.playlist_icon_delegate import PlaylistIconDelegate
 from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
 from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
 from selecta.ui.components.playlist.track_quality_delegate import TrackQualityDelegate
 from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
 from selecta.ui.components.search_bar import SearchBar
+from selecta.ui.dialogs.collection_management_dialog import CollectionManagementDialog
 from selecta.ui.widgets.loading_widget import LoadingWidget
 
 
@@ -277,6 +279,9 @@ class PlaylistComponent(QWidget):
         self.playlist_model = PlaylistTreeModel()
         self.playlist_tree.setModel(self.playlist_model)
 
+        # Set the PlaylistIconDelegate to show platform icons
+        self.playlist_tree.setItemDelegate(PlaylistIconDelegate(self.playlist_tree))
+
         # Set context menu for playlist tree
         self.playlist_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.playlist_tree.customContextMenuRequested.connect(self._show_playlist_context_menu)
@@ -384,9 +389,6 @@ class PlaylistComponent(QWidget):
         Args:
             data_provider: The new data provider to use
         """
-        # Store provider for later comparison to prevent race conditions
-        old_provider = self.data_provider
-
         # If we had a previous provider, unregister our refresh callback
         if self.data_provider:
             with suppress(AttributeError):
@@ -412,12 +414,12 @@ class PlaylistComponent(QWidget):
             platform_name = self.data_provider.get_platform_name()
             self.playlist_container.set_platform_name(platform_name)
 
-            # Show the create button only for Local Database provider
-            is_local = platform_name == "Local Database"
-            self.playlist_container.show_create_button(is_local)
+            # Show the create button only for Library provider
+            is_library = platform_name == "Library"
+            self.playlist_container.show_create_button(is_library)
 
-            # Connect create button if this is the local provider
-            if is_local and hasattr(self.data_provider, "create_new_playlist"):
+            # Connect create button if this is the library provider
+            if is_library and hasattr(self.data_provider, "create_new_playlist"):
                 self.playlist_container.create_button.clicked.disconnect() if self.playlist_container.create_button.receivers(  # noqa: E501
                     self.playlist_container.create_button.clicked
                 ) > 0 else None
@@ -491,6 +493,26 @@ class PlaylistComponent(QWidget):
         """
         self.playlist_model.add_items(playlists)
         self._expand_all_folders()
+
+        # Auto-select the Collection playlist if we're using the Library provider
+        if (
+            self.data_provider
+            and hasattr(self.data_provider, "get_platform_name")
+            and self.data_provider.get_platform_name() == "Library"
+        ):
+            # Look for the Collection playlist
+            for playlist_item in playlists:
+                if hasattr(playlist_item, "is_collection") and playlist_item.is_collection:
+                    # Find the index for this playlist
+                    for row in range(self.playlist_model.rowCount()):
+                        index = self.playlist_model.index(row, 0)
+                        item = index.internalPointer()
+                        if item and item.item_id == playlist_item.item_id:
+                            # Select this playlist
+                            self.playlist_tree.setCurrentIndex(index)
+                            # This will trigger _on_playlist_selected which will load the tracks
+                            break
+                    break
 
     def _handle_loading_error(self, context: str, error_msg: str) -> None:
         """Handle loading errors.
@@ -849,7 +871,8 @@ class PlaylistComponent(QWidget):
             self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
             logger.debug(f"Forcing tracks table visible for {len(self.current_tracks)} tracks")
 
-        # Then use multiple timers to ensure UI thread gets a chance to process and indicators stay hidden
+        # Then use multiple timers to ensure UI thread gets a chance to process and
+        # indicators stay hidden
         QTimer.singleShot(50, lambda: self._ensure_loading_hidden())
         QTimer.singleShot(150, lambda: self._ensure_loading_hidden())
         QTimer.singleShot(300, lambda: self._ensure_loading_hidden())
@@ -938,17 +961,36 @@ class PlaylistComponent(QWidget):
         # Create context menu
         menu = QMenu(self.tracks_table)
 
-        # Add playlist operations for local playlists
-        if self.data_provider and self.data_provider.get_platform_name() == "Local":
-            # Get current playlist
-            current_playlist_id = self.current_playlist_id
+        # Get current platform
+        current_platform = "unknown"
+        if self.data_provider and hasattr(self.data_provider, "get_platform_name"):
+            current_platform = self.data_provider.get_platform_name().lower()
 
-            if current_playlist_id is not None:
-                # In a playlist view - add option to remove from current playlist
-                remove_action = menu.addAction("Remove from current playlist")
+        # Add playlist operations
+        # Get current playlist
+        current_playlist_id = self.current_playlist_id
+
+        # Add "Add to Collection" option only for platform views (not Library)
+        if current_platform != "library" and menu is not None:
+            collection_action = menu.addAction("Add Selected Tracks to Collection")
+            if collection_action is not None:
+                collection_action.triggered.connect(
+                    lambda: self._add_tracks_to_collection(selected_tracks)
+                )  # type: ignore
+            if menu is not None:
+                menu.addSeparator()  # Add separator after Collection action in platform views
+
+        # For the Library platform, add additional playlist operations
+        if current_platform == "library" and current_playlist_id is not None and menu is not None:
+            # In a playlist view - add option to remove from current playlist
+            remove_action = menu.addAction("Remove from current playlist")
+            if remove_action is not None:
                 remove_action.triggered.connect(
                     lambda: self._remove_tracks_from_playlist(current_playlist_id, selected_tracks)
                 )  # type: ignore
+
+            # Add a separator before the playlist submenu
+            menu.addSeparator()
 
             # Add to playlist submenu
             add_menu = menu.addMenu("Add to playlist")
@@ -965,56 +1007,97 @@ class PlaylistComponent(QWidget):
                 has_playlists = False
 
                 for playlist in all_playlists:
-                    # Skip folders and the current playlist
-                    if playlist.is_folder or (
-                        current_playlist_id is not None and playlist.id == current_playlist_id
+                    # Skip folders, the current playlist, and Collection
+                    # (which we handle separately)
+                    if (
+                        playlist.is_folder
+                        or (current_playlist_id is not None and playlist.id == current_playlist_id)
+                        or (hasattr(playlist, "name") and playlist.name == "Collection")
                     ):
                         continue
 
                     has_playlists = True
-                    playlist_action = add_menu.addAction(playlist.name)
-                    playlist_action.triggered.connect(
-                        lambda checked, pid=playlist.id: self._add_tracks_to_playlist(
-                            pid, selected_tracks
-                        )
-                    )  # type: ignore
+                    if add_menu is not None:
+                        playlist_action = add_menu.addAction(playlist.name)
+                        if playlist_action is not None:
+                            playlist_action.triggered.connect(
+                                lambda checked, pid=playlist.id: self._add_tracks_to_playlist(
+                                    pid, selected_tracks
+                                )
+                            )  # type: ignore
 
-                if not has_playlists:
+                if not has_playlists and add_menu is not None:
                     no_playlist_action = add_menu.addAction("No playlists available")
-                    no_playlist_action.setEnabled(False)
+                    if no_playlist_action is not None:
+                        no_playlist_action.setEnabled(False)
 
                 # Add option to create a new playlist with these tracks
-                add_menu.addSeparator()
-                new_playlist_action = add_menu.addAction("Create new playlist...")
-                new_playlist_action.triggered.connect(
-                    lambda: self._create_playlist_with_tracks(selected_tracks)
-                )  # type: ignore
+                if add_menu is not None:
+                    add_menu.addSeparator()
+                    new_playlist_action = add_menu.addAction("Create new playlist...")
+                    if new_playlist_action is not None:
+                        new_playlist_action.triggered.connect(
+                            lambda: self._create_playlist_with_tracks(selected_tracks)
+                        )  # type: ignore
 
             except Exception as e:
                 logger.exception(f"Error getting playlists for context menu: {e}")
+
+        # Add "Create new playlist with selected tracks" for all platforms, if not already added
+        if current_platform != "library" and menu is not None:
+            # Add option to create a new playlist directly
+            create_playlist_action = menu.addAction("Create new playlist with selected tracks...")
+            if create_playlist_action is not None:
+                create_playlist_action.triggered.connect(
+                    lambda: self._create_playlist_with_tracks(selected_tracks)
+                )  # type: ignore
 
             menu.addSeparator()
 
         # Add search actions (only enabled for single track)
         is_single_track = len(selected_tracks) == 1
 
-        # Add search on Spotify action
-        spotify_search_action = menu.addAction("Search on Spotify")
-        spotify_search_action.setEnabled(is_single_track)
-        spotify_search_action.triggered.connect(lambda: self._search_on_spotify(first_track))  # type: ignore
+        # Add platform-aware search actions
+        if is_single_track and menu is not None:
+            # Add search on Spotify action (only if not already in Spotify view)
+            if current_platform != "spotify":
+                spotify_search_action = menu.addAction("Search on Spotify")
+                if spotify_search_action is not None:
+                    spotify_search_action.triggered.connect(
+                        lambda: self._search_on_spotify(first_track)
+                    )  # type: ignore
 
-        # Add search on Discogs action
-        discogs_search_action = menu.addAction("Search on Discogs")
-        discogs_search_action.setEnabled(is_single_track)
-        discogs_search_action.triggered.connect(lambda: self._search_on_discogs(first_track))  # type: ignore
+            # Add search on Discogs action (only if not already in Discogs view)
+            if current_platform != "discogs":
+                discogs_search_action = menu.addAction("Search on Discogs")
+                if discogs_search_action is not None:
+                    discogs_search_action.triggered.connect(
+                        lambda: self._search_on_discogs(first_track)
+                    )  # type: ignore
 
-        # Add search on YouTube action
-        youtube_search_action = menu.addAction("Search on YouTube")
-        youtube_search_action.setEnabled(is_single_track)
-        youtube_search_action.triggered.connect(lambda: self._search_on_youtube(first_track))  # type: ignore
+            # Add search on YouTube action (only if not already in YouTube view)
+            if current_platform != "youtube":
+                youtube_search_action = menu.addAction("Search on YouTube")
+                if youtube_search_action is not None:
+                    youtube_search_action.triggered.connect(
+                        lambda: self._search_on_youtube(first_track)
+                    )  # type: ignore
+
+            # Add search on Rekordbox action (only if not already in Rekordbox view)
+            if current_platform != "rekordbox":
+                rekordbox_search_action = menu.addAction("Search on Rekordbox")
+                if rekordbox_search_action is not None:
+                    rekordbox_search_action.setEnabled(False)  # Not implemented yet
+                    # rekordbox_search_action.triggered.connect
+                    # (lambda: self._search_on_rekordbox(first_track))
 
         # Show the menu at the cursor position
-        menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
+        if (
+            menu is not None
+            and self.tracks_table is not None
+            and self.tracks_table.viewport() is not None
+        ):
+            menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
 
     def _show_playlist_context_menu(self, position: Any) -> None:
         """Show context menu for playlist tree.
@@ -1022,10 +1105,70 @@ class PlaylistComponent(QWidget):
         Args:
             position: Position where the context menu should be shown
         """
+        # Debug logging to verify this method is called on right-click
+        from loguru import logger
+
+        logger.debug(
+            f"_show_playlist_context_menu called, position={position}, "
+            f"data_provider={self.data_provider.__class__.__name__ if self.data_provider else None}"
+        )
+
+        # If no data provider, create a minimal context menu
+        if not self.data_provider:
+            from PyQt6.QtWidgets import QMenu
+
+            menu = QMenu(self.playlist_tree)
+
+            if menu is not None:
+                manage_collection_action = menu.addAction("Manage Collection...")
+                if manage_collection_action is not None:
+                    manage_collection_action.triggered.connect(
+                        self._show_collection_management_dialog
+                    )
+
+                if self.playlist_tree is not None and self.playlist_tree.viewport() is not None:
+                    viewport = self.playlist_tree.viewport()
+                    if viewport is not None:
+                        menu.exec(viewport.mapToGlobal(position))
+            return
+
         # Override this method in the data provider to show appropriate context menu
         # based on if it's a local playlist or platform playlist
-        if self.data_provider:
-            self.data_provider.show_playlist_context_menu(self.playlist_tree, position)
+        try:
+            # Call the data provider's context menu handler with the correct parent parameter
+            if self.data_provider is not None:
+                self.data_provider.show_playlist_context_menu(self.playlist_tree, position)
+        except Exception as e:
+            logger.exception(f"Error showing playlist context menu: {e}")
+            from PyQt6.QtWidgets import QMenu
+
+            # Show a minimal menu in case of error
+            menu = QMenu(self.playlist_tree)
+            if menu is not None:
+                error_action = menu.addAction("Error showing menu")
+                if error_action is not None:
+                    error_action.setEnabled(False)
+
+                manage_collection_action = menu.addAction("Manage Collection...")
+                if manage_collection_action is not None:
+                    manage_collection_action.triggered.connect(
+                        self._show_collection_management_dialog
+                    )
+
+                if self.playlist_tree is not None and self.playlist_tree.viewport() is not None:
+                    viewport = self.playlist_tree.viewport()
+                    if viewport is not None:
+                        menu.exec(viewport.mapToGlobal(position))
+
+    def _show_collection_management_dialog(self) -> None:
+        """Show the Collection management dialog."""
+        dialog = CollectionManagementDialog(self)
+
+        # Connect the collection modified signal to refresh our playlist/track views
+        dialog.collection_modified.connect(self.refresh)
+
+        # Show the dialog
+        dialog.exec()
 
     def _search_on_spotify(self, track: Any) -> None:
         """Search for a track on Spotify.
@@ -1042,9 +1185,13 @@ class PlaylistComponent(QWidget):
         # Access the main window
         main_window = self.window()
 
-        # Call the show_spotify_search method on the main window
-        if hasattr(main_window, "show_spotify_search"):
-            main_window.show_spotify_search(search_query)
+        # Try to call the show_spotify_search method on the main window
+        # The main window type is likely MainWindow from src/selecta/ui/app.py
+        # Using getattr with a default to avoid attribute errors
+        if main_window is not None:
+            search_method = getattr(main_window, "show_spotify_search", None)
+            if callable(search_method):
+                search_method(search_query)
 
     def _search_on_discogs(self, track: Any) -> None:
         """Search for a track on Discogs.
@@ -1061,9 +1208,11 @@ class PlaylistComponent(QWidget):
         # Access the main window
         main_window = self.window()
 
-        # Call the show_discogs_search method on the main window
-        if hasattr(main_window, "show_discogs_search"):
-            main_window.show_discogs_search(search_query)
+        # Try to call the show_discogs_search method on the main window
+        if main_window is not None:
+            search_method = getattr(main_window, "show_discogs_search", None)
+            if callable(search_method):
+                search_method(search_query)
 
     def _search_on_youtube(self, track: Any) -> None:
         """Search for a track on YouTube.
@@ -1080,9 +1229,11 @@ class PlaylistComponent(QWidget):
         # Access the main window
         main_window = self.window()
 
-        # Call the show_youtube_search method on the main window
-        if hasattr(main_window, "show_youtube_search"):
-            main_window.show_youtube_search(search_query)
+        # Try to call the show_youtube_search method on the main window
+        if main_window is not None:
+            search_method = getattr(main_window, "show_youtube_search", None)
+            if callable(search_method):
+                search_method(search_query)
 
     @pyqtSlot(int, int)
     def _on_track_quality_changed(self, track_id: int, quality: int) -> None:
@@ -1295,7 +1446,10 @@ class PlaylistComponent(QWidget):
                     self.track_container.hide_loading()
 
                 # Repaint all visible tracks to ensure platform icons are updated
-                self.tracks_table.viewport().update()
+                if self.tracks_table is not None:
+                    viewport = self.tracks_table.viewport()
+                    if viewport is not None:
+                        viewport.update()
 
         except Exception as e:
             logger.error(f"Error during track update for {track_id}: {e}")
@@ -1608,6 +1762,111 @@ class PlaylistComponent(QWidget):
         except Exception as e:
             logger.exception(f"Error removing tracks from playlist: {e}")
             QMessageBox.critical(self, "Error", f"Failed to remove tracks from playlist: {str(e)}")
+
+    def _add_tracks_to_collection(self, tracks: list[Any]) -> None:
+        """Add selected tracks to the Collection playlist.
+
+        Args:
+            tracks: List of track objects to add to Collection
+        """
+        if not tracks:
+            return
+
+        try:
+            # Get the Collection playlist
+            from selecta.core.data.database import get_session
+            from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+
+            session = get_session()
+            playlist_repo = PlaylistRepository(session)
+
+            # Find the Collection playlist
+            collection_playlist = None
+            all_playlists = playlist_repo.get_all()
+            for playlist in all_playlists:
+                if hasattr(playlist, "name") and playlist.name == "Collection":
+                    collection_playlist = playlist
+                    break
+
+            # If Collection playlist doesn't exist, create it
+            if not collection_playlist:
+                playlist_data = {
+                    "name": "Collection",
+                    "description": "Local music collection",
+                    "is_local": True,
+                    "source_platform": None,
+                }
+                collection_playlist = playlist_repo.create(playlist_data)
+
+            # Get current platform
+            current_platform = "unknown"
+            if self.data_provider and hasattr(self.data_provider, "get_platform_name"):
+                current_platform = self.data_provider.get_platform_name().lower()
+
+            # Add tracks to Collection
+            from selecta.core.data.repositories.settings_repository import SettingsRepository
+            from selecta.core.platform.platform_factory import PlatformFactory
+            from selecta.core.platform.sync_manager import PlatformSyncManager
+
+            # For platform tracks, we need to use the PlatformSyncManager to import them properly
+            if current_platform != "library" and current_platform != "local":
+                # Get the platform client
+                settings_repo = SettingsRepository()
+                platform_client = PlatformFactory.create(current_platform, settings_repo)
+
+                if platform_client:
+                    sync_manager = PlatformSyncManager(platform_client)
+
+                    # Get the platform-specific track IDs
+                    for track in tracks:
+                        # Import the track to the local database
+                        if hasattr(track, "item_id") or hasattr(track, "track_id"):
+                            platform_track_id = getattr(track, "item_id", None) or getattr(
+                                track, "track_id", None
+                            )
+
+                            if platform_track_id:
+                                # Import the track to local DB
+                                track_id = platform_track_id
+                                local_track = sync_manager.link_manager.import_track(track_id)
+
+                                # Add to Collection playlist
+                                if local_track and local_track.id and collection_playlist:
+                                    playlist_repo.add_track(collection_playlist.id, local_track.id)
+            else:
+                # For library tracks, just add them directly to Collection
+                for track in tracks:
+                    if hasattr(track, "track_id"):
+                        # Check if the track is already in Collection
+                        already_in_collection = False
+                        collection_tracks = playlist_repo.get_playlist_tracks(
+                            collection_playlist.id
+                        )
+                        for coll_track in collection_tracks:
+                            if coll_track.id == track.track_id:
+                                already_in_collection = True
+                                break
+
+                        # Add to Collection if not already there
+                        if not already_in_collection:
+                            playlist_repo.add_track(collection_playlist.id, track.track_id)
+
+            # Show success message
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.information(
+                self, "Tracks Added", f"Added {len(tracks)} tracks to Collection playlist."
+            )
+
+        except Exception as e:
+            from loguru import logger
+
+            logger.exception(f"Error adding tracks to Collection: {e}")
+
+            # Show error message
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to add tracks to Collection: {str(e)}")
 
     def _create_playlist_with_tracks(self, tracks: list[Any]) -> None:
         """Create a new playlist and add the selected tracks to it.
