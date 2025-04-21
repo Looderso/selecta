@@ -102,9 +102,7 @@ class SettingsRepository:
                 setting.description = description  # type: ignore
         else:
             # Create new
-            setting = UserSettings(
-                key=key, value=value_str, data_type=data_type, description=description
-            )
+            setting = UserSettings(key=key, value=value_str, data_type=data_type, description=description)
             self.session.add(setting)
 
         self.session.commit()
@@ -163,11 +161,7 @@ class SettingsRepository:
         Returns:
             Credentials if found, None otherwise
         """
-        return (
-            self.session.query(PlatformCredentials)
-            .filter(PlatformCredentials.platform == platform)
-            .first()
-        )
+        return self.session.query(PlatformCredentials).filter(PlatformCredentials.platform == platform).first()
 
     def set_credentials(self, platform: str, credentials_data: dict) -> PlatformCredentials:
         """Set credentials for a platform."""
@@ -253,4 +247,34 @@ class SettingsRepository:
             path,
             data_type="string",
             description="Root folder for local music database",
+        )
+
+    def get_last_auth_time(self, platform: str) -> str | None:
+        """Get the last authentication time for a platform.
+
+        Args:
+            platform: Platform name (e.g., 'spotify', 'discogs', 'rekordbox')
+
+        Returns:
+            The last authentication time as a string, or None if not set
+        """
+        key = f"{platform}_last_auth_time"
+        return self.get_setting_value(key)
+
+    def set_last_auth_time(self, platform: str, time_str: str) -> UserSettings:
+        """Set the last authentication time for a platform.
+
+        Args:
+            platform: Platform name (e.g., 'spotify', 'discogs', 'rekordbox')
+            time_str: Time string (e.g., '2025-04-21 19:30')
+
+        Returns:
+            The updated setting
+        """
+        key = f"{platform}_last_auth_time"
+        return self.set_setting(
+            key,
+            time_str,
+            data_type="string",
+            description=f"Last authentication time for {platform}",
         )

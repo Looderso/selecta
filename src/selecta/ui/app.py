@@ -14,14 +14,13 @@ from PyQt6.QtWidgets import (
 )
 
 from selecta.core.utils.type_helpers import (
-    has_auth_panel,
     has_details_panel,
     has_horizontal_splitter,
     has_is_authenticated,
     has_platform_clients,
 )
+from selecta.ui.components.settings.settings_screen import SettingsScreen
 from selecta.ui.components.views.navigation_bar import NavigationBar
-from selecta.ui.components.views.side_drawer import SideDrawer
 from selecta.ui.dialogs import ImportRekordboxDialog
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
@@ -110,12 +109,13 @@ class SelectaMainWindow(QMainWindow):
         # Set initial sizes for horizontal splitter (3/4 for left, 1/4 for right)
         self.horizontal_splitter.setSizes([750, 250])  # Proportional values (3:1 ratio)
 
-        # Create the side drawer
-        self.side_drawer = SideDrawer(self)
-        self.side_drawer.hide()  # Hidden by default
+        # Create settings screen (initially hidden)
+        self.settings_screen = SettingsScreen(self)
+        self.settings_screen.closed.connect(self.hide_settings)
+        self.settings_screen.hide()
 
         # Connect signals
-        self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
+        self.nav_bar.settings_button_clicked.connect(self.show_settings)
 
         # Connect the new platform signals
         self.nav_bar.library_button_clicked.connect(lambda: self.switch_platform("library"))
@@ -164,12 +164,28 @@ class SelectaMainWindow(QMainWindow):
             bottom_height = total_height - top_height  # 10% for bottom section
             self.vertical_splitter.setSizes([top_height, bottom_height])
 
-    def toggle_side_drawer(self):
-        """Toggle the visibility of the side drawer."""
-        if self.side_drawer.isVisible():
-            self.side_drawer.hide_drawer()
-        else:
-            self.side_drawer.show_drawer()
+    # Side drawer removed - now using full-screen settings
+
+    def show_settings(self):
+        """Show the settings screen."""
+        # Hide the current content
+        self.central_widget.hide()
+
+        # Show settings screen
+        self.settings_screen.setGeometry(self.centralWidget().geometry())
+        self.settings_screen.show()
+        self.settings_screen.raise_()
+
+    def hide_settings(self):
+        """Hide the settings screen and restore the main content."""
+        # Hide settings screen
+        self.settings_screen.hide()
+
+        # Show the main content
+        self.central_widget.show()
+
+        # Refresh platform status in case authentication changed
+        self.switch_platform(self.current_platform)
 
     def set_playlist_content(self, widget):
         """Set the content widget in the playlist area."""
@@ -471,28 +487,11 @@ class SelectaMainWindow(QMainWindow):
         Args:
             platform: Platform name
         """
-        # Show the settings drawer
-        self.toggle_side_drawer()
+        # Show the settings screen
+        self.show_settings()
 
-        # Find the platform auth widget in the side drawer
-        if has_auth_panel(self.side_drawer):
-            # Call the appropriate authentication method
-            if platform == "spotify":
-                self.side_drawer.auth_panel._authenticate_spotify()
-                # Refresh the UI after authentication
-                self.switch_platform("spotify")
-            elif platform == "rekordbox":
-                self.side_drawer.auth_panel._authenticate_rekordbox()
-                # Refresh the UI after authentication
-                self.switch_platform("rekordbox")
-            elif platform == "discogs":
-                self.side_drawer.auth_panel._authenticate_discogs()
-                # Refresh the UI after authentication
-                self.switch_platform("discogs")
-            elif platform == "youtube":
-                self.side_drawer.auth_panel._authenticate_youtube()
-                # Refresh the UI after authentication
-                self.switch_platform("youtube")
+        # The authentication will be handled through the settings screen's auth panel
+        # When the user closes the settings screen, the platform will be refreshed automatically
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
