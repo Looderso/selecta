@@ -14,6 +14,7 @@ from selecta.core.data.repositories.playlist_repository import PlaylistRepositor
 from selecta.core.data.repositories.settings_repository import SettingsRepository
 from selecta.core.platform.discogs.client import DiscogsClient
 from selecta.core.platform.platform_factory import PlatformFactory
+from selecta.core.platform.sync_manager import PlatformSyncManager
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
@@ -237,12 +238,15 @@ class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):
         """
         return "Discogs"
 
-    def show_playlist_context_menu(self, tree_view: QTreeView, position: Any) -> None:
+    def show_playlist_context_menu(
+        self, tree_view: QTreeView, position: Any, parent: QWidget | None = None
+    ) -> None:
         """Show a context menu for a Discogs playlist (collection or wantlist).
 
         Args:
             tree_view: The tree view
             position: Position where the context menu was requested
+            parent: Parent widget for dialogs
         """
         # Get the playlist item at this position
         index = tree_view.indexAt(position)
@@ -261,7 +265,7 @@ class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):
         if playlist_item.item_id in ["collection", "wantlist"]:
             import_action = menu.addAction("Import to Local Library")
             import_action.triggered.connect(
-                lambda: self.import_playlist(playlist_item.item_id, tree_view)
+                lambda: self.import_playlist(playlist_item.item_id, parent or tree_view)
             )  # type: ignore
 
         # Show the menu at the cursor position
@@ -308,8 +312,6 @@ class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):
             playlist_name = dialog_values["name"]
 
             # Create a sync manager for handling the import
-            from selecta.core.platform.sync_manager import PlatformSyncManager
-
             sync_manager = PlatformSyncManager(self.client)
 
             # Check if playlist already exists
@@ -382,4 +384,117 @@ class DiscogsPlaylistDataProvider(AbstractPlaylistDataProvider):
         except Exception as e:
             logger.exception(f"Error importing Discogs playlist: {e}")
             QMessageBox.critical(parent, "Import Error", f"Failed to import playlist: {str(e)}")
+            return False
+
+    def export_playlist(
+        self, playlist_id: str, target_platform: str, parent: QWidget | None = None
+    ) -> bool:
+        """Export a library playlist to Discogs.
+
+        This method intentionally does not support exporting full playlists to Discogs,
+        as Discogs is not a playlist platform but rather a vinyl collection manager.
+        Individual tracks can be added to the wantlist or collection through track operations.
+
+        Args:
+            playlist_id: Library playlist ID
+            target_platform: Target platform name
+            parent: Parent widget for dialogs
+
+        Returns:
+            False as Discogs doesn't support playlist export
+        """
+        QMessageBox.information(
+            parent,
+            "Discogs Operation",
+            "Discogs doesn't support direct playlist exports. Instead, use track-level operations "
+            "to mark individual tracks as part of your vinyl collection or wantlist.",
+        )
+        return False
+
+    def sync_playlist(self, playlist_id: str, parent: QWidget | None = None) -> bool:
+        """Refresh Discogs collection or wantlist data.
+
+        This method only updates the library with the latest data from Discogs.
+        Discogs is used for tracking vinyl ownership and wanted items rather than
+        traditional playlist synchronization.
+
+        Args:
+            playlist_id: Library playlist ID
+            parent: Parent widget for dialogs
+
+        Returns:
+            True if successfully refreshed
+        """
+        if not self._ensure_authenticated():
+            QMessageBox.warning(
+                parent,
+                "Authentication Error",
+                "You must be authenticated with Discogs to update collection or wantlist data.",
+            )
+            return False
+
+        try:
+            # Get the playlist details
+            playlist_repo = PlaylistRepository()
+            source_playlist = playlist_repo.get_by_id(int(playlist_id))
+
+            if not source_playlist:
+                QMessageBox.critical(
+                    parent,
+                    "Playlist Not Found",
+                    f"Could not find library playlist with ID {playlist_id}.",
+                )
+                return False
+
+            # Check if this playlist is linked to Discogs
+            platform_id = source_playlist.get_platform_id("discogs")
+
+            if not platform_id:
+                QMessageBox.warning(
+                    parent,
+                    "Not Linked to Discogs",
+                    f"Playlist '{source_playlist.name}' is not linked to Discogs. "
+                    "Please import your Discogs collection or wantlist first.",
+                )
+                return False
+
+            # Create a sync manager
+            sync_manager = PlatformSyncManager(self.client)
+
+            # Show progress information
+            QMessageBox.information(
+                parent,
+                "Updating Discogs Data",
+                "Fetching the latest data from Discogs. This may take a moment...",
+            )
+
+            # Sync the Discogs data (only one-way, from Discogs to library)
+            tracks_added_to_library, _ = sync_manager.sync_playlist(
+                local_playlist_id=int(playlist_id)
+            )
+
+            # Show success message
+            if platform_id == "collection":
+                action_message = "vinyl collection"
+            elif platform_id == "wantlist":
+                action_message = "wantlist"
+            else:
+                action_message = "Discogs data"
+
+            QMessageBox.information(
+                parent,
+                "Update Successful",
+                f"Successfully updated {action_message} data.\n"
+                f"Added {tracks_added_to_library} new records to library from Discogs.",
+            )
+
+            # Refresh playlists
+            self.notify_refresh_needed()
+
+            return True
+        except Exception as e:
+            logger.exception(f"Error updating Discogs data: {e}")
+            QMessageBox.critical(
+                parent, "Update Failed", f"Failed to update Discogs data: {str(e)}"
+            )
             return False

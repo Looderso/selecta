@@ -132,14 +132,14 @@ class SelectaMainWindow(QMainWindow):
         self.nav_bar.settings_button_clicked.connect(self.toggle_side_drawer)
 
         # Connect the new platform signals
-        self.nav_bar.local_button_clicked.connect(lambda: self.switch_platform("local"))
+        self.nav_bar.library_button_clicked.connect(lambda: self.switch_platform("library"))
         self.nav_bar.spotify_button_clicked.connect(lambda: self.switch_platform("spotify"))
         self.nav_bar.rekordbox_button_clicked.connect(lambda: self.switch_platform("rekordbox"))
         self.nav_bar.discogs_button_clicked.connect(lambda: self.switch_platform("discogs"))
         self.nav_bar.youtube_button_clicked.connect(lambda: self.switch_platform("youtube"))
 
         # Track the current platform
-        self.current_platform = "local"
+        self.current_platform = "library"
 
         # Initialize selection state
         from selecta.ui.components.selection_state import SelectionState
@@ -255,13 +255,13 @@ class SelectaMainWindow(QMainWindow):
             # Use Any for now to avoid Union complexity
             data_provider: Any = None
 
-            if platform == "local":
-                from selecta.ui.components.playlist.local.local_playlist_data_provider import (
-                    LocalPlaylistDataProvider,
+            if platform == "library" or platform == "local":  # Support both during transition
+                from selecta.ui.components.playlist.library.library_playlist_data_provider import (
+                    LibraryPlaylistDataProvider,
                 )
 
-                data_provider = LocalPlaylistDataProvider()
-                authenticated = True  # Local is always authenticated
+                data_provider = LibraryPlaylistDataProvider()
+                authenticated = True  # Library is always authenticated
 
             elif platform == "spotify":
                 from selecta.core.platform.platform_factory import PlatformFactory
@@ -761,9 +761,9 @@ class SelectaMainWindow(QMainWindow):
             # when we integrate this with the file scanning and database functionality
             logger.info("Scan complete - UI refresh would happen here")
 
-            # If in local platform mode, refresh the view
-            if self.current_platform == "local":
-                self.switch_platform("local")
+            # If in library platform mode, refresh the view
+            if self.current_platform == "library" or self.current_platform == "local":
+                self.switch_platform("library")
 
         except Exception as e:
             logger.exception(f"Error scanning folder: {e}")
@@ -802,9 +802,9 @@ class SelectaMainWindow(QMainWindow):
         if result == 1:  # QDialog.Accepted
             logger.info("Import from Rekordbox completed")
 
-            # Refresh the UI if we're on the local platform
-            if self.current_platform == "local":
-                self.switch_platform("local")
+            # Refresh the UI if we're on the library platform
+            if self.current_platform == "library" or self.current_platform == "local":
+                self.switch_platform("library")
 
     def on_import_covers(self):
         """Handle import covers from audio metadata request."""
@@ -839,9 +839,9 @@ class SelectaMainWindow(QMainWindow):
         if result == 1:  # QDialog.Accepted
             logger.info("Import covers completed")
 
-            # Refresh the UI if we're on the local platform
-            if self.current_platform == "local":
-                self.switch_platform("local")
+            # Refresh the UI if we're on the library platform
+            if self.current_platform == "library" or self.current_platform == "local":
+                self.switch_platform("library")
 
 
 def run_app():
@@ -873,8 +873,8 @@ def run_app():
     # Create and show the main window
     window = SelectaMainWindow()
 
-    # Set up the initial view with local playlists
-    window.switch_platform("local")
+    # Set up the initial view with library playlists
+    window.switch_platform("library")
 
     window.show()
 

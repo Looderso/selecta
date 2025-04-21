@@ -1,12 +1,14 @@
 """Playlist repository for database operations."""
 
+import json
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from selecta.core.data.database import get_session
-from selecta.core.data.models.db import Playlist, PlaylistTrack, Track
+from selecta.core.data.models.db import Playlist, PlaylistPlatformInfo, PlaylistTrack, Track
 
 
 class PlaylistRepository:
@@ -19,6 +21,7 @@ class PlaylistRepository:
             session: SQLAlchemy session (creates a new one if not provided)
         """
         self.session = session or get_session()
+        self.model = Playlist
 
     def get_by_id(self, playlist_id: int) -> Playlist | None:
         """Get a playlist by its ID.
@@ -46,6 +49,20 @@ class PlaylistRepository:
         Returns:
             The playlist if found, None otherwise
         """
+        # First check in new PlaylistPlatformInfo model
+        playlist_platform_info = (
+            self.session.query(PlaylistPlatformInfo)
+            .filter(
+                PlaylistPlatformInfo.platform == platform,
+                PlaylistPlatformInfo.platform_id == platform_id,
+            )
+            .first()
+        )
+
+        if playlist_platform_info:
+            return self.get_by_id(playlist_platform_info.playlist_id)
+
+        # Fall back to old style where platform info is in the playlist table directly
         return (
             self.session.query(Playlist)
             .filter(
@@ -70,6 +87,46 @@ class PlaylistRepository:
             query = query.options(joinedload(Playlist.tracks).joinedload(PlaylistTrack.track))
 
         return query.order_by(Playlist.name).all()
+
+    def get_playlists_by_platform(self, platform: str) -> list[Playlist]:
+        """Get all playlists linked to a specific platform.
+
+        Args:
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+
+        Returns:
+            List of playlists linked to the platform
+        """
+        # First get playlists from new PlaylistPlatformInfo model
+        playlist_ids_from_info = [
+            info.playlist_id
+            for info in self.session.query(PlaylistPlatformInfo.playlist_id)
+            .filter(PlaylistPlatformInfo.platform == platform)
+            .all()
+        ]
+
+        # Get playlists from old source_platform/platform_id
+        old_style_playlists = (
+            self.session.query(Playlist)
+            .filter(Playlist.source_platform == platform)
+            .filter(Playlist.platform_id != None)  # noqa: E711
+            .all()
+        )
+
+        # Include playlists from old style that aren't in new style
+        old_style_ids = {playlist.id for playlist in old_style_playlists}
+        combined_ids = set(playlist_ids_from_info).union(old_style_ids)
+
+        if not combined_ids:
+            return []
+
+        # Return all playlists by the combined IDs
+        return (
+            self.session.query(Playlist)
+            .filter(Playlist.id.in_(combined_ids))
+            .order_by(Playlist.name)
+            .all()
+        )
 
     def search(self, query: str, limit: int = 20, offset: int = 0) -> tuple[list[Playlist], int]:
         """Search for playlists by name or description.
@@ -346,3 +403,133 @@ class PlaylistRepository:
             synchronize_session=False
         )
         self.session.commit()
+
+    def add_platform_info(
+        self,
+        playlist_id: int,
+        platform: str,
+        platform_id: str,
+        uri: str | None = None,
+        platform_data: dict[str, Any] | None = None,
+    ) -> PlaylistPlatformInfo:
+        """Add platform-specific information to a playlist.
+
+        Args:
+            playlist_id: The playlist ID
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+            platform_id: Platform-specific ID
+            uri: Optional URI/URL for the playlist on the platform
+            platform_data: Optional platform-specific metadata as dictionary
+
+        Returns:
+            The created playlist platform info object
+        """
+        # Check if platform info already exists
+        existing_info = (
+            self.session.query(PlaylistPlatformInfo)
+            .filter(
+                PlaylistPlatformInfo.playlist_id == playlist_id,
+                PlaylistPlatformInfo.platform == platform,
+            )
+            .first()
+        )
+
+        if existing_info:
+            # Update existing info
+            existing_info.platform_id = platform_id
+            if uri is not None:
+                existing_info.uri = uri
+            if platform_data is not None:
+                existing_info.platform_data = json.dumps(platform_data)
+            existing_info.last_linked = datetime.now(UTC)
+
+            self.session.commit()
+            return existing_info
+        else:
+            # Create new platform info
+            platform_info = PlaylistPlatformInfo(
+                playlist_id=playlist_id,
+                platform=platform,
+                platform_id=platform_id,
+                uri=uri,
+                platform_data=json.dumps(platform_data) if platform_data else None,
+                last_linked=datetime.now(UTC),
+            )
+
+            self.session.add(platform_info)
+            self.session.commit()
+            return platform_info
+
+    def remove_platform_info(self, playlist_id: int, platform: str) -> bool:
+        """Remove platform-specific information from a playlist.
+
+        Args:
+            playlist_id: The playlist ID
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+
+        Returns:
+            True if removed, False if not found
+        """
+        deleted = (
+            self.session.query(PlaylistPlatformInfo)
+            .filter(
+                PlaylistPlatformInfo.playlist_id == playlist_id,
+                PlaylistPlatformInfo.platform == platform,
+            )
+            .delete(synchronize_session=False)
+        )
+
+        self.session.commit()
+        return deleted > 0
+
+    def get_platform_info(self, playlist_id: int, platform: str) -> PlaylistPlatformInfo | None:
+        """Get platform-specific information for a playlist.
+
+        Args:
+            playlist_id: The playlist ID
+            platform: Platform name (e.g., 'spotify', 'rekordbox')
+
+        Returns:
+            The playlist platform info if found, None otherwise
+        """
+        return (
+            self.session.query(PlaylistPlatformInfo)
+            .filter(
+                PlaylistPlatformInfo.playlist_id == playlist_id,
+                PlaylistPlatformInfo.platform == platform,
+            )
+            .first()
+        )
+
+    def migrate_legacy_platform_info(self) -> int:
+        """Migrate legacy platform info from Playlist to PlaylistPlatformInfo.
+
+        This is a utility method to help with the transition.
+
+        Returns:
+            Number of playlists migrated
+        """
+        # Get all playlists with legacy platform info
+        legacy_playlists = (
+            self.session.query(Playlist)
+            .filter(Playlist.source_platform != None)  # noqa: E711
+            .filter(Playlist.platform_id != None)  # noqa: E711
+            .all()
+        )
+
+        migrated_count = 0
+
+        for playlist in legacy_playlists:
+            # Check if playlist already has new-style platform info
+            existing_info = self.get_platform_info(playlist.id, playlist.source_platform)
+
+            if not existing_info:
+                # Create new platform info
+                self.add_platform_info(
+                    playlist_id=playlist.id,
+                    platform=playlist.source_platform,
+                    platform_id=playlist.platform_id,
+                )
+                migrated_count += 1
+
+        return migrated_count

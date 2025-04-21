@@ -1,39 +1,45 @@
-"""Link manager for platform integration operations."""
+"""Link manager for track-level operations between platforms and the library database.
 
-from datetime import UTC, datetime
+This module provides the PlatformLinkManager class that focuses exclusively on track-level
+operations for linking tracks between platforms and the local library database.
+"""
+
+import json
 from typing import Any
 
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from selecta.core.data.models.db import Playlist, Track
-from selecta.core.data.repositories.playlist_repository import PlaylistRepository
+from selecta.core.data.database import get_session
+from selecta.core.data.models.db import Album, Track
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.abstract_platform import AbstractPlatform
 
 
 class PlatformLinkManager:
-    """Manager for linking tracks and playlists between platforms and local database.
+    """Manager for linking tracks between platforms and the library database.
 
-    This class provides standardized methods for linking operations that work with
-    any platform implementation.
+    This class focuses exclusively on track-level operations, providing standardized
+    methods for importing tracks from platforms and linking them to library tracks.
+    For playlist-level operations, use PlatformSyncManager instead.
     """
 
     def __init__(
         self,
         platform_client: AbstractPlatform,
         track_repo: TrackRepository | None = None,
-        playlist_repo: PlaylistRepository | None = None,
+        session: Session | None = None,
     ):
         """Initialize the link manager.
 
         Args:
             platform_client: The platform client to use for link operations
             track_repo: Optional track repository (will create one if not provided)
-            playlist_repo: Optional playlist repository (will create one if not provided)
+            session: Optional SQLAlchemy session (will use track_repo's session if not provided)
         """
         self.platform_client = platform_client
         self.track_repo = track_repo or TrackRepository()
-        self.playlist_repo = playlist_repo or PlaylistRepository()
+        self.session = session or self.track_repo.session or get_session()
         self.platform_name = self._get_platform_name()
 
     def _get_platform_name(self) -> str:
@@ -48,11 +54,60 @@ class PlatformLinkManager:
             return class_name[:-6].lower()
         return class_name.lower()
 
+    def _get_or_create_album(
+        self, album_name: str, artist_name: str, year: int | None = None
+    ) -> Album | None:
+        """Get an existing album or create a new one.
+
+        Args:
+            album_name: The album title
+            artist_name: The album artist
+            year: Optional release year
+
+        Returns:
+            The album instance (either existing or newly created) or None if inputs are invalid
+        """
+        if not album_name or not artist_name:
+            logger.warning("Cannot create album: Missing album name or artist name")
+            return None
+
+        # First try to find an existing album with the same title and artist
+        existing_album = (
+            self.session.query(Album)
+            .filter(Album.title == album_name, Album.artist == artist_name)
+            .first()
+        )
+
+        if existing_album:
+            logger.debug(f"Found existing album: {existing_album.title} by {existing_album.artist}")
+            return existing_album
+
+        # Create a new album
+        album_data = {
+            "title": album_name,
+            "artist": artist_name,
+        }
+
+        if year:
+            album_data["release_year"] = year
+
+        logger.debug(f"Creating new album: {album_name} by {artist_name}")
+        album = Album(**album_data)
+        self.session.add(album)
+        self.session.flush()  # Get the ID without committing
+
+        return album
+
     def import_track(self, platform_track: Any) -> Track:
         """Import a track from platform to local database.
 
+        This method handles the import of platform-specific track objects to the
+        library database, creating or updating Track objects and storing platform
+        metadata in TrackPlatformInfo records.
+
         Args:
             platform_track: The platform-specific track object
+                Could be a SpotifyTrack, RekordboxTrack, YouTubeVideo, etc.
 
         Returns:
             The local Track object (either newly created or existing)
@@ -60,91 +115,423 @@ class PlatformLinkManager:
         Raises:
             ValueError: If track cannot be imported
         """
+        # Log the track type we're importing
+        track_type = type(platform_track).__name__
+        logger.debug(f"Importing {self.platform_name} track of type {track_type}")
+
         # Extract common attributes based on the platform
         if self.platform_name == "spotify":
-            # Handle Spotify track format
-            track_data = {
-                "title": getattr(platform_track, "name", platform_track.get("name", "")),
-                "artist": ", ".join(
-                    getattr(
-                        platform_track,
-                        "artist_names",
-                        [a.get("name", "") for a in platform_track.get("artists", [])],
-                    )
-                ),
-                "duration_ms": getattr(
-                    platform_track, "duration_ms", platform_track.get("duration_ms", 0)
-                ),
-            }
+            # Handle Spotify track format - with detailed debug
+            if (
+                hasattr(platform_track, "__class__")
+                and platform_track.__class__.__name__ == "SpotifyTrack"
+            ):
+                # Detailed logging for SpotifyTrack instances
+                logger.info(
+                    f"Importing SpotifyTrack: {platform_track.name} "
+                    f"by {', '.join(platform_track.artist_names)}"
+                )
 
-            platform_id = getattr(platform_track, "id", platform_track.get("id", ""))
-            uri = getattr(platform_track, "uri", platform_track.get("uri", ""))
+                # Extract from SpotifyTrack dataclass (from spotify/models.py)
+                # Use safe access with default values to prevent attribute errors
+                track_data = {
+                    "title": getattr(platform_track, "name", "Unknown Track"),
+                    "is_available_locally": False,  # This is a Spotify track, not a local file
+                }
+
+                # Get artist names (required field)
+                artist_names = getattr(platform_track, "artist_names", [])
+                if artist_names:
+                    track_data["artist"] = ", ".join(artist_names)
+                else:
+                    track_data["artist"] = "Unknown Artist"
+
+                # Handle optional fields with safe access
+                duration_ms = getattr(platform_track, "duration_ms", None)
+                if duration_ms is not None:
+                    track_data["duration_ms"] = duration_ms
+
+                # Handle album and release date for year
+                album_name = getattr(platform_track, "album_name", None)
+                album_release_date = getattr(platform_track, "album_release_date", None)
+                year = None
+
+                if album_release_date and len(album_release_date) >= 4:
+                    year = int(album_release_date[:4])
+                    track_data["year"] = year
+
+                # If we have album info, get or create the album object
+                if album_name and artist_names:
+                    album = self._get_or_create_album(album_name, track_data["artist"], year)
+                    if album:
+                        track_data["album_id"] = album.id
+
+                # Get required IDs with safe access
+                platform_id = getattr(platform_track, "id", "")
+                uri = getattr(platform_track, "uri", "")
+
+                # Debug logging for track data
+                logger.info(f"Extracted track data: {track_data}")
+                logger.info(f"Platform ID: {platform_id}, URI: {uri}")
+
+            else:
+                # Dictionary or other object type
+                # Handle with safe type checking
+                track_data = {}
+
+                # Get title
+                if hasattr(platform_track, "name"):
+                    track_data["title"] = platform_track.name
+                elif isinstance(platform_track, dict) and "name" in platform_track:
+                    track_data["title"] = platform_track["name"]
+                else:
+                    track_data["title"] = "Unknown Track"
+
+                # Get artist
+                artist_names = []
+                if hasattr(platform_track, "artist_names"):
+                    artist_names = platform_track.artist_names
+                elif isinstance(platform_track, dict):
+                    if "artist_names" in platform_track:
+                        artist_names = platform_track["artist_names"]
+                    elif "artists" in platform_track and isinstance(
+                        platform_track["artists"], list
+                    ):
+                        for artist in platform_track["artists"]:
+                            if isinstance(artist, dict) and "name" in artist:
+                                artist_names.append(artist["name"])
+
+                track_data["artist"] = ", ".join(artist_names) if artist_names else "Unknown Artist"
+
+                # Get duration
+                if hasattr(platform_track, "duration_ms"):
+                    track_data["duration_ms"] = platform_track.duration_ms
+                elif isinstance(platform_track, dict) and "duration_ms" in platform_track:
+                    track_data["duration_ms"] = platform_track["duration_ms"]
+                else:
+                    track_data["duration_ms"] = 0
+
+                # Set as non-local track
+                track_data["is_available_locally"] = False
+
+                # Get platform IDs
+                if hasattr(platform_track, "id"):
+                    platform_id = platform_track.id
+                elif isinstance(platform_track, dict) and "id" in platform_track:
+                    platform_id = platform_track["id"]
+                else:
+                    platform_id = ""
+
+                if hasattr(platform_track, "uri"):
+                    uri = platform_track.uri
+                elif isinstance(platform_track, dict) and "uri" in platform_track:
+                    uri = platform_track["uri"]
+                else:
+                    uri = ""
 
             # Create additional platform metadata
-            platform_metadata = {
-                "popularity": getattr(
-                    platform_track, "popularity", platform_track.get("popularity", 0)
-                ),
-                "explicit": getattr(
-                    platform_track, "explicit", platform_track.get("explicit", False)
-                ),
-            }
+            if (
+                hasattr(platform_track, "__class__")
+                and platform_track.__class__.__name__ == "SpotifyTrack"
+            ):
+                # Handle SpotifyTrack metadata with safe attribute access
+                platform_metadata = {}
 
-            # Get album info if available
-            album_info = getattr(platform_track, "album", platform_track.get("album", {}))
-            if album_info:
-                if isinstance(album_info, dict):
-                    track_data["album"] = album_info.get("name", "")
-                    # Try to extract year from release date
-                    release_date = album_info.get("release_date", "")
-                    if release_date and len(release_date) >= 4:
-                        track_data["year"] = release_date[:4]
+                # Add popularity if available
+                popularity = getattr(platform_track, "popularity", None)
+                if popularity is not None:
+                    platform_metadata["popularity"] = popularity
+
+                # Add explicit flag if available
+                explicit = getattr(platform_track, "explicit", None)
+                if explicit is not None:
+                    platform_metadata["explicit"] = explicit
+
+                # Add preview URL if available
+                preview_url = getattr(platform_track, "preview_url", None)
+                if preview_url:
+                    platform_metadata["preview_url"] = preview_url
+
+                # Log metadata
+                logger.info(f"Extracted Spotify metadata: {platform_metadata}")
+            else:
+                # Handle dictionary objects with safe access
+                platform_metadata = {}
+
+                # Add popularity
+                if hasattr(platform_track, "popularity"):
+                    platform_metadata["popularity"] = platform_track.popularity
+                elif isinstance(platform_track, dict) and "popularity" in platform_track:
+                    platform_metadata["popularity"] = platform_track["popularity"]
                 else:
-                    track_data["album"] = getattr(album_info, "name", "")
-                    release_date = getattr(album_info, "release_date", "")
+                    platform_metadata["popularity"] = 0
+
+                # Add explicit flag
+                if hasattr(platform_track, "explicit"):
+                    platform_metadata["explicit"] = platform_track.explicit
+                elif isinstance(platform_track, dict) and "explicit" in platform_track:
+                    platform_metadata["explicit"] = platform_track["explicit"]
+                else:
+                    platform_metadata["explicit"] = False
+
+                # Get album info if available
+                album_info = getattr(
+                    platform_track,
+                    "album",
+                    platform_track.get("album", {}) if isinstance(platform_track, dict) else {},
+                )
+
+                if album_info:
+                    album_name = ""
+                    release_date = ""
+                    year = None
+
+                    if isinstance(album_info, dict):
+                        album_name = album_info.get("name", "")
+                        # Try to extract year from release date
+                        release_date = album_info.get("release_date", "")
+                    else:
+                        album_name = getattr(album_info, "name", "")
+                        release_date = getattr(album_info, "release_date", "")
+
                     if release_date and len(release_date) >= 4:
-                        track_data["year"] = release_date[:4]
+                        try:
+                            year = int(release_date[:4])
+                            track_data["year"] = year
+                        except ValueError:
+                            pass
+
+                    # Create album object if we have name and artist
+                    if album_name and track_data.get("artist"):
+                        album = self._get_or_create_album(album_name, track_data["artist"], year)
+                        if album:
+                            track_data["album_id"] = album.id
 
         elif self.platform_name == "rekordbox":
             # Handle Rekordbox track format
             track_data = {
-                "title": getattr(platform_track, "title", platform_track.get("title", "")),
+                "title": getattr(
+                    platform_track,
+                    "title",
+                    platform_track.get("title", "") if isinstance(platform_track, dict) else "",
+                ),
                 "artist": getattr(
-                    platform_track, "artist_name", platform_track.get("artist_name", "")
+                    platform_track,
+                    "artist_name",
+                    platform_track.get("artist_name", "")
+                    if isinstance(platform_track, dict)
+                    else "",
                 ),
                 "duration_ms": getattr(
-                    platform_track, "duration_ms", platform_track.get("duration_ms", 0)
+                    platform_track,
+                    "duration_ms",
+                    platform_track.get("duration_ms", 0) if isinstance(platform_track, dict) else 0,
                 ),
-                "bpm": getattr(platform_track, "bpm", platform_track.get("bpm", None)),
+                "bpm": getattr(
+                    platform_track,
+                    "bpm",
+                    platform_track.get("bpm", None) if isinstance(platform_track, dict) else None,
+                ),
             }
 
-            platform_id = str(getattr(platform_track, "id", platform_track.get("id", "")))
+            # Get album info if available
+            album_name = getattr(
+                platform_track,
+                "album_name",
+                platform_track.get("album_name", "") if isinstance(platform_track, dict) else "",
+            )
+            year = getattr(
+                platform_track,
+                "year",
+                platform_track.get("year", None) if isinstance(platform_track, dict) else None,
+            )
+
+            if album_name and track_data["artist"]:
+                album = self._get_or_create_album(album_name, track_data["artist"], year)
+                if album:
+                    track_data["album_id"] = album.id
+
+            platform_id = str(
+                getattr(
+                    platform_track,
+                    "id",
+                    platform_track.get("id", "") if isinstance(platform_track, dict) else "",
+                )
+            )
             uri = None
 
             # Create additional platform metadata
             platform_metadata = {
-                "bpm": getattr(platform_track, "bpm", platform_track.get("bpm", 0)),
-                "key": getattr(platform_track, "key", platform_track.get("key", "")),
-                "rating": getattr(platform_track, "rating", platform_track.get("rating", 0)),
+                "bpm": getattr(
+                    platform_track,
+                    "bpm",
+                    platform_track.get("bpm", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "key": getattr(
+                    platform_track,
+                    "key",
+                    platform_track.get("key", "") if isinstance(platform_track, dict) else "",
+                ),
+                "rating": getattr(
+                    platform_track,
+                    "rating",
+                    platform_track.get("rating", 0) if isinstance(platform_track, dict) else 0,
+                ),
             }
 
         elif self.platform_name == "discogs":
             # Handle Discogs release format
             track_data = {
-                "title": getattr(platform_track, "title", platform_track.get("title", "")),
-                "artist": getattr(platform_track, "artist", platform_track.get("artist", "")),
+                "title": getattr(
+                    platform_track,
+                    "title",
+                    platform_track.get("title", "") if isinstance(platform_track, dict) else "",
+                ),
+                "artist": getattr(
+                    platform_track,
+                    "artist",
+                    platform_track.get("artist", "") if isinstance(platform_track, dict) else "",
+                ),
                 # Discogs doesn't typically include duration in ms
-                "year": getattr(platform_track, "year", platform_track.get("year", None)),
             }
 
-            platform_id = str(getattr(platform_track, "id", platform_track.get("id", "")))
+            # Get year and album information
+            year = getattr(
+                platform_track,
+                "year",
+                platform_track.get("year", None) if isinstance(platform_track, dict) else None,
+            )
+            if year:
+                track_data["year"] = year
+
+            # Get album name - Discogs often stores this as "release_title"
+            album_name = getattr(
+                platform_track,
+                "release_title",
+                platform_track.get("release_title", "") if isinstance(platform_track, dict) else "",
+            )
+
+            if not album_name:
+                # Try album field as fallback
+                album_name = getattr(
+                    platform_track,
+                    "album",
+                    platform_track.get("album", "") if isinstance(platform_track, dict) else "",
+                )
+
+            if album_name and track_data["artist"]:
+                album = self._get_or_create_album(album_name, track_data["artist"], year)
+                if album:
+                    track_data["album_id"] = album.id
+
+            platform_id = str(
+                getattr(
+                    platform_track,
+                    "id",
+                    platform_track.get("id", "") if isinstance(platform_track, dict) else "",
+                )
+            )
             uri = None
 
             # Create additional platform metadata
             platform_metadata = {
-                "genres": getattr(platform_track, "genres", platform_track.get("genres", [])),
-                "styles": getattr(platform_track, "styles", platform_track.get("styles", [])),
-                "format": getattr(platform_track, "format", platform_track.get("format", "")),
+                "genres": getattr(
+                    platform_track,
+                    "genres",
+                    platform_track.get("genres", []) if isinstance(platform_track, dict) else [],
+                ),
+                "styles": getattr(
+                    platform_track,
+                    "styles",
+                    platform_track.get("styles", []) if isinstance(platform_track, dict) else [],
+                ),
+                "format": getattr(
+                    platform_track,
+                    "format",
+                    platform_track.get("format", "") if isinstance(platform_track, dict) else "",
+                ),
+            }
+        elif self.platform_name == "youtube":
+            # Handle YouTube video format
+            track_data = {
+                "title": getattr(
+                    platform_track,
+                    "title",
+                    platform_track.get("title", "") if isinstance(platform_track, dict) else "",
+                ),
+                "artist": getattr(
+                    platform_track,
+                    "channel_title",
+                    platform_track.get("channel_title", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
+                "is_available_locally": False,  # YouTube videos are not local files
+            }
+
+            # Get video duration if available
+            duration_ms = getattr(
+                platform_track,
+                "duration_ms",
+                platform_track.get("duration_ms", 0) if isinstance(platform_track, dict) else 0,
+            )
+            if duration_ms:
+                track_data["duration_ms"] = duration_ms
+
+            # Get published year if available
+            published_at = getattr(
+                platform_track,
+                "published_at",
+                platform_track.get("published_at", "") if isinstance(platform_track, dict) else "",
+            )
+            year = None
+            if published_at and len(published_at) >= 4:
+                try:
+                    year = int(published_at[:4])
+                    track_data["year"] = year
+                except ValueError:
+                    pass
+
+            # YouTube videos don't typically have album info, but we could create one
+            # based on channel/playlist if needed in the future
+
+            platform_id = getattr(
+                platform_track,
+                "video_id",
+                platform_track.get("video_id", "") if isinstance(platform_track, dict) else "",
+            )
+            uri = getattr(
+                platform_track,
+                "url",
+                platform_track.get("url", "") if isinstance(platform_track, dict) else "",
+            )
+
+            # Create platform metadata
+            platform_metadata = {
+                "view_count": getattr(
+                    platform_track,
+                    "view_count",
+                    platform_track.get("view_count", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "like_count": getattr(
+                    platform_track,
+                    "like_count",
+                    platform_track.get("like_count", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "channel_id": getattr(
+                    platform_track,
+                    "channel_id",
+                    platform_track.get("channel_id", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
+                "thumbnail_url": getattr(
+                    platform_track,
+                    "thumbnail_url",
+                    platform_track.get("thumbnail_url", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
             }
         else:
             raise ValueError(f"Unsupported platform: {self.platform_name}")
@@ -167,18 +554,38 @@ class PlatformLinkManager:
         if existing_track:
             # Update the existing track with any new information
             # Use preserve_existing=True to avoid overwriting existing fields
+            logger.info(f"Updating existing track: {existing_track.id} - {existing_track.title}")
+
+            # If we're trying to update with a new album and the track already has one,
+            # don't overwrite
+            if "album_id" in track_data and existing_track.album_id is not None:
+                logger.debug(
+                    f"Track already has album_id {existing_track.album_id}, "
+                    f"not overwriting with {track_data.get('album_id')}"
+                )
+                track_data.pop("album_id")
+
             self.track_repo.update(existing_track.id, track_data, preserve_existing=True)
             track = existing_track
         else:
             # Create a new track
+            logger.info(f"Creating new track with data: {track_data}")
+            # Commit any pending album creations to ensure album_id references are valid
+            if self.session.new:
+                logger.debug("Committing pending objects (e.g. albums) before track creation")
+                self.session.commit()
+
             track = self.track_repo.create(track_data)
+            logger.info(f"Created new track: {track.id} - {track.title} by {track.artist}")
 
         # Add or update platform info
         if platform_id:
             # Convert platform metadata to JSON string
-            import json
-
             metadata_json = json.dumps(platform_metadata)
+            logger.info(
+                f"Adding platform info for track {track.id}: platform={self.platform_name}, "
+                f"platform_id={platform_id}"
+            )
 
             self.track_repo.add_platform_info(
                 track_id=track.id,
@@ -187,287 +594,9 @@ class PlatformLinkManager:
                 uri=uri,
                 metadata=metadata_json,
             )
+            logger.info(f"Successfully added platform info for track {track.id}")
 
         return track
-
-    def import_playlist(self, platform_playlist_id: str) -> tuple[Playlist, list[Track]]:
-        """Import a playlist from platform to local database.
-
-        Args:
-            platform_playlist_id: The platform-specific playlist ID
-
-        Returns:
-            Tuple of (local playlist object, list of local track objects)
-
-        Raises:
-            ValueError: If playlist cannot be imported
-        """
-        if not self.platform_client.is_authenticated():
-            raise ValueError(f"{self.platform_name.capitalize()} client not authenticated")
-
-        # Get the playlist tracks and metadata from the platform
-        try:
-            platform_tracks, platform_playlist = self.platform_client.import_playlist_to_local(
-                platform_playlist_id
-            )
-        except Exception as e:
-            logger.exception(f"Error importing playlist from {self.platform_name}: {e}")
-            raise ValueError(f"Failed to import playlist: {str(e)}") from e
-
-        # Extract playlist metadata
-        playlist_name = getattr(
-            platform_playlist,
-            "name",
-            getattr(
-                platform_playlist,
-                "title",
-                platform_playlist.get("name", platform_playlist.get("title", "Unknown")),
-            ),
-        )
-
-        playlist_description = getattr(
-            platform_playlist, "description", platform_playlist.get("description", "")
-        )
-
-        # Check if we already have this playlist imported
-        existing_playlist = self.playlist_repo.get_by_platform_id(
-            self.platform_name, platform_playlist_id
-        )
-
-        if existing_playlist:
-            # Update the existing playlist
-            self.playlist_repo.update(
-                existing_playlist.id,
-                {
-                    "name": playlist_name,
-                    "description": playlist_description,
-                    "last_linked": datetime.now(UTC),  # Using last_linked in Playlist model
-                },
-            )
-            local_playlist = existing_playlist
-
-            # Clear existing tracks
-            self.playlist_repo.clear_tracks(existing_playlist.id)
-        else:
-            # Create a new playlist
-            local_playlist = Playlist(
-                name=playlist_name,
-                description=playlist_description,
-                is_local=False,
-                is_folder=False,
-                source_platform=self.platform_name,
-                platform_id=platform_playlist_id,
-                last_linked=datetime.now(UTC),
-            )
-            self.playlist_repo.session.add(local_playlist)
-            self.playlist_repo.session.commit()
-
-        # Import all tracks and add them to the playlist
-        local_tracks = []
-        for i, platform_track in enumerate(platform_tracks):
-            try:
-                # Import the track
-                local_track = self.import_track(platform_track)
-                local_tracks.append(local_track)
-
-                # Add to playlist with correct position
-                self.playlist_repo.add_track(local_playlist.id, local_track.id, position=i)
-            except Exception as e:
-                logger.error(f"Error importing track: {e}")
-                # Continue with next track
-
-        return local_playlist, local_tracks
-
-    def export_playlist(
-        self,
-        local_playlist_id: int,
-        platform_playlist_id: str | None = None,
-    ) -> str:
-        """Export a local playlist to the platform.
-
-        Args:
-            local_playlist_id: The local playlist ID
-            platform_playlist_id: Optional existing platform playlist ID to update
-
-        Returns:
-            The platform playlist ID
-
-        Raises:
-            ValueError: If playlist cannot be exported
-        """
-        if not self.platform_client.is_authenticated():
-            raise ValueError(f"{self.platform_name.capitalize()} client not authenticated")
-
-        # Get the local playlist
-        local_playlist = self.playlist_repo.get_by_id(local_playlist_id)
-        if not local_playlist:
-            raise ValueError(f"Local playlist with ID {local_playlist_id} not found")
-
-        # Get all tracks in the playlist
-        local_tracks = self.playlist_repo.get_playlist_tracks(local_playlist_id)
-        if not local_tracks:
-            logger.warning(f"Playlist {local_playlist.name} has no tracks")
-
-        # Find tracks that have platform metadata for this platform
-        platform_track_ids = []
-        for track in local_tracks:
-            for platform_info in track.platform_info:
-                if platform_info.platform == self.platform_name and platform_info.platform_id:
-                    if self.platform_name == "spotify" and platform_info.uri:
-                        # Spotify uses URIs for playlist operations
-                        platform_track_ids.append(platform_info.uri)
-                    else:
-                        platform_track_ids.append(platform_info.platform_id)
-                    break
-
-        if not platform_track_ids:
-            logger.warning(f"No tracks with {self.platform_name} metadata found in playlist")
-
-        # Export to platform
-        try:
-            new_platform_id = self.platform_client.export_tracks_to_playlist(
-                playlist_name=local_playlist.name,
-                track_ids=platform_track_ids,
-                existing_playlist_id=platform_playlist_id,
-            )
-
-            # If this was a new export (not updating an existing playlist),
-            # update the local playlist with the platform ID
-            if not platform_playlist_id and not local_playlist.platform_id:
-                self.playlist_repo.update(
-                    local_playlist_id,
-                    {
-                        "source_platform": self.platform_name,
-                        "platform_id": new_platform_id,
-                        "last_linked": datetime.now(UTC),  # Using last_linked in Playlist model
-                    },
-                )
-
-            return new_platform_id
-        except Exception as e:
-            logger.exception(f"Error exporting playlist to {self.platform_name}: {e}")
-            raise ValueError(f"Failed to export playlist: {str(e)}") from e
-
-    def link_playlist(self, local_playlist_id: int) -> tuple[int, int]:
-        """Link a playlist bidirectionally between local database and platform.
-
-        Args:
-            local_playlist_id: The local playlist ID
-
-        Returns:
-            Tuple of (tracks_added, tracks_updated)
-
-        Raises:
-            ValueError: If playlist cannot be linked
-        """
-        if not self.platform_client.is_authenticated():
-            raise ValueError(f"{self.platform_name.capitalize()} client not authenticated")
-
-        # Get the local playlist
-        local_playlist = self.playlist_repo.get_by_id(local_playlist_id)
-        if not local_playlist:
-            raise ValueError(f"Local playlist with ID {local_playlist_id} not found")
-
-        # Verify this is a platform playlist
-        if not local_playlist.platform_id or local_playlist.source_platform != self.platform_name:
-            raise ValueError(
-                f"Playlist {local_playlist.name} is not linked to {self.platform_name}"
-            )
-
-        # Get current tracks in local playlist
-        local_tracks = self.playlist_repo.get_playlist_tracks(local_playlist_id)
-
-        # Get platform tracks
-        platform_tracks, platform_playlist = self.platform_client.import_playlist_to_local(
-            local_playlist.platform_id
-        )
-
-        # Map of platform tracks by ID for quick lookup
-        platform_track_by_id = {}
-        for track in platform_tracks:
-            platform_id = getattr(track, "id", getattr(track, "platform_id", None))
-            if platform_id:
-                platform_track_by_id[platform_id] = track
-
-        # Track local tracks that have platform metadata
-        local_tracks_with_platform_info = []
-        platform_ids_in_local = set()
-
-        for track in local_tracks:
-            for platform_info in track.platform_info:
-                if platform_info.platform == self.platform_name and platform_info.platform_id:
-                    platform_ids_in_local.add(platform_info.platform_id)
-                    local_tracks_with_platform_info.append((track, platform_info))
-                    break
-
-        # Find platform tracks not in local playlist
-        new_platform_tracks = []
-        for platform_track in platform_tracks:
-            platform_id = getattr(
-                platform_track, "id", getattr(platform_track, "platform_id", None)
-            )
-            if platform_id and platform_id not in platform_ids_in_local:
-                new_platform_tracks.append(platform_track)
-
-        # Import new platform tracks
-        tracks_added = 0
-        for platform_track in new_platform_tracks:
-            try:
-                local_track = self.import_track(platform_track)
-                # Add to playlist
-                self.playlist_repo.add_track(local_playlist_id, local_track.id)
-                tracks_added += 1
-            except Exception as e:
-                logger.error(f"Error importing track during sync: {e}")
-
-        # Update the playlist metadata if needed
-        playlist_name = getattr(
-            platform_playlist,
-            "name",
-            getattr(
-                platform_playlist,
-                "title",
-                platform_playlist.get("name", platform_playlist.get("title", None)),
-            ),
-        )
-
-        if playlist_name and playlist_name != local_playlist.name:
-            # Update with new name and timestamp
-            self.playlist_repo.update(
-                local_playlist_id,
-                {"name": playlist_name, "last_linked": datetime.now(UTC)},
-            )
-        else:
-            # Just timestamp update
-            self.playlist_repo.update(local_playlist_id, {"last_linked": datetime.now(UTC)})
-
-        # Find local tracks not in platform playlist and try to export them
-        platform_track_ids = []
-        for _, platform_info in local_tracks_with_platform_info:
-            # Check if this track is in the platform playlist
-            if platform_info.platform_id in platform_track_by_id:
-                continue
-
-            # This track has platform metadata but is not in the platform playlist
-            if self.platform_name == "spotify" and platform_info.uri:
-                # Spotify uses URIs
-                platform_track_ids.append(platform_info.uri)
-            else:
-                platform_track_ids.append(platform_info.platform_id)
-
-        # Export missing tracks to platform if any
-        tracks_exported = 0
-        if platform_track_ids:
-            try:
-                self.platform_client.add_tracks_to_playlist(
-                    playlist_id=local_playlist.platform_id,
-                    track_ids=platform_track_ids,
-                )
-                tracks_exported = len(platform_track_ids)
-            except Exception as e:
-                logger.error(f"Error exporting tracks during sync: {e}")
-
-        return tracks_added, tracks_exported
 
     def link_tracks(self, local_track_id: int, platform_track: Any) -> bool:
         """Link a local track with platform-specific metadata.
@@ -490,21 +619,39 @@ class PlatformLinkManager:
         # Extract platform metadata
         if self.platform_name == "spotify":
             # Handle Spotify track format
-            platform_id = getattr(platform_track, "id", platform_track.get("id", ""))
-            uri = getattr(platform_track, "uri", platform_track.get("uri", ""))
+            platform_id = getattr(
+                platform_track,
+                "id",
+                platform_track.get("id", "") if isinstance(platform_track, dict) else "",
+            )
+            uri = getattr(
+                platform_track,
+                "uri",
+                platform_track.get("uri", "") if isinstance(platform_track, dict) else "",
+            )
 
             # Create additional platform metadata
             platform_metadata = {
                 "popularity": getattr(
-                    platform_track, "popularity", platform_track.get("popularity", 0)
+                    platform_track,
+                    "popularity",
+                    platform_track.get("popularity", 0) if isinstance(platform_track, dict) else 0,
                 ),
                 "explicit": getattr(
-                    platform_track, "explicit", platform_track.get("explicit", False)
+                    platform_track,
+                    "explicit",
+                    platform_track.get("explicit", False)
+                    if isinstance(platform_track, dict)
+                    else False,
                 ),
             }
 
             # Get album info if available
-            album_info = getattr(platform_track, "album", platform_track.get("album", {}))
+            album_info = getattr(
+                platform_track,
+                "album",
+                platform_track.get("album", {}) if isinstance(platform_track, dict) else {},
+            )
             if album_info and isinstance(album_info, dict) and "images" in album_info:
                 images = album_info["images"]
                 if images:
@@ -515,27 +662,112 @@ class PlatformLinkManager:
 
         elif self.platform_name == "rekordbox":
             # Handle Rekordbox track format
-            platform_id = str(getattr(platform_track, "id", platform_track.get("id", "")))
+            platform_id = str(
+                getattr(
+                    platform_track,
+                    "id",
+                    platform_track.get("id", "") if isinstance(platform_track, dict) else "",
+                )
+            )
             uri = None
 
             # Create additional platform metadata
             platform_metadata = {
-                "bpm": getattr(platform_track, "bpm", platform_track.get("bpm", 0)),
-                "key": getattr(platform_track, "key", platform_track.get("key", "")),
-                "rating": getattr(platform_track, "rating", platform_track.get("rating", 0)),
+                "bpm": getattr(
+                    platform_track,
+                    "bpm",
+                    platform_track.get("bpm", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "key": getattr(
+                    platform_track,
+                    "key",
+                    platform_track.get("key", "") if isinstance(platform_track, dict) else "",
+                ),
+                "rating": getattr(
+                    platform_track,
+                    "rating",
+                    platform_track.get("rating", 0) if isinstance(platform_track, dict) else 0,
+                ),
             }
 
         elif self.platform_name == "discogs":
             # Handle Discogs release format
-            platform_id = str(getattr(platform_track, "id", platform_track.get("id", "")))
+            platform_id = str(
+                getattr(
+                    platform_track,
+                    "id",
+                    platform_track.get("id", "") if isinstance(platform_track, dict) else "",
+                )
+            )
             uri = None
 
             # Create additional platform metadata
             platform_metadata = {
-                "genres": getattr(platform_track, "genres", platform_track.get("genres", [])),
-                "styles": getattr(platform_track, "styles", platform_track.get("styles", [])),
-                "format": getattr(platform_track, "format", platform_track.get("format", "")),
+                "genres": getattr(
+                    platform_track,
+                    "genres",
+                    platform_track.get("genres", []) if isinstance(platform_track, dict) else [],
+                ),
+                "styles": getattr(
+                    platform_track,
+                    "styles",
+                    platform_track.get("styles", []) if isinstance(platform_track, dict) else [],
+                ),
+                "format": getattr(
+                    platform_track,
+                    "format",
+                    platform_track.get("format", "") if isinstance(platform_track, dict) else "",
+                ),
             }
+
+        elif self.platform_name == "youtube":
+            # Handle YouTube video format
+            platform_id = getattr(
+                platform_track,
+                "video_id",
+                platform_track.get("video_id", "") if isinstance(platform_track, dict) else "",
+            )
+            uri = getattr(
+                platform_track,
+                "url",
+                platform_track.get("url", "") if isinstance(platform_track, dict) else "",
+            )
+
+            # Create platform metadata
+            platform_metadata = {
+                "view_count": getattr(
+                    platform_track,
+                    "view_count",
+                    platform_track.get("view_count", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "like_count": getattr(
+                    platform_track,
+                    "like_count",
+                    platform_track.get("like_count", 0) if isinstance(platform_track, dict) else 0,
+                ),
+                "channel_id": getattr(
+                    platform_track,
+                    "channel_id",
+                    platform_track.get("channel_id", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
+                "channel_title": getattr(
+                    platform_track,
+                    "channel_title",
+                    platform_track.get("channel_title", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
+                "thumbnail_url": getattr(
+                    platform_track,
+                    "thumbnail_url",
+                    platform_track.get("thumbnail_url", "")
+                    if isinstance(platform_track, dict)
+                    else "",
+                ),
+            }
+
         else:
             raise ValueError(f"Unsupported platform: {self.platform_name}")
 
@@ -543,8 +775,6 @@ class PlatformLinkManager:
             raise ValueError(f"No valid platform ID found for {self.platform_name} track")
 
         # Convert platform metadata to JSON string
-        import json
-
         metadata_json = json.dumps(platform_metadata)
 
         # Add or update platform info

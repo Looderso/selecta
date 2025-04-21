@@ -135,9 +135,24 @@ class PlaylistTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.ToolTipRole:
             from selecta.core.utils.type_helpers import has_description
 
+            # Create a tooltip with platform info if available
+            tooltip = item.name
+            from selecta.core.utils.type_helpers import has_synced_platforms
+
             if has_description(item):
-                return item.description
-            return item.name
+                tooltip = item.description
+
+            if has_synced_platforms(item) and item.get_platform_icons():
+                platforms_str = ", ".join(p.capitalize() for p in item.get_platform_icons())
+                tooltip += f"\n\nSynced with: {platforms_str}"
+
+            return tooltip
+        elif role == Qt.ItemDataRole.UserRole:
+            # Return platform icons for custom drawing if available
+            from selecta.core.utils.type_helpers import has_synced_platforms
+
+            if has_synced_platforms(item):
+                return item.get_platform_icons()
 
         return None
 

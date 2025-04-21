@@ -1,4 +1,4 @@
-"""Local database playlist data provider implementation."""
+"""Library database playlist data provider implementation."""
 
 import json
 import os
@@ -31,18 +31,22 @@ from selecta.core.platform.spotify.client import SpotifyClient
 from selecta.ui.components.playlist.abstract_playlist_data_provider import (
     AbstractPlaylistDataProvider,
 )
-from selecta.ui.components.playlist.local.local_playlist_item import LocalPlaylistItem
-from selecta.ui.components.playlist.local.local_track_item import LocalTrackItem
+from selecta.ui.components.playlist.library.library_playlist_item import LibraryPlaylistItem
+from selecta.ui.components.playlist.library.library_track_item import LibraryTrackItem
 from selecta.ui.components.playlist.playlist_item import PlaylistItem
 from selecta.ui.components.playlist.track_item import TrackItem
 from selecta.ui.dialogs import ImportExportPlaylistDialog
 
 
-class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
-    """Data provider for local playlists."""
+class LibraryPlaylistDataProvider(AbstractPlaylistDataProvider):
+    """Data provider for library playlists."""
+
+    # Constants for Collection playlist
+    COLLECTION_NAME = "Collection"
+    COLLECTION_DESCRIPTION = "Master collection of all tracks"
 
     def __init__(self, cache_timeout: float = 300.0):
-        """Initialize the local playlist data provider.
+        """Initialize the library playlist data provider.
 
         Args:
             cache_timeout: Cache timeout in seconds (default: 5 minutes)
@@ -57,11 +61,42 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         self._rekordbox_client = None
         self._discogs_client = None
 
-        # Initialize the abstract provider with None as client (not needed for local)
+        # Initialize the abstract provider with None as client (not needed for library)
         super().__init__(None, cache_timeout)
 
+        # Ensure Collection playlist exists
+        self._collection_playlist_id = self._ensure_collection_playlist()
+
+    def _ensure_collection_playlist(self) -> int:
+        """Ensure that the Collection playlist exists.
+
+        If it doesn't exist, create it.
+
+        Returns:
+            ID of the Collection playlist
+        """
+        # Check if Collection playlist already exists
+        playlists = self.playlist_repo.get_all()
+        for playlist in playlists:
+            if playlist.name == self.COLLECTION_NAME:
+                logger.debug(f"Found existing Collection playlist with ID {playlist.id}")
+                return playlist.id
+
+        # Create Collection playlist if it doesn't exist
+        logger.info("Creating Collection playlist")
+        playlist = self.playlist_repo.create(
+            {
+                "name": self.COLLECTION_NAME,
+                "description": self.COLLECTION_DESCRIPTION,
+                "is_folder": False,
+                "is_local": True,
+            }
+        )
+
+        return playlist.id
+
     def _fetch_playlists(self) -> list[PlaylistItem]:
-        """Fetch all local playlists from the database.
+        """Fetch all library playlists from the database.
 
         Returns:
             List of playlist items
@@ -86,9 +121,42 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     # This is a placeholder to handle folders in DB without showing them in UI
                     continue
                 else:
+                    # Determine which platforms this playlist is synced with
+                    synced_platforms = []
+
+                    # If it has a source platform, it's synced with that platform
+                    if playlist.source_platform:
+                        synced_platforms.append(playlist.source_platform)
+
+                    # Check if this playlist is exported to any platforms
+                    if playlist.platform_id:
+                        if (
+                            self._is_exported_to_spotify(playlist.id)
+                            and "spotify" not in synced_platforms
+                        ):
+                            synced_platforms.append("spotify")
+
+                        if (
+                            self._is_exported_to_rekordbox(playlist.id)
+                            and "rekordbox" not in synced_platforms
+                        ):
+                            synced_platforms.append("rekordbox")
+
+                        if (
+                            self._is_exported_to_discogs(playlist.id)
+                            and "discogs" not in synced_platforms
+                        ):
+                            synced_platforms.append("discogs")
+
+                        if (
+                            self._is_exported_to_youtube(playlist.id)
+                            and "youtube" not in synced_platforms
+                        ):
+                            synced_platforms.append("youtube")
+
                     # This is a regular playlist
                     playlist_items.append(
-                        LocalPlaylistItem(
+                        LibraryPlaylistItem(
                             name=playlist.name,
                             item_id=playlist.id,
                             track_count=track_count,
@@ -96,6 +164,8 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                             description=playlist.description,
                             source_platform=playlist.source_platform,
                             platform_id=playlist.platform_id,
+                            is_collection=(playlist.name == self.COLLECTION_NAME),
+                            synced_platforms=synced_platforms,
                         )
                     )
 
@@ -122,7 +192,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
 
             for track in tracks:
                 # This will always be a LibraryDatabase Track
-                # Create a LocalTrackItem
+                # Create a LibraryTrackItem
                 # Get all platforms this track is available on
                 available_platforms = []
                 # Store a map of platform -> uri for direct access
@@ -152,7 +222,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                     platform_info_list.append({"platform": info.platform, "id": info.platform_id})
 
                 track_items.append(
-                    LocalTrackItem(
+                    LibraryTrackItem(
                         track_id=track.id,
                         title=track.title,
                         artist=track.artist,
@@ -179,52 +249,144 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         Returns:
             Platform name
         """
-        return "Local"
+        return "Library"
 
     def _ensure_authenticated(self) -> bool:
-        """Override to ensure we always return True for local provider.
+        """Override to ensure we always return True for library provider.
 
-        The local provider doesn't need authentication for basic operations.
+        The library provider doesn't need authentication for basic operations.
 
         Returns:
-            Always True for local provider
+            Always True for library provider
         """
         return True
+
+    def _is_collection_playlist(self, playlist_id: int) -> bool:
+        """Check if the given playlist ID is the Collection playlist.
+
+        Args:
+            playlist_id: ID of the playlist to check
+
+        Returns:
+            True if this is the Collection playlist, False otherwise
+        """
+        return playlist_id == self._collection_playlist_id
+
+    def _is_exported_to_spotify(self, playlist_id: int) -> bool:
+        """Check if the playlist is exported to Spotify.
+
+        Args:
+            playlist_id: ID of the playlist to check
+
+        Returns:
+            True if this playlist is exported to Spotify, False otherwise
+        """
+        playlist = self.playlist_repo.get_by_id(playlist_id)
+        if not playlist:
+            return False
+
+        # If the playlist was imported from Spotify, it's already synced
+        if playlist.source_platform == "spotify" and playlist.platform_id:
+            return True
+
+        # TODO: In the future, add logic to check for playlists that were exported to Spotify
+        # This would involve checking if there's a mapping between this playlist
+        # and a Spotify playlist
+        return False
+
+    def _is_exported_to_rekordbox(self, playlist_id: int) -> bool:
+        """Check if the playlist is exported to Rekordbox.
+
+        Args:
+            playlist_id: ID of the playlist to check
+
+        Returns:
+            True if this playlist is exported to Rekordbox, False otherwise
+        """
+        playlist = self.playlist_repo.get_by_id(playlist_id)
+        if not playlist:
+            return False
+
+        # If the playlist was imported from Rekordbox, it's already synced
+        if playlist.source_platform == "rekordbox" and playlist.platform_id:
+            return True
+
+        # TODO: In the future, add logic to check for playlists that were exported to Rekordbox
+        return False
+
+    def _is_exported_to_discogs(self, playlist_id: int) -> bool:
+        """Check if the playlist is exported to Discogs.
+
+        Args:
+            playlist_id: ID of the playlist to check
+
+        Returns:
+            True if this playlist is exported to Discogs, False otherwise
+        """
+        playlist = self.playlist_repo.get_by_id(playlist_id)
+        if not playlist:
+            return False
+
+        # If the playlist was imported from Discogs, it's already synced
+        if playlist.source_platform == "discogs" and playlist.platform_id:
+            return True
+
+        # TODO: In the future, add logic to check for playlists that were exported to Discogs
+        return False
+
+    def _is_exported_to_youtube(self, playlist_id: int) -> bool:
+        """Check if the playlist is exported to YouTube.
+
+        Args:
+            playlist_id: ID of the playlist to check
+
+        Returns:
+            True if this playlist is exported to YouTube, False otherwise
+        """
+        playlist = self.playlist_repo.get_by_id(playlist_id)
+        if not playlist:
+            return False
+
+        # If the playlist was imported from YouTube, it's already synced
+        if playlist.source_platform == "youtube" and playlist.platform_id:
+            return True
+
+        # TODO: In the future, add logic to check for playlists that were exported to YouTube
+        return False
 
     def show_playlist_context_menu(
         self, tree_view: QTreeView, position: Any, parent: QWidget | None = None
     ) -> None:
-        """Show a context menu for a local playlist.
+        """Show a context menu for a library playlist.
 
         Args:
             tree_view: The tree view
             position: Position where the context menu was requested
-            parent: Parent widget for the menu (if any)
+            parent: Parent widget for dialogs
         """
         # Get the playlist item at this position
         index = tree_view.indexAt(position)
-
-        # Check if we're clicking on empty space
         if not index.isValid():
-            # Create context menu for empty space
+            # Right-click on empty space
+            logger.debug("Right-click on empty space in Library view")
             menu = QMenu(tree_view)
 
             # Add Collection management option
             manage_action = menu.addAction("Manage Collection...")
             manage_action.triggered.connect(
-                lambda: self._show_collection_management_dialog(tree_view)
+                lambda: self._show_collection_management_dialog(parent or tree_view)
             )
 
-            # Debug log
-            from loguru import logger
-
-            logger.debug("Added 'Manage Collection' option to empty space context menu")
+            # Add refresh option
+            menu.addSeparator()
+            refresh_action = menu.addAction("Refresh All")
+            refresh_action.triggered.connect(self.refresh)
 
             # Show the menu
             menu.exec(tree_view.viewport().mapToGlobal(position))
             return
 
-        # Get the playlist item for a valid index
+        # Get the playlist item
         playlist_item = index.internalPointer()
         if not playlist_item or playlist_item.is_folder():
             return
@@ -232,24 +394,16 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         # Create context menu
         menu = QMenu(tree_view)
 
-        # Check if this is the Collection playlist
-        playlist_name = getattr(playlist_item, "name", None)
+        # Special handling for Collection playlist
+        is_collection = False
+        if hasattr(playlist_item, "is_collection") and playlist_item.is_collection:
+            is_collection = True
 
-        # Add debug logging to inspect the actual structure
-        from loguru import logger
-
-        logger.debug(f"Playlist item properties: name={playlist_name}, dir={dir(playlist_item)}")
-
-        if playlist_name == "Collection":
-            # Add Collection management options
+            # Add Collection management option to Collection playlist
             manage_action = menu.addAction("Manage Collection...")
             manage_action.triggered.connect(
-                lambda: self._show_collection_management_dialog(tree_view)
+                lambda: self._show_collection_management_dialog(parent or tree_view)
             )
-
-            # Debug log
-            logger.debug(f"Added 'Manage Collection' option to menu for playlist: {playlist_name}")
-
             menu.addSeparator()
 
         # Figure out which platform options to show
@@ -257,7 +411,7 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             # This is an imported playlist - we can sync it
             sync_action = menu.addAction(f"Sync with {playlist_item.source_platform.capitalize()}")
             sync_action.triggered.connect(
-                lambda: self.sync_playlist(playlist_item.item_id, tree_view)
+                lambda: self.sync_playlist(playlist_item.item_id, parent or tree_view)
             )
 
         # Add export actions for all platforms
@@ -266,26 +420,28 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         # Add export to Spotify action
         export_spotify_action = export_menu.addAction("Spotify")
         export_spotify_action.triggered.connect(
-            lambda: self.export_playlist(playlist_item.item_id, "spotify", tree_view)
+            lambda: self.export_playlist(playlist_item.item_id, "spotify", parent or tree_view)
         )
 
         # Add export to Rekordbox action
         export_rekordbox_action = export_menu.addAction("Rekordbox")
         export_rekordbox_action.triggered.connect(
-            lambda: self.export_playlist(playlist_item.item_id, "rekordbox", tree_view)
+            lambda: self.export_playlist(playlist_item.item_id, "rekordbox", parent or tree_view)
         )
 
         # Add export to Discogs action
         export_discogs_action = export_menu.addAction("Discogs")
         export_discogs_action.triggered.connect(
-            lambda: self.export_playlist(playlist_item.item_id, "discogs", tree_view)
+            lambda: self.export_playlist(playlist_item.item_id, "discogs", parent or tree_view)
         )
 
-        # Add delete action
-        delete_action = menu.addAction("Delete Playlist")
-        delete_action.triggered.connect(
-            lambda: self._delete_playlist(playlist_item.item_id, tree_view)
-        )
+        # Only show delete action if this is not the Collection playlist
+        if not is_collection:
+            # Add delete action
+            delete_action = menu.addAction("Delete Playlist")
+            delete_action.triggered.connect(
+                lambda: self._delete_playlist(playlist_item.item_id, parent or tree_view)
+            )
 
         # Show the menu at the cursor position
         menu.exec(tree_view.viewport().mapToGlobal(position))
@@ -297,6 +453,16 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             playlist_id: ID of the playlist to delete
             parent: Parent widget for dialogs
         """
+        # Don't allow deletion of Collection playlist
+        if self._is_collection_playlist(playlist_id):
+            QMessageBox.warning(
+                parent,
+                "Cannot Delete Collection",
+                "The Collection playlist cannot be deleted as it"
+                "contains all tracks in your library.",
+            )
+            return
+
         # Get the playlist from the database
         playlist = self.playlist_repo.get_by_id(playlist_id)
         if not playlist:
@@ -309,7 +475,8 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         response = QMessageBox.question(
             parent,
             "Confirm Delete",
-            f"Are you sure you want to delete the playlist '{playlist.name}'?",
+            f"Are you sure you want to delete the playlist '{playlist.name}'?\n\n"
+            "This will not delete the tracks from your library.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -326,6 +493,30 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
         except Exception as e:
             logger.exception(f"Error deleting playlist: {e}")
             QMessageBox.critical(parent, "Delete Error", f"Failed to delete playlist: {str(e)}")
+
+    def _ensure_tracks_in_collection(self, track_ids: list[int]) -> None:
+        """Ensure all tracks are in the Collection playlist.
+
+        Args:
+            track_ids: List of track IDs to ensure are in Collection
+        """
+        if not track_ids:
+            return
+
+        # Get tracks already in Collection
+        collection_tracks = self.playlist_repo.get_playlist_tracks(self._collection_playlist_id)
+        collection_track_ids = [t.id for t in collection_tracks]
+
+        # Find tracks not already in Collection
+        tracks_to_add = [t_id for t_id in track_ids if t_id not in collection_track_ids]
+
+        # Add tracks to Collection if needed
+        for track_id in tracks_to_add:
+            try:
+                self.playlist_repo.add_track(self._collection_playlist_id, track_id)
+                logger.debug(f"Added track {track_id} to Collection")
+            except Exception as e:
+                logger.error(f"Failed to add track {track_id} to Collection: {e}")
 
     def _init_spotify_client(self) -> SpotifyClient | None:
         """Initialize the Spotify client if not already done.
@@ -387,45 +578,14 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             logger.exception(f"Failed to initialize Discogs client: {e}")
             return None
 
-    def _show_collection_management_dialog(self, parent: QWidget) -> None:
-        """Show the Collection management dialog.
-
-        Args:
-            parent: Parent widget
-        """
-        from loguru import logger
-
-        logger.debug(f"Showing Collection management dialog, parent={parent}")
-
-        from selecta.ui.dialogs.collection_management_dialog import CollectionManagementDialog
-
-        try:
-            # Create and show the dialog
-            dialog = CollectionManagementDialog(parent)
-
-            # Connect the collection modified signal to refresh our view
-            dialog.collection_modified.connect(self.refresh)
-
-            # Show the dialog
-            dialog.exec()
-
-            logger.debug("Collection management dialog closed")
-        except Exception as e:
-            logger.exception(f"Error showing Collection management dialog: {e}")
-            from PyQt6.QtWidgets import QMessageBox
-
-            QMessageBox.critical(
-                parent, "Error", f"Failed to open Collection management dialog: {str(e)}"
-            )
-
     def _sync_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
         """Sync a playlist with its source platform.
 
         This function performs two-way sync:
-        1. Import new tracks from the platform to the local playlist
-        2. Export local tracks back to the platform
+        1. Import new tracks from the platform to the library playlist
+        2. Export library tracks back to the platform
 
-        All tracks in the local playlist are preserved.
+        All tracks in the library playlist are preserved.
 
         Args:
             playlist_id: ID of the playlist to sync
@@ -579,6 +739,20 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
             # Perform the sync using the sync manager
             tracks_added, tracks_exported = sync_manager.sync_playlist(playlist.id)
 
+            # Ensure all tracks are also in Collection
+            if tracks_added > 0:
+                # Get the tracks in the playlist
+                playlist_tracks = self.playlist_repo.get_playlist_tracks(playlist_id)
+                track_ids = [t.id for t in playlist_tracks]
+                # Add to Collection
+                self._ensure_tracks_in_collection(track_ids)
+
+            # Update playlist to indicate it's synced with the source platform
+            if not playlist.source_platform:
+                self.playlist_repo.update(
+                    playlist.id, {"source_platform": playlist.source_platform}
+                )
+
             # Show success message with stats
             message = f"Playlist '{playlist.name}' synced successfully.\n\n"
             if tracks_added > 0:
@@ -605,10 +779,10 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
     def export_playlist(
         self, playlist_id: Any, target_platform: str, parent: QWidget | None = None
     ) -> bool:
-        """Export a local playlist to a target platform.
+        """Export a library playlist to a target platform.
 
         Args:
-            playlist_id: ID of the local playlist to export
+            playlist_id: ID of the library playlist to export
             target_platform: Platform to export to ('spotify', 'rekordbox')
             parent: Parent widget for dialogs
 
@@ -729,16 +903,27 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                 local_playlist_id=playlist.id,
             )
 
-            # Update the local playlist with the platform connection
-            if platform_playlist_id and not playlist.platform_id:
-                self.playlist_repo.update(
-                    playlist.id,
-                    {
-                        "source_platform": "spotify",
-                        "platform_id": platform_playlist_id,
-                        "is_local": False,
-                    },
-                )
+            # Update the library playlist with the platform connection
+            if platform_playlist_id:
+                # Define the update data
+                update_data = {}
+
+                # If this playlist wasn't previously linked to Spotify
+                if not playlist.platform_id or playlist.source_platform != "spotify":
+                    update_data.update(
+                        {
+                            "platform_id": platform_playlist_id,
+                            "is_local": False,
+                        }
+                    )
+
+                # Only set source_platform if the playlist was local
+                if not playlist.source_platform:
+                    update_data["source_platform"] = "spotify"
+
+                # Only update if we have changes to make
+                if update_data:
+                    self.playlist_repo.update(playlist.id, update_data)
 
             # Show success message with skipped tracks info
             if skipped_tracks:
@@ -986,16 +1171,27 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                 force=force,
             )
 
-            # Update the local playlist with the platform connection
-            if platform_playlist_id and not playlist.platform_id:
-                self.playlist_repo.update(
-                    playlist.id,
-                    {
-                        "source_platform": "rekordbox",
-                        "platform_id": platform_playlist_id,
-                        "is_local": False,
-                    },
-                )
+            # Update the library playlist with the platform connection
+            if platform_playlist_id:
+                # Define the update data
+                update_data = {}
+
+                # If this playlist wasn't previously linked to Rekordbox
+                if not playlist.platform_id or playlist.source_platform != "rekordbox":
+                    update_data.update(
+                        {
+                            "platform_id": platform_playlist_id,
+                            "is_local": False,
+                        }
+                    )
+
+                # Only set source_platform if the playlist was local
+                if not playlist.source_platform:
+                    update_data["source_platform"] = "rekordbox"
+
+                # Only update if we have changes to make
+                if update_data:
+                    self.playlist_repo.update(playlist.id, update_data)
 
             # Show success message
             message = (
@@ -1019,6 +1215,36 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
                 parent, "Export Error", f"Failed to export playlist to Rekordbox: {str(e)}"
             )
             return False
+
+    def _show_collection_management_dialog(self, parent: QWidget) -> None:
+        """Show the Collection management dialog.
+
+        Args:
+            parent: Parent widget
+        """
+        from loguru import logger
+
+        logger.debug("Showing Collection management dialog from Library provider")
+
+        try:
+            # Import here to avoid circular imports
+            from selecta.ui.dialogs.collection_management_dialog import CollectionManagementDialog
+
+            # Create and show the dialog
+            dialog = CollectionManagementDialog(parent)
+
+            # Connect the collection modified signal to refresh our view
+            dialog.collection_modified.connect(self.refresh)
+
+            # Show the dialog
+            dialog.exec()
+
+            logger.debug("Collection management dialog closed")
+        except Exception as e:
+            logger.exception(f"Error showing Collection management dialog: {e}")
+            QMessageBox.critical(
+                parent, "Error", f"Failed to open Collection management dialog: {str(e)}"
+            )
 
     def _export_to_discogs(self, playlist: Any, tracks: list[Any], parent: QWidget | None) -> bool:
         """Export a playlist to Discogs (collection or wantlist).
@@ -1126,10 +1352,29 @@ class LocalPlaylistDataProvider(AbstractPlaylistDataProvider):
 
         try:
             # Export the playlist using the sync manager with the target as existing_playlist_id
-            sync_manager.export_playlist(
+            platform_playlist_id = sync_manager.export_playlist(
                 local_playlist_id=playlist.id,
                 platform_playlist_id=target,
             )
+
+            # Update the database to indicate this playlist is synced with Discogs
+            if (
+                platform_playlist_id == target
+            ):  # Discogs returns the same target (collection/wantlist)
+                # Define update data
+                update_data = {}
+
+                # Only update source_platform if not already set
+                if not playlist.source_platform:
+                    update_data["source_platform"] = "discogs"
+
+                # If not already synced with Discogs
+                if not playlist.platform_id or playlist.source_platform != "discogs":
+                    update_data["platform_id"] = target
+
+                # Only update if we have data
+                if update_data:
+                    self.playlist_repo.update(playlist.id, update_data)
 
             # Show success message with skipped tracks info
             if skipped_tracks:
