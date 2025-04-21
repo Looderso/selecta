@@ -16,13 +16,13 @@ from selecta.core.platform.abstract_platform import AbstractPlatform
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.platform.sync_manager import PlatformSyncManager
 from selecta.core.platform.youtube.client import YouTubeClient
-from selecta.ui.components.playlist.base_platform_provider import BasePlatformDataProvider
 from selecta.ui.components.playlist.interfaces import (
     IPlatformClient,
     PlatformCapability,
 )
-from selecta.ui.components.playlist.youtube.youtube_playlist_item import YouTubePlaylistItem
-from selecta.ui.components.playlist.youtube.youtube_track_item import YouTubeTrackItem
+from selecta.ui.components.playlist.platform.base_platform_provider import BasePlatformDataProvider
+from selecta.ui.components.playlist.platform.youtube.youtube_playlist_item import YouTubePlaylistItem
+from selecta.ui.components.playlist.platform.youtube.youtube_track_item import YouTubeTrackItem
 from selecta.ui.dialogs import CreatePlaylistDialog, ImportExportPlaylistDialog
 
 
@@ -682,7 +682,7 @@ class YouTubeDataProvider(BasePlatformDataProvider):
                 return False
 
             # Get the library provider from the registry
-            from selecta.ui.components.playlist.platform_registry import get_platform_registry
+            from selecta.ui.components.playlist.platform.platform_registry import get_platform_registry
 
             registry = get_platform_registry()
             library_provider = registry.get_provider("library")

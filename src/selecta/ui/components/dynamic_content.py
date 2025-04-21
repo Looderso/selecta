@@ -21,11 +21,9 @@ from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.platform.abstract_platform import AbstractPlatform
 from selecta.core.platform.platform_factory import PlatformFactory
 from selecta.core.utils.worker import ThreadManager
-from selecta.ui.components.discogs.discogs_search_panel import DiscogsSearchPanel
 from selecta.ui.components.loading_widget import LoadableWidget
-from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
-from selecta.ui.components.spotify.spotify_search_panel import SpotifySearchPanel
-from selecta.ui.components.youtube.youtube_search_panel import YouTubeSearchPanel
+from selecta.ui.components.playlist.track.track_details_panel import TrackDetailsPanel
+from selecta.ui.components.search import DiscogsSearchPanel, SpotifySearchPanel, YouTubeSearchPanel
 
 
 class DynamicContent(LoadableWidget):
@@ -147,12 +145,12 @@ class DynamicContent(LoadableWidget):
 
             # Get track details from database
             def get_track_details() -> tuple[Track | None, dict[str, TrackPlatformInfo | None]]:
-                track_data = self._track_repo.get_by_id(self._current_track_id)
+                track_data = self._track_repo.get_by_id(self._current_track_id or 0)
 
                 # Get platform info for all platforms
                 platform_info = {}
                 for platform in ["spotify", "discogs"]:
-                    info = self._track_repo.get_platform_info(self._current_track_id, platform)
+                    info = self._track_repo.get_platform_info(self._current_track_id or 0, platform)
                     platform_info[platform] = info
 
                 return track_data, platform_info
@@ -169,9 +167,7 @@ class DynamicContent(LoadableWidget):
             # For non-local tracks, just show the track details directly
             self._show_track_details(track)
 
-    def _handle_track_details_loaded(
-        self, result: tuple[Track | None, dict[str, TrackPlatformInfo | None]]
-    ) -> None:
+    def _handle_track_details_loaded(self, result: tuple[Track | None, dict[str, TrackPlatformInfo | None]]) -> None:
         """Handle loaded track details from database.
 
         Args:
@@ -203,7 +199,7 @@ class DynamicContent(LoadableWidget):
         logger.error(f"Error loading track details: {error}")
         self._show_track_details(None)
 
-    def _show_track_details(self, track: Any, platform_info: dict[str, Any] = None) -> None:
+    def _show_track_details(self, track: Any, platform_info: dict[str, Any] | None = None) -> None:
         """Show track details panel with the given track.
 
         Args:
@@ -260,37 +256,37 @@ class DynamicContent(LoadableWidget):
 
             # SIMPLIFIED DIRECT APPROACH: Get track and force refresh now
             logger.info(f"DIRECT REFRESH: Forcing immediate reload after linking for track {self._current_track_id}")
-            
+
             try:
                 # Load track and all platform info directly
                 track_db = self._track_repo.get_by_id(self._current_track_id)
-                
+
                 if not track_db:
                     logger.warning(f"Cannot find track {self._current_track_id} in database")
                     return
-                    
+
                 # Get ALL platform info directly from DB
                 all_platform_info = {}
                 for platform in ["spotify", "discogs", "youtube", "rekordbox"]:
-                    info = self._track_repo.get_platform_info(self._current_track_id, platform)
+                    info = self._track_repo.get_platform_info(self._current_track_id or 0, platform)
                     if info:
                         logger.info(f"Found platform info for {platform}: {info}")
                         all_platform_info[platform] = info
-                
+
                 # Get the currently selected track from selection state
                 current_track = self.selection_state.get_selected_track()
-                
+
                 if not current_track:
                     logger.warning("No track in selection state to update")
                     return
-                
+
                 # Force switch to the track details panel
                 self.stacked_widget.setCurrentWidget(self.track_details_panel)
-                
+
                 # IMPORTANT: Force the track details panel to reload with fresh platform info
                 logger.info(f"Setting track details with platform info for: {list(all_platform_info.keys())}")
                 self.track_details_panel.set_track(current_track, all_platform_info)
-                
+
             except Exception as e:
                 logger.error(f"Error during direct track refresh: {e}")
 
@@ -333,7 +329,7 @@ class DynamicContent(LoadableWidget):
 
             if client and client.is_authenticated():
                 # Get platform info
-                platform_info = self._track_repo.get_platform_info(self._current_track_id, platform)
+                platform_info = self._track_repo.get_platform_info(self._current_track_id or 0, platform)
 
                 if platform_info and platform_info.platform_id:
                     # Run update in background thread
@@ -352,9 +348,7 @@ class DynamicContent(LoadableWidget):
                     worker = thread_manager.run_task(update_func)
 
                     # Handle results
-                    worker.signals.result.connect(
-                        lambda result: self._handle_update_complete(result)
-                    )
+                    worker.signals.result.connect(lambda result: self._handle_update_complete(result))
                     worker.signals.error.connect(lambda error: self._handle_update_error(error))
                     worker.signals.finished.connect(lambda: self.hide_loading())
                 else:
@@ -366,9 +360,7 @@ class DynamicContent(LoadableWidget):
                     )
             else:
                 self.hide_loading()
-                QMessageBox.warning(
-                    self, "Authentication Error", f"Not authenticated with {platform.capitalize()}"
-                )
+                QMessageBox.warning(self, "Authentication Error", f"Not authenticated with {platform.capitalize()}")
 
     def _get_platform_client(self, platform: str) -> AbstractPlatform | None:
         """Get or create platform client.

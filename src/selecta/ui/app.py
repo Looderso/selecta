@@ -251,7 +251,7 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "spotify":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.spotify.spotify_data_provider import (
+                from selecta.ui.components.playlist.platform.spotify.spotify_data_provider import (
                     SpotifyDataProvider,
                 )
 
@@ -271,7 +271,7 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "rekordbox":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.rekordbox.rekordbox_data_provider import (
+                from selecta.ui.components.playlist.platform.rekordbox.rekordbox_data_provider import (
                     RekordboxDataProvider,
                 )
 
@@ -296,7 +296,7 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "discogs":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.discogs.discogs_data_provider import (
+                from selecta.ui.components.playlist.platform.discogs.discogs_data_provider import (
                     DiscogsDataProvider,
                 )
 
@@ -316,7 +316,7 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "youtube":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.youtube.youtube_data_provider import (
+                from selecta.ui.components.playlist.platform.youtube.youtube_data_provider import (
                     YouTubeDataProvider,
                 )
 
