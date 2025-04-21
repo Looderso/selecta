@@ -4,8 +4,8 @@ from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from selecta.core.data.init_db import initialize_database
 from selecta.core.data.repositories.playlist_repository import PlaylistRepository
-from selecta.ui.components.playlist.local.local_playlist_data_provider import (
-    LocalPlaylistDataProvider,
+from selecta.ui.components.playlist.library.library_data_provider import (
+    LibraryDataProvider,
 )
 from selecta.ui.components.playlist.playlist_component import PlaylistComponent
 
@@ -40,14 +40,12 @@ class PlaylistContent(QWidget):
         layout.addWidget(title)
 
         # Create data provider
-        data_provider = LocalPlaylistDataProvider()
+        data_provider = LibraryDataProvider()
 
         # Create playlist component
         self.playlist_component = PlaylistComponent(data_provider)
         # Set size policy to expand
-        self.playlist_component.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.playlist_component.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Connect track selection signal
         self.playlist_component.track_selected.connect(self._on_track_selected)
@@ -56,10 +54,7 @@ class PlaylistContent(QWidget):
 
         # If no playlists, show a message
         if not playlists:
-            message = QLabel(
-                "No playlists found."
-                " Run the app in Dev Mode or initialize the database with sample data."
-            )
+            message = QLabel("No playlists found. Run the app in Dev Mode or initialize the database with sample data.")
             message.setAlignment(Qt.AlignmentFlag.AlignCenter)
             message.setStyleSheet("color: #888; margin-top: 20px;")
             layout.addWidget(message)

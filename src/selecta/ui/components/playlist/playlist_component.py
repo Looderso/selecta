@@ -21,13 +21,13 @@ from PyQt6.QtWidgets import (
 
 from selecta.core.data.repositories.track_repository import TrackRepository
 from selecta.core.utils.worker import ThreadManager
-from selecta.ui.components.playlist.platform_icon_delegate import PlatformIconDelegate
-from selecta.ui.components.playlist.playlist_data_provider import PlaylistDataProvider
-from selecta.ui.components.playlist.playlist_icon_delegate import PlaylistIconDelegate
-from selecta.ui.components.playlist.playlist_tree_model import PlaylistTreeModel
-from selecta.ui.components.playlist.track_details_panel import TrackDetailsPanel
-from selecta.ui.components.playlist.track_quality_delegate import TrackQualityDelegate
-from selecta.ui.components.playlist.tracks_table_model import TracksTableModel
+from selecta.ui.components.playlist.icons.platform_icon_delegate import PlatformIconDelegate
+from selecta.ui.components.playlist.icons.playlist_icon_delegate import PlaylistIconDelegate
+from selecta.ui.components.playlist.icons.track_quality_delegate import TrackQualityDelegate
+from selecta.ui.components.playlist.interfaces import IPlatformDataProvider
+from selecta.ui.components.playlist.model.playlist_tree_model import PlaylistTreeModel
+from selecta.ui.components.playlist.model.tracks_table_model import TracksTableModel
+from selecta.ui.components.playlist.track.track_details_panel import TrackDetailsPanel
 from selecta.ui.components.search_bar import SearchBar
 from selecta.ui.dialogs.collection_management_dialog import CollectionManagementDialog
 from selecta.ui.widgets.loading_widget import LoadingWidget
@@ -159,9 +159,7 @@ class TrackListContainer(QWidget):
         # Create tracks table with multi-selection enabled
         self.tracks_table = QTableView()
         self.tracks_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tracks_table.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )  # Enable multi-selection
+        self.tracks_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)  # Enable multi-selection
         self.tracks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # type: ignore
         self.tracks_table.verticalHeader().setVisible(False)  # type: ignore
         self.tracks_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -216,9 +214,7 @@ class PlaylistComponent(QWidget):
     track_selected = pyqtSignal(object)  # Emits the selected track item
     play_track = pyqtSignal(object)  # Emits when track should be played
 
-    def __init__(
-        self, data_provider: PlaylistDataProvider | None = None, parent: QWidget | None = None
-    ) -> None:
+    def __init__(self, data_provider: IPlatformDataProvider | None = None, parent: QWidget | None = None) -> None:
         """Initialize the playlist component.
 
         Args:
@@ -228,7 +224,7 @@ class PlaylistComponent(QWidget):
         super().__init__(parent)
 
         # Initialize instance variables
-        self.data_provider: PlaylistDataProvider | None = None
+        self.data_provider: IPlatformDataProvider | None = None
         self.current_playlist_id: int | None = None
         self.current_tracks: list[Any] = []  # Store current tracks for search suggestions
 
@@ -324,25 +320,17 @@ class PlaylistComponent(QWidget):
 
         # Set custom delegate for the platforms column
         platforms_column_index = (
-            self.tracks_model.column_keys.index("platforms")
-            if "platforms" in self.tracks_model.column_keys
-            else -1
+            self.tracks_model.column_keys.index("platforms") if "platforms" in self.tracks_model.column_keys else -1
         )
         if platforms_column_index >= 0:
-            self.tracks_table.setItemDelegateForColumn(
-                platforms_column_index, PlatformIconDelegate(self.tracks_table)
-            )
+            self.tracks_table.setItemDelegateForColumn(platforms_column_index, PlatformIconDelegate(self.tracks_table))
 
         # Set custom delegate for the quality column
         quality_column_index = (
-            self.tracks_model.column_keys.index("quality")
-            if "quality" in self.tracks_model.column_keys
-            else -1
+            self.tracks_model.column_keys.index("quality") if "quality" in self.tracks_model.column_keys else -1
         )
         if quality_column_index >= 0:
-            self.tracks_table.setItemDelegateForColumn(
-                quality_column_index, TrackQualityDelegate(self.tracks_table)
-            )
+            self.tracks_table.setItemDelegateForColumn(quality_column_index, TrackQualityDelegate(self.tracks_table))
 
         # Enable double-click on tracks to play them
         self.tracks_table.doubleClicked.connect(self._on_track_double_clicked)
@@ -383,7 +371,7 @@ class PlaylistComponent(QWidget):
         # When a search completion is highlighted, highlight that track
         self.search_bar.completer_highlighted.connect(self._on_search_completion_highlighted)
 
-    def set_data_provider(self, data_provider: PlaylistDataProvider) -> None:
+    def set_data_provider(self, data_provider: IPlatformDataProvider) -> None:
         """Set or change the data provider and load playlists.
 
         Args:
@@ -455,8 +443,7 @@ class PlaylistComponent(QWidget):
                         index = self.tracks_model.index(row, 0)
                         self.tracks_table.selectionModel().select(  # type: ignore
                             index,
-                            QItemSelectionModel.SelectionFlag.ClearAndSelect
-                            | QItemSelectionModel.SelectionFlag.Rows,
+                            QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
                         )
                         # Scroll to the selected track
                         self.tracks_table.scrollTo(index)
@@ -480,9 +467,7 @@ class PlaylistComponent(QWidget):
         worker = thread_manager.run_task(load_playlists_task)
 
         worker.signals.result.connect(self._handle_playlists_loaded)
-        worker.signals.error.connect(
-            lambda err: self._handle_loading_error("Failed to load playlists", err)
-        )
+        worker.signals.error.connect(lambda err: self._handle_loading_error("Failed to load playlists", err))
         worker.signals.finished.connect(lambda: self.playlist_container.hide_loading())
 
     def _handle_playlists_loaded(self, playlists: list[Any]) -> None:
@@ -593,9 +578,7 @@ class PlaylistComponent(QWidget):
         worker = thread_manager.run_task(load_tracks_task)
 
         worker.signals.result.connect(lambda tracks: self._handle_tracks_loaded(item, tracks))
-        worker.signals.error.connect(
-            lambda err: self._handle_loading_error("Failed to load tracks", err)
-        )
+        worker.signals.error.connect(lambda err: self._handle_loading_error("Failed to load tracks", err))
         worker.signals.finished.connect(lambda: self.track_container.hide_loading())
 
     def _handle_tracks_loaded(self, playlist_item: Any, tracks: list[Any]) -> None:
@@ -608,10 +591,7 @@ class PlaylistComponent(QWidget):
         # Make sure the tracks view is in the right state to prevent UI freezes
         # It's important to check that we're still on the same playlist before updating
         # This prevents race conditions when switching quickly between playlists
-        if (
-            not hasattr(playlist_item, "item_id")
-            or playlist_item.item_id != self.current_playlist_id
-        ):
+        if not hasattr(playlist_item, "item_id") or playlist_item.item_id != self.current_playlist_id:
             name = getattr(playlist_item, "name", "Unknown")
             logger.debug(f"Track loading finished for {name} but another playlist is now selected")
 
@@ -619,10 +599,7 @@ class PlaylistComponent(QWidget):
             self.track_container.hide_loading()
 
             # If necessary, force a view reset to prevent stuck state
-            if (
-                self.track_container.stacked_widget.currentWidget()
-                == self.track_container.loading_widget
-            ):
+            if self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget:
                 self.track_container.show_message("Select a playlist to view tracks.")
 
             return
@@ -744,16 +721,12 @@ class PlaylistComponent(QWidget):
 
         for row in range(self.tracks_model.rowCount()):
             track = self.tracks_model.get_track(row)
-            if track and (
-                search_text_lower in track.artist.lower()
-                or search_text_lower in track.title.lower()
-            ):
+            if track and (search_text_lower in track.artist.lower() or search_text_lower in track.title.lower()):
                 # Select this track
                 index = self.tracks_model.index(row, 0)
                 self.tracks_table.selectionModel().select(  # type: ignore
                     index,
-                    QItemSelectionModel.SelectionFlag.ClearAndSelect
-                    | QItemSelectionModel.SelectionFlag.Rows,
+                    QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
                 )
                 # Scroll to the selected track
                 self.tracks_table.scrollTo(index)
@@ -780,8 +753,7 @@ class PlaylistComponent(QWidget):
                         index = self.tracks_model.index(row, 0)
                         self.tracks_table.selectionModel().select(  # type: ignore
                             index,
-                            QItemSelectionModel.SelectionFlag.ClearAndSelect
-                            | QItemSelectionModel.SelectionFlag.Rows,
+                            QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
                         )
                         # Scroll to the selected track
                         self.tracks_table.scrollTo(index)
@@ -800,10 +772,8 @@ class PlaylistComponent(QWidget):
 
         # Skip refresh if we're already in a loading state
         if (
-            self.track_container.stacked_widget.currentWidget()
-            == self.track_container.loading_widget
-            or self.playlist_container.stacked_widget.currentWidget()
-            == self.playlist_container.loading_widget
+            self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget
+            or self.playlist_container.stacked_widget.currentWidget() == self.playlist_container.loading_widget
         ):
             logger.debug("Skipping refresh - already in loading state")
             return
@@ -838,9 +808,7 @@ class PlaylistComponent(QWidget):
         worker = thread_manager.run_task(refresh_task)
 
         worker.signals.result.connect(self._handle_refresh_complete)
-        worker.signals.error.connect(
-            lambda err: self._handle_loading_error("Failed to refresh data", err)
-        )
+        worker.signals.error.connect(lambda err: self._handle_loading_error("Failed to refresh data", err))
         worker.signals.finished.connect(self._handle_refresh_finished_with_cleanup)
 
     def _handle_refresh_finished(self) -> None:
@@ -865,8 +833,7 @@ class PlaylistComponent(QWidget):
         # If we have tracks but the loading indicator is still shown, force show tracks table
         if (
             self.current_tracks
-            and self.track_container.stacked_widget.currentWidget()
-            != self.track_container.tracks_table
+            and self.track_container.stacked_widget.currentWidget() != self.track_container.tracks_table
         ):
             self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
             logger.debug(f"Forcing tracks table visible for {len(self.current_tracks)} tracks")
@@ -903,16 +870,12 @@ class PlaylistComponent(QWidget):
                     item = index.internalPointer()
                     if hasattr(item, "item_id") and item.item_id == self.current_playlist_id:
                         playlist_name = item.name
-                        self.playlist_header.setText(
-                            f"Playlist: {playlist_name} ({len(self.current_tracks)} tracks)"
-                        )
+                        self.playlist_header.setText(f"Playlist: {playlist_name} ({len(self.current_tracks)} tracks)")
                         break
 
                 # Make sure tracks are visible
                 if self.current_tracks:
-                    logger.debug(
-                        f"Showing {len(self.current_tracks)} tracks for playlist {playlist_name}"
-                    )
+                    logger.debug(f"Showing {len(self.current_tracks)} tracks for playlist {playlist_name}")
                     self.track_container.hide_loading()
                 else:
                     logger.debug(f"No tracks found for playlist {playlist_name}")
@@ -974,9 +937,7 @@ class PlaylistComponent(QWidget):
         if current_platform != "library" and menu is not None:
             collection_action = menu.addAction("Add Selected Tracks to Collection")
             if collection_action is not None:
-                collection_action.triggered.connect(
-                    lambda: self._add_tracks_to_collection(selected_tracks)
-                )  # type: ignore
+                collection_action.triggered.connect(lambda: self._add_tracks_to_collection(selected_tracks))  # type: ignore
             if menu is not None:
                 menu.addSeparator()  # Add separator after Collection action in platform views
 
@@ -1021,9 +982,7 @@ class PlaylistComponent(QWidget):
                         playlist_action = add_menu.addAction(playlist.name)
                         if playlist_action is not None:
                             playlist_action.triggered.connect(
-                                lambda checked, pid=playlist.id: self._add_tracks_to_playlist(
-                                    pid, selected_tracks
-                                )
+                                lambda checked, pid=playlist.id: self._add_tracks_to_playlist(pid, selected_tracks)
                             )  # type: ignore
 
                 if not has_playlists and add_menu is not None:
@@ -1048,9 +1007,7 @@ class PlaylistComponent(QWidget):
             # Add option to create a new playlist directly
             create_playlist_action = menu.addAction("Create new playlist with selected tracks...")
             if create_playlist_action is not None:
-                create_playlist_action.triggered.connect(
-                    lambda: self._create_playlist_with_tracks(selected_tracks)
-                )  # type: ignore
+                create_playlist_action.triggered.connect(lambda: self._create_playlist_with_tracks(selected_tracks))  # type: ignore
 
             menu.addSeparator()
 
@@ -1063,25 +1020,19 @@ class PlaylistComponent(QWidget):
             if current_platform != "spotify":
                 spotify_search_action = menu.addAction("Search on Spotify")
                 if spotify_search_action is not None:
-                    spotify_search_action.triggered.connect(
-                        lambda: self._search_on_spotify(first_track)
-                    )  # type: ignore
+                    spotify_search_action.triggered.connect(lambda: self._search_on_spotify(first_track))  # type: ignore
 
             # Add search on Discogs action (only if not already in Discogs view)
             if current_platform != "discogs":
                 discogs_search_action = menu.addAction("Search on Discogs")
                 if discogs_search_action is not None:
-                    discogs_search_action.triggered.connect(
-                        lambda: self._search_on_discogs(first_track)
-                    )  # type: ignore
+                    discogs_search_action.triggered.connect(lambda: self._search_on_discogs(first_track))  # type: ignore
 
             # Add search on YouTube action (only if not already in YouTube view)
             if current_platform != "youtube":
                 youtube_search_action = menu.addAction("Search on YouTube")
                 if youtube_search_action is not None:
-                    youtube_search_action.triggered.connect(
-                        lambda: self._search_on_youtube(first_track)
-                    )  # type: ignore
+                    youtube_search_action.triggered.connect(lambda: self._search_on_youtube(first_track))  # type: ignore
 
             # Add search on Rekordbox action (only if not already in Rekordbox view)
             if current_platform != "rekordbox":
@@ -1092,11 +1043,7 @@ class PlaylistComponent(QWidget):
                     # (lambda: self._search_on_rekordbox(first_track))
 
         # Show the menu at the cursor position
-        if (
-            menu is not None
-            and self.tracks_table is not None
-            and self.tracks_table.viewport() is not None
-        ):
+        if menu is not None and self.tracks_table is not None and self.tracks_table.viewport() is not None:
             menu.exec(self.tracks_table.viewport().mapToGlobal(position))  # type: ignore
 
     def _show_playlist_context_menu(self, position: Any) -> None:
@@ -1122,9 +1069,7 @@ class PlaylistComponent(QWidget):
             if menu is not None:
                 manage_collection_action = menu.addAction("Manage Collection...")
                 if manage_collection_action is not None:
-                    manage_collection_action.triggered.connect(
-                        self._show_collection_management_dialog
-                    )
+                    manage_collection_action.triggered.connect(self._show_collection_management_dialog)
 
                 if self.playlist_tree is not None and self.playlist_tree.viewport() is not None:
                     viewport = self.playlist_tree.viewport()
@@ -1151,9 +1096,7 @@ class PlaylistComponent(QWidget):
 
                 manage_collection_action = menu.addAction("Manage Collection...")
                 if manage_collection_action is not None:
-                    manage_collection_action.triggered.connect(
-                        self._show_collection_management_dialog
-                    )
+                    manage_collection_action.triggered.connect(self._show_collection_management_dialog)
 
                 if self.playlist_tree is not None and self.playlist_tree.viewport() is not None:
                     viewport = self.playlist_tree.viewport()
@@ -1243,10 +1186,7 @@ class PlaylistComponent(QWidget):
             track_id: The track ID
             quality: The new quality rating
         """
-        logger.debug(
-            f"Playlist component received quality_changed signal: "
-            f"track_id={track_id}, quality={quality}"
-        )
+        logger.debug(f"Playlist component received quality_changed signal: track_id={track_id}, quality={quality}")
 
         if not track_id:
             logger.warning("Invalid track ID, ignoring quality change")
@@ -1289,10 +1229,8 @@ class PlaylistComponent(QWidget):
         """Handle notification that data has changed."""
         # Skip refresh if we're already in a loading state
         if (
-            self.track_container.stacked_widget.currentWidget()
-            == self.track_container.loading_widget
-            or self.playlist_container.stacked_widget.currentWidget()
-            == self.playlist_container.loading_widget
+            self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget
+            or self.playlist_container.stacked_widget.currentWidget() == self.playlist_container.loading_widget
         ):
             logger.debug("Skipping data_changed refresh - already in loading state")
             return
@@ -1321,10 +1259,7 @@ class PlaylistComponent(QWidget):
             return
 
         # Skip update during loading to prevent infinite refresh loops
-        if (
-            self.track_container.stacked_widget.currentWidget()
-            == self.track_container.loading_widget
-        ):
+        if self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget:
             logger.debug("Skipping track update during loading")
             return
 
@@ -1419,11 +1354,7 @@ class PlaylistComponent(QWidget):
 
                     # Also update the details panel if this track is currently selected
                     selected_track = self.selection_state.get_selected_track()
-                    if (
-                        selected_track
-                        and hasattr(selected_track, "track_id")
-                        and selected_track.track_id == track_id
-                    ):
+                    if selected_track and hasattr(selected_track, "track_id") and selected_track.track_id == track_id:
                         # Update the details panel with the latest track data
                         # Reduced logging
                         # logger.debug(f"Updating details panel for track {track_id}")
@@ -1433,15 +1364,12 @@ class PlaylistComponent(QWidget):
 
             # If track not found but platforms were updated, consider refreshing
             if not track_found and platform_linked:
-                logger.debug(
-                    f"Track {track_id} not found in current view but was linked to platforms"
-                )
+                logger.debug(f"Track {track_id} not found in current view but was linked to platforms")
 
                 # Force tracks table to be visible if we have tracks
                 if (
                     self.current_tracks
-                    and self.track_container.stacked_widget.currentWidget()
-                    != self.track_container.tracks_table
+                    and self.track_container.stacked_widget.currentWidget() != self.track_container.tracks_table
                 ):
                     self.track_container.hide_loading()
 
@@ -1475,10 +1403,7 @@ class PlaylistComponent(QWidget):
             return
 
         # Safety check - avoid refreshing if we're already loading
-        if (
-            self.track_container.stacked_widget.currentWidget()
-            == self.track_container.loading_widget
-        ):
+        if self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget:
             logger.debug("Skipping refresh - already in loading state")
             return
 
@@ -1518,9 +1443,7 @@ class PlaylistComponent(QWidget):
         worker = thread_manager.run_task(refresh_tracks_task)
 
         worker.signals.result.connect(self._handle_tracks_refreshed)
-        worker.signals.error.connect(
-            lambda err: self._handle_loading_error("Failed to refresh tracks", err)
-        )
+        worker.signals.error.connect(lambda err: self._handle_loading_error("Failed to refresh tracks", err))
         worker.signals.finished.connect(lambda: self.track_container.hide_loading())
 
     def _ensure_loading_hidden(self) -> None:
@@ -1539,8 +1462,7 @@ class PlaylistComponent(QWidget):
             self.track_container.show_message("Select a playlist or refresh the view.")
         elif (
             self.current_tracks
-            and self.track_container.stacked_widget.currentWidget()
-            != self.track_container.tracks_table
+            and self.track_container.stacked_widget.currentWidget() != self.track_container.tracks_table
         ):
             # If tracks exist but table is not visible, make it visible
             logger.debug(f"Forcing tracks table visible for {len(self.current_tracks)} tracks")
@@ -1562,12 +1484,9 @@ class PlaylistComponent(QWidget):
         """
         if (
             self.current_tracks
-            and self.track_container.stacked_widget.currentWidget()
-            != self.track_container.tracks_table
+            and self.track_container.stacked_widget.currentWidget() != self.track_container.tracks_table
         ):
-            logger.debug(
-                f"Final visibility check - forcing {len(self.current_tracks)} tracks visible"
-            )
+            logger.debug(f"Final visibility check - forcing {len(self.current_tracks)} tracks visible")
             self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
 
             # Force a UI update
@@ -1583,10 +1502,8 @@ class PlaylistComponent(QWidget):
         # Check if tracks table should be visible but isn't
         if (
             self.current_tracks
-            and self.track_container.stacked_widget.currentWidget()
-            != self.track_container.tracks_table
-            and self.track_container.stacked_widget.currentWidget()
-            == self.track_container.loading_widget
+            and self.track_container.stacked_widget.currentWidget() != self.track_container.tracks_table
+            and self.track_container.stacked_widget.currentWidget() == self.track_container.loading_widget
         ):
             logger.debug("Final visibility check - forcing tracks table visible")
             self.track_container.stacked_widget.setCurrentWidget(self.track_container.tracks_table)
@@ -1670,12 +1587,11 @@ class PlaylistComponent(QWidget):
             from PyQt6.QtWidgets import QMessageBox
 
             if added_count > 0:
-                message = (
-                    f"Added {added_count} track{'s' if added_count > 1 else ''} "
-                    f"to playlist '{playlist.name}'."
-                )
+                message = f"Added {added_count} track{'s' if added_count > 1 else ''} to playlist '{playlist.name}'."
                 if already_exists_count > 0:
-                    message += f"\n{already_exists_count} track{'s' if already_exists_count > 1 else ''} already in playlist."  # noqa: E501
+                    message += (
+                        f"\n{already_exists_count} track{'s' if already_exists_count > 1 else ''} already in playlist."  # noqa: E501
+                    )
 
                 QMessageBox.information(self, "Tracks Added", message)
             else:
@@ -1755,9 +1671,7 @@ class PlaylistComponent(QWidget):
                 # Refresh the view
                 self.refresh()
             else:
-                QMessageBox.information(
-                    self, "No Tracks Removed", "No tracks were removed from the playlist."
-                )
+                QMessageBox.information(self, "No Tracks Removed", "No tracks were removed from the playlist.")
 
         except Exception as e:
             logger.exception(f"Error removing tracks from playlist: {e}")
@@ -1821,9 +1735,7 @@ class PlaylistComponent(QWidget):
                     for track in tracks:
                         # Import the track to the local database
                         if hasattr(track, "item_id") or hasattr(track, "track_id"):
-                            platform_track_id = getattr(track, "item_id", None) or getattr(
-                                track, "track_id", None
-                            )
+                            platform_track_id = getattr(track, "item_id", None) or getattr(track, "track_id", None)
 
                             if platform_track_id:
                                 # Import the track to local DB
@@ -1839,9 +1751,7 @@ class PlaylistComponent(QWidget):
                     if hasattr(track, "track_id"):
                         # Check if the track is already in Collection
                         already_in_collection = False
-                        collection_tracks = playlist_repo.get_playlist_tracks(
-                            collection_playlist.id
-                        )
+                        collection_tracks = playlist_repo.get_playlist_tracks(collection_playlist.id)
                         for coll_track in collection_tracks:
                             if coll_track.id == track.track_id:
                                 already_in_collection = True
@@ -1854,9 +1764,7 @@ class PlaylistComponent(QWidget):
             # Show success message
             from PyQt6.QtWidgets import QMessageBox
 
-            QMessageBox.information(
-                self, "Tracks Added", f"Added {len(tracks)} tracks to Collection playlist."
-            )
+            QMessageBox.information(self, "Tracks Added", f"Added {len(tracks)} tracks to Collection playlist.")
 
         except Exception as e:
             from loguru import logger
@@ -1911,9 +1819,7 @@ class PlaylistComponent(QWidget):
         if not name:
             from PyQt6.QtWidgets import QMessageBox
 
-            QMessageBox.warning(
-                self, "Missing Information", "Please enter a name for the playlist."
-            )
+            QMessageBox.warning(self, "Missing Information", "Please enter a name for the playlist.")
             return
 
         if is_folder:
