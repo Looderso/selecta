@@ -2,7 +2,7 @@ from contextlib import suppress
 from typing import Any
 
 from loguru import logger
-from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QItemSelectionModel, QModelIndex, Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -73,11 +73,14 @@ class PlaylistTreeContainer(QWidget):
         self.stacked_widget = QStackedWidget()
         layout.addWidget(self.stacked_widget, 1)  # 1 = stretch factor
 
-        # Create tree view
+        # Create tree view with specific selection behavior settings to prevent multi-selection
         self.playlist_tree = QTreeView()
         self.playlist_tree.setHeaderHidden(True)
         self.playlist_tree.setExpandsOnDoubleClick(True)
+        # Ensure we only allow single selection
         self.playlist_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.playlist_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
         self.playlist_tree.setMinimumWidth(200)
         self.playlist_tree.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
@@ -214,6 +217,7 @@ class PlaylistComponent(QWidget):
     playlist_selected = pyqtSignal(object)  # Emits the selected playlist item
     track_selected = pyqtSignal(object)  # Emits the selected track item
     play_track = pyqtSignal(object)  # Emits when track should be played
+    # Removed platform-specific flag - handling should be generic for all platforms that support folders
 
     def __init__(self, data_provider: IPlatformDataProvider | None = None, parent: QWidget | None = None) -> None:
         """Initialize the playlist component.
@@ -274,6 +278,12 @@ class PlaylistComponent(QWidget):
         # Create playlist tree container (left side)
         self.playlist_container = PlaylistTreeContainer()
         self.playlist_tree = self.playlist_container.playlist_tree
+
+        # Explicitly set selection mode to SingleSelection
+        # This fixes an issue where clicking a playlist selects multiple items
+        from PyQt6.QtWidgets import QAbstractItemView
+
+        self.playlist_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         # Create model for the playlist tree
         self.playlist_model = PlaylistTreeModel()
@@ -360,6 +370,9 @@ class PlaylistComponent(QWidget):
         else:
             raise ValueError("Playlist tree selection model not available!")
 
+        # Also connect to the clicked signal for Rekordbox-specific handling
+        self.playlist_tree.clicked.connect(self._handle_tree_click)
+
         tracks_table_selection_model = self.tracks_table.selectionModel()
         if tracks_table_selection_model:
             tracks_table_selection_model.selectionChanged.connect(self._on_track_selected)
@@ -374,6 +387,61 @@ class PlaylistComponent(QWidget):
 
         # When a search completion is highlighted, highlight that track
         self.search_bar.completer_highlighted.connect(self._on_search_completion_highlighted)
+
+    def _handle_tree_click(self, index: QModelIndex) -> None:
+        """Handle clicks in the tree view for any provider with folder support.
+
+        This ensures consistent selection behavior across all platforms with folders,
+        where only a single item gets selected when clicking on a playlist item.
+
+        Args:
+            index: The index that was clicked
+        """
+        if not index.isValid():
+            return
+
+        # Get the item from the index
+        item = index.internalPointer()
+        if not item:
+            return
+
+        # Get folder status
+        is_folder = item.is_folder() if hasattr(item, "is_folder") else False
+
+        # Apply special selection handling for any platform with folders
+        # Get the selection model
+        selection_model = self.playlist_tree.selectionModel()
+        if selection_model:
+            from PyQt6.QtCore import QItemSelection, QItemSelectionModel
+
+            # Block signals to prevent loops
+            selection_model.blockSignals(True)
+            selection_model.clearSelection()
+
+            # Create a new selection with just this index
+            selection = QItemSelection()
+            selection.select(index, index)
+
+            # Set the selection and current index
+            selection_model.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            selection_model.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.Current)
+            selection_model.blockSignals(False)
+
+            # Manually load this item if it's a valid playlist
+            if not is_folder:
+                # Force load the tracks for this playlist
+                self.current_playlist_id = item.item_id
+                self._load_playlist_tracks(item)
+
+            # Force repaint to update selection visuals
+            viewport = self.playlist_tree.viewport()
+            if viewport:
+                viewport.update()
+
+            # Force processing of events to ensure the selection is updated
+            from PyQt6.QtCore import QCoreApplication
+
+            QCoreApplication.processEvents()
 
     def set_data_provider(self, data_provider: IPlatformDataProvider) -> None:
         """Set or change the data provider and load playlists.
@@ -405,6 +473,24 @@ class PlaylistComponent(QWidget):
         if self.data_provider:
             platform_name = self.data_provider.get_platform_name()
             self.playlist_container.set_platform_name(platform_name)
+
+            # For platforms with folders, we use a custom selection model to ensure proper selection behavior
+            # Create a completely new selection model for the tree view
+            from PyQt6.QtCore import QItemSelectionModel
+
+            # Disconnect old selection model signals
+            selection_model = self.playlist_tree.selectionModel()
+            if selection_model:
+                selection_model.selectionChanged.disconnect()
+
+            # Create a new selection model
+            new_model = QItemSelectionModel(self.playlist_model)
+
+            # Set it as the selection model for the tree view
+            self.playlist_tree.setSelectionModel(new_model)
+
+            # Reconnect signals to the new model
+            new_model.selectionChanged.connect(self._on_playlist_selected)
 
             # Show the create button only for Library provider
             is_library = platform_name == "Library"
@@ -457,15 +543,32 @@ class PlaylistComponent(QWidget):
     def _load_playlists(self) -> None:
         """Load playlists from the data provider."""
         if not self.data_provider:
+            logger.warning("No data provider available - cannot load playlists")
             return
+
+        # Log which provider we're using
+        provider_name = "Unknown"
+        if hasattr(self.data_provider, "get_platform_name"):
+            provider_name = self.data_provider.get_platform_name()
+        logger.info(f"Loading playlists from {provider_name} provider")
 
         # Show loading state in the playlist tree area only
         self.playlist_container.show_loading("Loading playlists...")
 
         def load_playlists_task() -> list[Any]:
             if self.data_provider is None:
+                logger.warning("Data provider is None in playlist loading task")
                 return []
-            return self.data_provider.get_all_playlists()
+
+            try:
+                logger.debug(f"Calling get_all_playlists() on {provider_name} provider")
+                playlists = self.data_provider.get_all_playlists()
+                logger.debug(f"Received {len(playlists)} playlists from {provider_name} provider")
+                return playlists
+            except Exception as e:
+                logger.error(f"Error loading playlists from {provider_name} provider: {e}")
+                # Re-raise to trigger the error handler
+                raise
 
         thread_manager = ThreadManager()
         worker = thread_manager.run_task(load_playlists_task)
@@ -480,7 +583,46 @@ class PlaylistComponent(QWidget):
         Args:
             playlists: List of playlist items to display
         """
-        self.playlist_model.add_items(playlists)
+        logger.info(f"Handling {len(playlists)} loaded playlists")
+
+        # Check if we have any playlists to add
+        if not playlists:
+            logger.warning("No playlists received from data provider")
+            # Ensure loading indicator is hidden even if no playlists were found
+            self.playlist_container.hide_loading()
+            return
+
+        # Log first few playlists to help diagnose issues
+        if len(playlists) > 0:
+            sample_count = min(3, len(playlists))
+            sample_playlists = playlists[:sample_count]
+
+            for idx, playlist in enumerate(sample_playlists):
+                # Get the is_folder value from the proper method, not attribute
+                is_folder_value = playlist.is_folder() if hasattr(playlist, "is_folder") else False
+
+                playlist_info = {
+                    "name": getattr(playlist, "name", "Unknown"),
+                    "id": getattr(playlist, "item_id", "Unknown"),
+                    "is_folder": is_folder_value,
+                    "parent_id": getattr(playlist, "parent_id", None),
+                    "track_count": getattr(playlist, "track_count", 0),
+                }
+                logger.debug(f"Sample playlist {idx+1}: {playlist_info}")
+
+        # Call model's add_items method, which should reset the model and add these items
+        logger.debug("Adding playlists to model...")
+        try:
+            self.playlist_model.add_items(playlists)
+            logger.debug(f"Model now contains {self.playlist_model.rowCount()} root items")
+        except Exception as e:
+            logger.error(f"Error adding playlists to model: {e}")
+            # Make sure we hide the loading indicator even if there's an error
+            self.playlist_container.hide_loading()
+            return
+
+        # Expand any folders to make playlists visible
+        logger.debug("Expanding all folders...")
         self._expand_all_folders()
 
         # Auto-select the Collection playlist if we're using the Library provider
@@ -489,19 +631,32 @@ class PlaylistComponent(QWidget):
             and hasattr(self.data_provider, "get_platform_name")
             and self.data_provider.get_platform_name() == "Library"
         ):
+            logger.debug("Attempting to auto-select Collection playlist")
             # Look for the Collection playlist
+            collection_found = False
             for playlist_item in playlists:
                 if hasattr(playlist_item, "is_collection") and playlist_item.is_collection:
+                    collection_found = True
+                    logger.debug(f"Found Collection playlist with ID {playlist_item.item_id}")
                     # Find the index for this playlist
+                    index_found = False
                     for row in range(self.playlist_model.rowCount()):
                         index = self.playlist_model.index(row, 0)
                         item = index.internalPointer()
                         if item and item.item_id == playlist_item.item_id:
                             # Select this playlist
+                            logger.debug(f"Selecting Collection playlist at row {row}")
                             self.playlist_tree.setCurrentIndex(index)
+                            index_found = True
                             # This will trigger _on_playlist_selected which will load the tracks
                             break
+
+                    if not index_found:
+                        logger.warning("Could not find Collection index in model")
                     break
+
+            if not collection_found:
+                logger.debug("No Collection playlist found to auto-select")
 
     def _handle_loading_error(self, context: str, error_msg: str) -> None:
         """Handle loading errors.
@@ -525,36 +680,68 @@ class PlaylistComponent(QWidget):
 
     def _expand_all_folders(self) -> None:
         """Expand all folder items in the tree view."""
+        # Force the playlist tree to update right away
+        self.playlist_tree.update()
+
+        # Process any pending events to ensure UI is updated
+        from PyQt6.QtCore import QCoreApplication
+
+        QCoreApplication.processEvents()
+
+        # Added fix for Rekordbox playlist issue
+        # Check if we're using the Rekordbox provider
+        if (
+            self.data_provider
+            and hasattr(self.data_provider, "get_platform_name")
+            and self.data_provider.get_platform_name() == "Rekordbox"
+        ):
+            # Force manual items showing here to fix Rekordbox display issue
+            self.playlist_container.hide_loading()
+            self.playlist_tree.repaint()
+            QCoreApplication.processEvents()
 
         def expand_recurse(parent_index: Any) -> None:
-            for row in range(self.playlist_model.rowCount(parent_index)):
+            rows = self.playlist_model.rowCount(parent_index)
+
+            if rows == 0:
+                return
+
+            for row in range(rows):
                 index = self.playlist_model.index(row, 0, parent_index)
                 item = index.internalPointer()
 
-                if item.is_folder():
+                # Ensure item is valid
+                if not item:
+                    continue
+
+                # Expand folders and their children
+                is_folder = item.is_folder() if hasattr(item, "is_folder") else False
+
+                if is_folder:
                     self.playlist_tree.expand(index)
+                    # Process events to ensure the UI updates immediately
+                    QCoreApplication.processEvents()
                     expand_recurse(index)
 
+        # Start recursive expansion from the root
         expand_recurse(self.playlist_tree.rootIndex())
 
-    def _on_playlist_selected(self) -> None:
-        """Handle playlist selection."""
-        if not self.data_provider:
+        # Ensure the playlist tree is visible
+        self.playlist_container.hide_loading()
+        self.playlist_tree.update()
+        QCoreApplication.processEvents()
+
+    def _load_playlist_tracks(self, item: Any) -> None:
+        """Load tracks for a playlist item.
+
+        This is a helper method that can be called directly to load tracks
+        for a specific playlist item, separate from the selection callback.
+
+        Args:
+            item: The playlist item to load tracks for
+        """
+        if not self.data_provider or not item:
             return
-
-        selection_model = self.playlist_tree.selectionModel()
-        if selection_model is None:
-            return
-
-        indexes = selection_model.selectedIndexes()
-        if not indexes:
-            return
-
-        index = indexes[0]
-        item = index.internalPointer()
-
-        # Update the global selection state
-        self.selection_state.set_selected_playlist(item)
 
         # If it's a folder, don't load tracks
         if item.is_folder():
@@ -584,6 +771,73 @@ class PlaylistComponent(QWidget):
         worker.signals.result.connect(lambda tracks: self._handle_tracks_loaded(item, tracks))
         worker.signals.error.connect(lambda err: self._handle_loading_error("Failed to load tracks", err))
         worker.signals.finished.connect(lambda: self.track_container.hide_loading())
+
+    def _on_playlist_selected(self) -> None:
+        """Handle playlist selection."""
+        if not self.data_provider:
+            return
+
+        selection_model = self.playlist_tree.selectionModel()
+        if selection_model is None:
+            return
+
+        # Get the selected indexes from the selection model
+        indexes = selection_model.selectedIndexes()
+        if not indexes:
+            return
+
+        # For multi-selections, ensure we filter to unique indices
+        if len(indexes) > 1:
+            # Use internal IDs to identify unique items
+            model = self.playlist_model
+            unique_indices = []
+            seen_internal_ids = set()
+
+            for idx in indexes:
+                # Get the internal ID for this index
+                hash_key = hash((idx.internalId(), idx.row(), idx.column()))
+                internal_id = model._index_internal_ids.get(hash_key, "")
+
+                # If it has an internal ID and we haven't seen it before, add it
+                if internal_id and internal_id not in seen_internal_ids:
+                    seen_internal_ids.add(internal_id)
+                    unique_indices.append(idx)
+                # If it doesn't have an internal ID, add it anyway (fallback)
+                elif not internal_id:
+                    unique_indices.append(idx)
+
+            # If we still have multiple indexes after filtering by ID, just take the first one
+            if len(unique_indices) > 1:
+                first_index = unique_indices[0]
+
+                # Clear the selection and re-select only the first index
+                # Using blockSignals to prevent recursive calls
+                selection_model.blockSignals(True)
+                selection_model.clearSelection()
+                selection_model.select(
+                    first_index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Current
+                )
+                selection_model.blockSignals(False)
+
+                # Update our indexes list to just the first one
+                indexes = [first_index]
+            else:
+                # We only have one unique index or none
+                indexes = unique_indices
+
+        # Ensure we have at least one index to work with
+        if not indexes:
+            return
+
+        # Get the first index in our filtered list
+        index = indexes[0]
+        item = index.internalPointer()
+
+        # Update the global selection state
+        self.selection_state.set_selected_playlist(item)
+
+        # Use our helper method to load tracks for this item
+        self._load_playlist_tracks(item)
 
     def _handle_tracks_loaded(self, playlist_item: Any, tracks: list[Any]) -> None:
         """Handle loaded tracks.
@@ -1056,14 +1310,6 @@ class PlaylistComponent(QWidget):
         Args:
             position: Position where the context menu should be shown
         """
-        # Debug logging to verify this method is called on right-click
-        from loguru import logger
-
-        logger.debug(
-            f"_show_playlist_context_menu called, position={position}, "
-            f"data_provider={self.data_provider.__class__.__name__ if self.data_provider else None}"
-        )
-
         # If no data provider, create a minimal context menu
         if not self.data_provider:
             from PyQt6.QtWidgets import QMenu
@@ -1081,18 +1327,52 @@ class PlaylistComponent(QWidget):
                         menu.exec(viewport.mapToGlobal(position))
             return
 
-        # Override this method in the data provider to show appropriate context menu
-        # based on if it's a local playlist or platform playlist
+        # For all platforms that support folders, ensure consistent selection behavior
+        # Get the item at the position first and ensure it's properly selected
+        index = self.playlist_tree.indexAt(position)
+        if index.isValid():
+            # Clear any existing selection and select only this item
+            selection_model = self.playlist_tree.selectionModel()
+            if selection_model:
+                from PyQt6.QtCore import QItemSelection, QItemSelectionModel
+
+                # Reset selection state
+                selection_model.blockSignals(True)
+                selection_model.clearSelection()
+
+                # Create a selection with just this index
+                selection = QItemSelection()
+                selection.select(index, index)
+
+                # Set the selection and current index
+                selection_model.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+                selection_model.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.Current)
+                selection_model.blockSignals(False)
+
+                # Force repaint to update selection visuals
+                viewport = self.playlist_tree.viewport()
+                if viewport:
+                    viewport.update()
+
+                # Force processing of events to ensure the selection is updated
+                from PyQt6.QtCore import QCoreApplication
+
+                QCoreApplication.processEvents()
+
+        # Call the data provider's context menu handler
         try:
-            # Call the data provider's context menu handler with the correct parent parameter
             if self.data_provider is not None:
                 self.data_provider.show_playlist_context_menu(self.playlist_tree, position)
         except Exception as e:
+            from loguru import logger
+
             logger.exception(f"Error showing playlist context menu: {e}")
-            from PyQt6.QtWidgets import QMenu
 
             # Show a minimal menu in case of error
+            from PyQt6.QtWidgets import QMenu
+
             menu = QMenu(self.playlist_tree)
+
             if menu is not None:
                 error_action = menu.addAction("Error showing menu")
                 if error_action is not None:
