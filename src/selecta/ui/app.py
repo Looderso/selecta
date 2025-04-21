@@ -294,6 +294,16 @@ class SelectaMainWindow(QMainWindow):
 
                 logger.debug(f"Rekordbox authenticated: {authenticated}")
 
+                # Add additional check to improve Rekordbox playlist loading reliability
+                if authenticated and rekordbox_client:
+                    try:
+                        # Force fetching playlists to make sure database connection is fully ready
+                        test_playlists = rekordbox_client.get_all_playlists()
+                        logger.debug(f"Rekordbox pre-initialization successful, found {len(test_playlists)} playlists")
+                    except Exception as e:
+                        logger.warning(f"Rekordbox playlist pre-initialization failed: {e}")
+                        # Don't set authenticated to False here - we'll let the UI try anyway
+
             elif platform == "discogs":
                 from selecta.core.platform.platform_factory import PlatformFactory
                 from selecta.ui.components.playlist.platform.discogs.discogs_data_provider import (

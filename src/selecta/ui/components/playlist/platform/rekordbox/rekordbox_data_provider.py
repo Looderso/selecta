@@ -31,6 +31,9 @@ class RekordboxDataProvider(BasePlatformDataProvider):
 
     This provider implements access to the Rekordbox platform, allowing
     users to browse, import, export, and sync playlists.
+
+    Note: This class includes special handling for Rekordbox playlist selection
+    behavior to fix selection issues specific to Rekordbox.
     """
 
     def __init__(self, client: IPlatformClient | None = None, cache_timeout: float = 300.0):
@@ -69,12 +72,13 @@ class RekordboxDataProvider(BasePlatformDataProvider):
         Returns:
             List of supported capabilities
         """
+        # Re-enable FOLDERS capability now that we've fixed the issues
         return [
             PlatformCapability.IMPORT_PLAYLISTS,
             PlatformCapability.EXPORT_PLAYLISTS,
             PlatformCapability.SYNC_PLAYLISTS,
             PlatformCapability.IMPORT_TRACKS,
-            PlatformCapability.FOLDERS,
+            PlatformCapability.FOLDERS,  # Folder support enabled
         ]
 
     def is_connected(self) -> bool:
@@ -83,7 +87,21 @@ class RekordboxDataProvider(BasePlatformDataProvider):
         Returns:
             True if connected, False otherwise
         """
-        return self.client is not None and self.client.is_authenticated()
+        if self.client is None:
+            return False
+
+        # Try to authenticate and catch any errors
+        try:
+            auth_result = self.client.is_authenticated()
+
+            # If authentication failed, log more details
+            if not auth_result:
+                logger.warning("Rekordbox authentication failed - check database connection")
+
+            return auth_result
+        except Exception as e:
+            logger.error(f"Error during Rekordbox authentication check: {e}")
+            return False
 
     def connect_platform(self, parent: QWidget | None = None) -> bool:
         """Connect to the platform.
@@ -120,11 +138,11 @@ class RekordboxDataProvider(BasePlatformDataProvider):
             return []
 
         # Get all playlists from Rekordbox
-        rekordbox_playlists = self.rekordbox_client.get_all_playlists()
-        # Filter out folders and non-folders separately
-        rekordbox_folders = [p for p in rekordbox_playlists if p.is_folder]
-        rekordbox_playlists = [p for p in rekordbox_playlists if not p.is_folder]
-        playlist_items = []
+        try:
+            rekordbox_playlists = self.rekordbox_client.get_all_playlists()
+        except Exception as e:
+            logger.error(f"Error fetching Rekordbox playlists: {e}")
+            return []
 
         # Create repository to check if playlists are imported
         playlist_repo = PlaylistRepository()
@@ -137,45 +155,107 @@ class RekordboxDataProvider(BasePlatformDataProvider):
 
             # Extract the platform_ids
             for playlist in imported_playlists:
-                # Get the platform ID
                 platform_id = playlist.get_platform_id("rekordbox")
                 if platform_id:
                     imported_rekordbox_ids.add(platform_id)
         except Exception as e:
             logger.warning(f"Error fetching imported Rekordbox playlists: {e}")
 
-        # First add folders
-        for folder in rekordbox_folders:
-            playlist_items.append(
-                RekordboxPlaylistItem(
-                    name=folder.name,
-                    item_id=folder.id,
-                    parent_id=folder.parent_id,
-                    is_folder_flag=True,
-                    track_count=0,
-                    is_imported=False,  # Folders are not imported
-                )
+        # =========== CRITICAL FIX: PROPERLY REORGANIZE FOLDERS AND PLAYLISTS ============
+        # 1. Map IDs to their respective playlists and check parent-child relationships
+        items_by_id = {}  # Maps ID to playlist item
+        folder_ids = set()  # Keeps track of all folder IDs
+
+        # First, create all playlist items and track which ones are folders
+        for rb_item in rekordbox_playlists:
+            # Check if this playlist has been imported (only applies to non-folders)
+            is_imported = False
+            if not rb_item.is_folder:
+                playlist_id = str(rb_item.id)
+                is_imported = playlist_id in imported_rekordbox_ids
+
+            # Create playlist item, using status directly from the object
+            item = RekordboxPlaylistItem(
+                name=rb_item.name,
+                item_id=rb_item.id,
+                parent_id=rb_item.parent_id,
+                is_folder_flag=rb_item.is_folder,  # Pass the folder status directly
+                track_count=len(rb_item.tracks) if not rb_item.is_folder else 0,
+                is_imported=is_imported,
             )
 
-        # Then add playlists
-        for playlist in rekordbox_playlists:
-            # Check if this playlist has been imported
-            playlist_id = str(playlist.id)
-            is_imported = playlist_id in imported_rekordbox_ids
+            # Store in our mapping and track folders
+            items_by_id[rb_item.id] = item
+            if rb_item.is_folder:
+                folder_ids.add(rb_item.id)
 
-            # Add the playlist
-            playlist_items.append(
-                RekordboxPlaylistItem(
-                    name=playlist.name,
-                    item_id=playlist.id,
-                    parent_id=playlist.parent_id,
-                    is_folder_flag=False,
-                    track_count=len(playlist.tracks),
-                    is_imported=is_imported,
-                )
-            )
+        # 2. Check for and fix issues
+        # Check for self-references (items that are their own parents)
+        for item_id, item in items_by_id.items():
+            if item.parent_id == item_id:
+                logger.debug(f"Fixing self-reference: Item '{item.name}' (ID: {item_id}) is its own parent")
+                item.parent_id = None  # Set to root
 
-        return playlist_items
+        # 3. Verify parent IDs exist - if not, set to root
+        for _, item in items_by_id.items():
+            if item.parent_id and item.parent_id not in items_by_id:
+                item.parent_id = None
+
+        # 4. Check for circular references in the hierarchy
+        def detect_cycle(item_id, visited=None, path=None):
+            if visited is None:
+                visited = set()
+            if path is None:
+                path = []
+
+            # If we've seen this item before in the current path, there's a cycle
+            if item_id in path:
+                # Fix by setting parent to None (root)
+                items_by_id[item_id].parent_id = None
+                return True
+
+            # If we've fully processed this item before, no need to check again
+            if item_id in visited:
+                return False
+
+            # Add to path for cycle detection
+            path.append(item_id)
+
+            # Get the item
+            item = items_by_id[item_id]
+
+            # If it has a parent, check if that parent creates a cycle
+            if item.parent_id and item.parent_id in items_by_id and detect_cycle(item.parent_id, visited, path):
+                # Fix by setting parent to None (root)
+                item.parent_id = None
+                return False  # Cycle is fixed
+
+            # Mark as fully visited and remove from current path
+            visited.add(item_id)
+            path.pop()
+            return False
+
+        # Check each item for cycles
+        for item_id in items_by_id:
+            detect_cycle(item_id)
+
+        # 5. Ensure non-folders don't have children (this is the key fix!)
+        # Find items that are children of non-folders and reparent them
+        for _, item in items_by_id.items():
+            if item.parent_id and item.parent_id not in folder_ids:
+                parent = items_by_id[item.parent_id]
+
+                # Either set to root or to the parent's parent
+                if parent.parent_id and parent.parent_id in folder_ids:
+                    item.parent_id = parent.parent_id
+                else:
+                    item.parent_id = None
+
+        # 6. Finally, create the list to return
+        result_items = list(items_by_id.values())
+
+        # Return all items - the model will organize them correctly
+        return result_items
 
     def _fetch_playlist_tracks(self, playlist_id: Any) -> list[RekordboxTrackItem]:
         """Fetch tracks for a playlist from Rekordbox.

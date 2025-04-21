@@ -141,12 +141,7 @@ def is_rekordbox_playlist(obj: Any) -> TypeGuard[RekordboxPlaylistItem]:
     Returns:
         True if the object has the necessary attributes
     """
-    return (
-        isinstance(obj, object)
-        and hasattr(obj, "ID")
-        and hasattr(obj, "Name")
-        and hasattr(obj, "Attribute")
-    )
+    return isinstance(obj, object) and hasattr(obj, "ID") and hasattr(obj, "Name") and hasattr(obj, "Attribute")
 
 
 @dataclass
@@ -279,9 +274,7 @@ class RekordboxPlaylist:
     updated_at: datetime | None = None
 
     @classmethod
-    def from_rekordbox_playlist(
-        cls, playlist: Any, tracks: list[RekordboxTrack]
-    ) -> "RekordboxPlaylist":
+    def from_rekordbox_playlist(cls, playlist: Any, tracks: list[RekordboxTrack]) -> "RekordboxPlaylist":
         """Create a RekordboxPlaylist from a DjmdPlaylist object.
 
         Args:
@@ -298,9 +291,14 @@ class RekordboxPlaylist:
         name: str = getattr(playlist, "Name", "")
 
         # Check if attribute is a bool or needs conversion
-        # Some versions return an integer for is_folder where 1 means folder
+        # In Rekordbox, Attribute==1 means it's a folder
         attribute: int = getattr(playlist, "Attribute", 0)
         is_folder: bool = bool(attribute == 1)
+
+        # Add debug logging to help diagnose the issue
+        from loguru import logger
+
+        logger.debug(f"Rekordbox playlist: {name} (ID: {playlist_id}, Attribute: {attribute}, is_folder: {is_folder})")
 
         parent_id: str = getattr(playlist, "ParentID", "root")
         position: int = getattr(playlist, "Seq", 0)
@@ -308,7 +306,7 @@ class RekordboxPlaylist:
         created_at: datetime | None = getattr(playlist, "created_at", None)
         updated_at: datetime | None = getattr(playlist, "updated_at", None)
 
-        track_list: list[RekordboxTrack] = tracks if tracks is not None else []
+        track_list: list[RekordboxTrack] = tracks or []
 
         return cls(
             id=playlist_id,

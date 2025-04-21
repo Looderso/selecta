@@ -60,23 +60,27 @@ class PatchedRekordbox6Database(Rekordbox6Database):
             # Directly implement commit logic to bypass the PID check
             if autoinc:
                 self.registry.autoincrement_local_update_count(set_row_usn=True)
-            self.session.commit()
-            self.registry.clear_buffer()
+            if self.session:
+                self.session.commit()
+            if self.registry:
+                self.registry.clear_buffer()
 
             # Update the masterPlaylists6.xml file
             if self.playlist_xml is not None:
                 # Sync the updated_at values of the playlists
-                for pl in self.get_playlist():
-                    plxml = self.playlist_xml.get(pl.ID)
-                    if plxml is None:
-                        logger.warning(f"Playlist {pl.ID} not found in masterPlaylists6.xml")
-                        continue
+                playlist_result = self.get_playlist()
+                if playlist_result is not None:
+                    for pl in playlist_result:
+                        plxml = self.playlist_xml.get(pl.ID)
+                        if plxml is None:
+                            logger.warning(f"Playlist {pl.ID} not found in masterPlaylists6.xml")
+                            continue
 
-                    ts = plxml["Timestamp"]
-                    diff = pl.updated_at - ts
-                    if abs(diff.total_seconds()) > 1:
-                        logger.debug(f"Updating updated_at of playlist {pl.ID} in XML")
-                        self.playlist_xml.update(pl.ID, updated_at=pl.updated_at)
+                        ts = plxml["Timestamp"]
+                        diff = pl.updated_at - ts
+                        if abs(diff.total_seconds()) > 1:
+                            logger.debug(f"Updating updated_at of playlist {pl.ID} in XML")
+                            self.playlist_xml.update(pl.ID, updated_at=pl.updated_at)
 
                 # Save the XML file if it was modified
                 if self.playlist_xml.modified:
@@ -210,16 +214,44 @@ class RekordboxClient(AbstractPlatform):
         try:
             # Close any existing database connection first
             if self.db is not None:
+                logger.debug("Closing existing database connection before initialization")
                 self.close()
 
             # Always use the fixed key from the auth manager
+            logger.debug("Getting Rekordbox database key from auth manager")
             db_key = self.auth_manager.get_stored_key()
+
+            if not db_key:
+                logger.error("Could not get Rekordbox database key from auth manager")
+                self.db = None
+                return
 
             # Try to initialize with the key and let pyrekordbox find the database
             # Use our PatchedRekordbox6Database to avoid "Rekordbox is running" issues
             try:
+                logger.debug("Attempting to initialize Rekordbox database with patched client")
+
+                # The get_database_path function may not exist in the version of pyrekordbox installed
+                # Instead of relying on it, we'll let PatchedRekordbox6Database find the database automatically
+
+                # Initialize the database directly with just the key
+                # This works because pyrekordbox will automatically locate the database file
                 self.db = PatchedRekordbox6Database(key=db_key)
-                logger.info("Rekordbox client initialized successfully with patched database")
+                logger.info("Initialized Rekordbox database with automatic database path detection")
+
+                # Test if the DB is working
+                if self.db:
+                    try:
+                        # Simple test to verify functionality
+                        logger.debug("Testing database connection...")
+                        content_query = self.db.get_content()
+                        count = content_query.count() if content_query else 0
+                        logger.info(f"Rekordbox client initialized successfully: found {count} tracks")
+                    except Exception as test_error:
+                        logger.warning(f"Database initialized but test query failed: {test_error}")
+                        # Keep the connection open anyway, it might still work
+                else:
+                    logger.warning("PatchedRekordbox6Database returned None")
             except Exception as e:
                 logger.warning(f"Could not initialize Rekordbox client: {e}")
                 self.db = None
@@ -298,8 +330,7 @@ class RekordboxClient(AbstractPlatform):
                         return True, pid, status
                     else:
                         logger.info(
-                            f"Rekordbox process exists with PID {pid} but status is {status}, "
-                            "proceeding anyway"
+                            f"Rekordbox process exists with PID {pid} but status is {status}, proceeding anyway"
                         )
                         return False, pid, status
                 except psutil.NoSuchProcess:
@@ -309,15 +340,10 @@ class RekordboxClient(AbstractPlatform):
 
             # Also look for Rekordbox process by name, excluding our own child processes
             for proc in psutil.process_iter(["pid", "name", "status"]):
-                if (
-                    "rekordbox" in proc.info["name"].lower()
-                    and proc.info["pid"] not in our_child_pids
-                ):
+                if "rekordbox" in proc.info["name"].lower() and proc.info["pid"] not in our_child_pids:
                     pid = proc.info["pid"]
                     status = proc.info["status"]
-                    logger.warning(
-                        f"Found Rekordbox process by name with PID {pid} (status: {status})"
-                    )
+                    logger.warning(f"Found Rekordbox process by name with PID {pid} (status: {status})")
                     if status in ["running", "sleeping"]:
                         return True, pid, status
 
@@ -327,8 +353,7 @@ class RekordboxClient(AbstractPlatform):
                     child = psutil.Process(child_pid)
                     if "rekordbox" in child.name().lower():
                         logger.info(
-                            f"Found Rekordbox process with PID {child_pid} spawned by our "
-                            "application - ignoring"
+                            f"Found Rekordbox process with PID {child_pid} spawned by our application - ignoring"
                         )
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
@@ -515,9 +540,7 @@ class RekordboxClient(AbstractPlatform):
         # Convert the DjmdPlaylist to our RekordboxPlaylist model
         return RekordboxPlaylist.from_rekordbox_playlist(playlist_obj, tracks)
 
-    def create_playlist(
-        self, name: str, parent_id: str | None = None, force: bool = False
-    ) -> RekordboxPlaylist:
+    def create_playlist(self, name: str, parent_id: str | None = None, force: bool = False) -> RekordboxPlaylist:
         """Create a new playlist in Rekordbox.
 
         Args:
@@ -554,9 +577,7 @@ class RekordboxClient(AbstractPlatform):
         # Return the created playlist
         return RekordboxPlaylist.from_rekordbox_playlist(playlist_obj, [])
 
-    def create_playlist_folder(
-        self, name: str, parent_id: str | None = None, force: bool = False
-    ) -> RekordboxPlaylist:
+    def create_playlist_folder(self, name: str, parent_id: str | None = None, force: bool = False) -> RekordboxPlaylist:
         """Create a new playlist folder in Rekordbox.
 
         Args:
@@ -745,9 +766,7 @@ class RekordboxClient(AbstractPlatform):
             logger.exception(f"Error adding track to playlist: {e}")
             return False
 
-    def remove_track_from_playlist(
-        self, playlist_id: str, track_id: int, force: bool = False
-    ) -> bool:
+    def remove_track_from_playlist(self, playlist_id: str, track_id: int, force: bool = False) -> bool:
         """Remove a track from a playlist.
 
         Args:
@@ -793,9 +812,7 @@ class RekordboxClient(AbstractPlatform):
                 # force option
                 if "Rekordbox is running" in error_msg and not force:
                     logger.warning(f"Rekordbox is running during commit: {error_msg}")
-                    raise RuntimeError(
-                        "Rekordbox is running. Please close Rekordbox before commiting changes."
-                    ) from e
+                    raise RuntimeError("Rekordbox is running. Please close Rekordbox before commiting changes.") from e
                 else:
                     # For other errors or if force=True, just log and return False
                     logger.exception(f"Error committing changes: {e}")
@@ -809,9 +826,7 @@ class RekordboxClient(AbstractPlatform):
             logger.exception(f"Error removing track from playlist: {e}")
             return False
 
-    def import_playlist_to_local(
-        self, rekordbox_playlist_id: str
-    ) -> tuple[list[RekordboxTrack], RekordboxPlaylist]:
+    def import_playlist_to_local(self, rekordbox_playlist_id: str) -> tuple[list[RekordboxTrack], RekordboxPlaylist]:
         """Import a Rekordbox playlist to the local database.
 
         Args:
@@ -890,9 +905,7 @@ class RekordboxClient(AbstractPlatform):
                 raise ValueError(f"Could not update playlist: {str(e)}") from e
         else:
             # Create a new playlist
-            playlist = self.create_playlist(
-                name=playlist_name, parent_id=parent_folder_id, force=force
-            )
+            playlist = self.create_playlist(name=playlist_name, parent_id=parent_folder_id, force=force)
 
             # Add tracks to the playlist
             for track_id in int_track_ids:
@@ -985,8 +998,8 @@ class RekordboxClient(AbstractPlatform):
             # Try to find the track by path in case it already exists
             try:
                 existing_content = self.db.get_content(FolderPath=file_path)
-                if existing_content:
-                    track_id = int(existing_content.ID)
+                if existing_content is not None and hasattr(existing_content, "ID"):
+                    track_id = int(existing_content.ID)  # type: ignore
                     logger.info(f"Track already exists in Rekordbox with ID {track_id}")
                     return track_id
             except Exception as search_error:
