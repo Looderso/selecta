@@ -20,8 +20,8 @@ from selecta.core.utils.type_helpers import (
     has_is_authenticated,
     has_platform_clients,
 )
-from selecta.ui.components.navigation_bar import NavigationBar
-from selecta.ui.components.side_drawer import SideDrawer
+from selecta.ui.components.views.navigation_bar import NavigationBar
+from selecta.ui.components.views.side_drawer import SideDrawer
 from selecta.ui.dialogs import ImportRekordboxDialog
 from selecta.ui.themes.theme_manager import Theme, ThemeManager
 
@@ -41,9 +41,7 @@ class SelectaMainWindow(QMainWindow):
 
         # Setup central widget and main layout
         self.central_widget = QWidget()
-        self.central_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.central_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -55,9 +53,7 @@ class SelectaMainWindow(QMainWindow):
 
         # Create the content layout (below navigation bar)
         self.content_widget = QWidget()
-        self.content_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.content_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.content_layout = QHBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(10, 10, 10, 10)
         self.content_layout.setSpacing(10)
@@ -66,9 +62,7 @@ class SelectaMainWindow(QMainWindow):
         # Create the main splitter for left and right sides
         self.horizontal_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.horizontal_splitter.setHandleWidth(2)
-        self.horizontal_splitter.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.horizontal_splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.content_layout.addWidget(self.horizontal_splitter)
 
         # Left side - Contains playlist on top and empty space at bottom
@@ -81,24 +75,18 @@ class SelectaMainWindow(QMainWindow):
         # Create vertical splitter for playlist and bottom component
         self.vertical_splitter = QSplitter(Qt.Orientation.Vertical)
         self.vertical_splitter.setHandleWidth(2)
-        self.vertical_splitter.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.vertical_splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.left_layout.addWidget(self.vertical_splitter)
 
         # Top component for playlist
         self.playlist_container = QWidget()
-        self.playlist_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.playlist_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.playlist_layout = QVBoxLayout(self.playlist_container)
         self.playlist_layout.setContentsMargins(0, 0, 0, 0)
 
         # Bottom component (empty for now)
         self.bottom_container = QWidget()
-        self.bottom_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.bottom_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.bottom_layout = QVBoxLayout(self.bottom_container)
         self.bottom_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -111,9 +99,7 @@ class SelectaMainWindow(QMainWindow):
 
         # Right side - For adaptive content
         self.right_container = QWidget()
-        self.right_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.right_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.right_layout = QVBoxLayout(self.right_container)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -142,7 +128,7 @@ class SelectaMainWindow(QMainWindow):
         self.current_platform = "library"
 
         # Initialize selection state
-        from selecta.ui.components.selection_state import SelectionState
+        from selecta.ui.components.common.selection_state import SelectionState
 
         self.selection_state = SelectionState()
 
@@ -256,17 +242,17 @@ class SelectaMainWindow(QMainWindow):
             data_provider: Any = None
 
             if platform == "library" or platform == "local":  # Support both during transition
-                from selecta.ui.components.playlist.library.library_playlist_data_provider import (
-                    LibraryPlaylistDataProvider,
+                from selecta.ui.components.playlist.library.library_data_provider import (
+                    LibraryDataProvider,
                 )
 
-                data_provider = LibraryPlaylistDataProvider()
+                data_provider = LibraryDataProvider()
                 authenticated = True  # Library is always authenticated
 
             elif platform == "spotify":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.spotify.spotify_playlist_data_provider import (
-                    SpotifyPlaylistDataProvider,
+                from selecta.ui.components.playlist.platform.spotify.spotify_data_provider import (
+                    SpotifyDataProvider,
                 )
 
                 # Recreate client to get fresh auth status
@@ -276,7 +262,7 @@ class SelectaMainWindow(QMainWindow):
                 if spotify_client is None:
                     authenticated = False
                 else:
-                    spotify_provider = SpotifyPlaylistDataProvider(client=spotify_client)
+                    spotify_provider = SpotifyDataProvider(client=spotify_client)
                     data_provider = spotify_provider
                     if has_is_authenticated(spotify_provider.client):
                         authenticated = spotify_provider.client.is_authenticated()
@@ -285,14 +271,12 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "rekordbox":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.rekordbox.rekordbox_playlist_data_provider import (  # noqa: E501
-                    RekordboxPlaylistDataProvider,
+                from selecta.ui.components.playlist.platform.rekordbox.rekordbox_data_provider import (
+                    RekordboxDataProvider,
                 )
 
                 # Recreate client to get fresh auth status
-                self._platform_clients["rekordbox"] = PlatformFactory.create(
-                    "rekordbox", settings_repo
-                )
+                self._platform_clients["rekordbox"] = PlatformFactory.create("rekordbox", settings_repo)
                 rekordbox_client = self._platform_clients["rekordbox"]
 
                 # Double-check authentication status
@@ -301,7 +285,7 @@ class SelectaMainWindow(QMainWindow):
                 if rekordbox_client is None:
                     authenticated = False
                 else:
-                    rekordbox_provider = RekordboxPlaylistDataProvider(client=rekordbox_client)
+                    rekordbox_provider = RekordboxDataProvider(client=rekordbox_client)
                     data_provider = rekordbox_provider
                     if has_is_authenticated(rekordbox_client):
                         authenticated = rekordbox_client.is_authenticated()
@@ -312,8 +296,8 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "discogs":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.discogs.discogs_playlist_data_provider import (
-                    DiscogsPlaylistDataProvider,
+                from selecta.ui.components.playlist.platform.discogs.discogs_data_provider import (
+                    DiscogsDataProvider,
                 )
 
                 # Recreate client to get fresh auth status
@@ -323,7 +307,7 @@ class SelectaMainWindow(QMainWindow):
                 if discogs_client is None:
                     authenticated = False
                 else:
-                    discogs_provider = DiscogsPlaylistDataProvider(client=discogs_client)
+                    discogs_provider = DiscogsDataProvider(client=discogs_client)
                     data_provider = discogs_provider
                     if has_is_authenticated(discogs_provider.client):
                         authenticated = discogs_provider.client.is_authenticated()
@@ -332,8 +316,8 @@ class SelectaMainWindow(QMainWindow):
 
             elif platform == "youtube":
                 from selecta.core.platform.platform_factory import PlatformFactory
-                from selecta.ui.components.playlist.youtube.youtube_playlist_data_provider import (
-                    YouTubePlaylistDataProvider,
+                from selecta.ui.components.playlist.platform.youtube.youtube_data_provider import (
+                    YouTubeDataProvider,
                 )
 
                 # Recreate client to get fresh auth status
@@ -343,7 +327,7 @@ class SelectaMainWindow(QMainWindow):
                 if youtube_client is None:
                     authenticated = False
                 else:
-                    youtube_provider = YouTubePlaylistDataProvider(client=youtube_client)
+                    youtube_provider = YouTubeDataProvider(client=youtube_client)
                     data_provider = youtube_provider
                     if has_is_authenticated(youtube_provider.client):
                         authenticated = youtube_provider.client.is_authenticated()
@@ -389,7 +373,7 @@ class SelectaMainWindow(QMainWindow):
                 break
 
         # Initialize audio player in the bottom section if it's not already there
-        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
+        from selecta.ui.components.player.audio_player import AudioPlayerComponent
 
         # Check if we already have an audio player
         audio_player = None
@@ -502,8 +486,8 @@ class SelectaMainWindow(QMainWindow):
 
     def show_playlists(self):
         """Show playlists content for the current platform."""
-        from selecta.ui.components.player.audio_player_component import AudioPlayerComponent
-        from selecta.ui.components.playlist_content import PlaylistContent
+        from selecta.ui.components.player.audio_player import AudioPlayerComponent
+        from selecta.ui.components.views.playlist_panel import PlaylistContent
 
         # Create playlist content
         playlist_content = PlaylistContent()
@@ -531,7 +515,8 @@ class SelectaMainWindow(QMainWindow):
 
     def _setup_search_panels(self):
         """Set up the dynamic content component in the right container."""
-        from selecta.ui.components.dynamic_content import DynamicContent
+        # Import inside method to avoid any circular imports
+        from selecta.ui.components.views import DynamicContent
 
         # Create the dynamic content component
         self.dynamic_content = DynamicContent()
@@ -571,21 +556,7 @@ class SelectaMainWindow(QMainWindow):
 
     def show_tracks(self):
         """Show tracks content."""
-        from selecta.ui.components.main_content import MainContent
-
-        # Add main content to playlist area for now
-        self.set_playlist_content(MainContent())
-
-        # Make sure dynamic content is set up
-        self._setup_search_panels()
-
-        # Clear right side
-        empty_widget = QWidget()
-        self.set_right_content(empty_widget)
-
-    def show_vinyl(self):
-        """Show vinyl content."""
-        from selecta.ui.components.main_content import MainContent
+        from selecta.ui.components.views.main_panel import MainContent
 
         # Add main content to playlist area for now
         self.set_playlist_content(MainContent())
@@ -616,9 +587,7 @@ class SelectaMainWindow(QMainWindow):
         layout.addWidget(message)
 
         # Add explanation
-        explanation = QLabel(
-            f"There was an error connecting to {platform.capitalize()}. Error: {error_message}"
-        )
+        explanation = QLabel(f"There was an error connecting to {platform.capitalize()}. Error: {error_message}")
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
 
@@ -699,11 +668,7 @@ class SelectaMainWindow(QMainWindow):
             QCoreApplication.processEvents()
 
             # Count files using a simplified approach to avoid traversing twice
-            audio_files = [
-                f
-                for f in folder.glob("**/*")
-                if f.is_file() and f.suffix.lower() in audio_extensions
-            ]
+            audio_files = [f for f in folder.glob("**/*") if f.is_file() and f.suffix.lower() in audio_extensions]
             total_files = len(audio_files)
 
             if total_files == 0:
@@ -733,9 +698,7 @@ class SelectaMainWindow(QMainWindow):
                 if i % 10 == 0 or i == total_files - 1:
                     percent_done = 20 + int(80 * i / total_files)
                     progress.setValue(percent_done)
-                    progress.setLabelText(
-                        f"Processing file {i + 1} of {total_files}: {file_path.name}"
-                    )
+                    progress.setLabelText(f"Processing file {i + 1} of {total_files}: {file_path.name}")
                     QCoreApplication.processEvents()
 
                 # Simulate processing each file
@@ -767,9 +730,7 @@ class SelectaMainWindow(QMainWindow):
 
         except Exception as e:
             logger.exception(f"Error scanning folder: {e}")
-            QMessageBox.critical(
-                self, "Scan Error", f"An error occurred while scanning the folder:\n\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Scan Error", f"An error occurred while scanning the folder:\n\n{str(e)}")
 
     def on_import_rekordbox(self):
         """Handle import from Rekordbox request."""

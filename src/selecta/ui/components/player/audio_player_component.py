@@ -15,8 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from selecta.core.data.models.db import ImageSize
-from selecta.core.data.repositories.image_repository import ImageRepository
-from selecta.ui.components.image_loader import DatabaseImageLoader
+from selecta.ui.components.common.image_loader import DatabaseImageLoader
 
 
 class ClickableSlider(QSlider):
@@ -44,9 +43,14 @@ class ClickableSlider(QSlider):
             self.initStyleOption(opt)
 
             # Get the parts of the slider
-            handle_rect = self.style().subControlRect(
-                QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderHandle, self
-            )
+            style = self.style()
+            if style:
+                handle_rect = style.subControlRect(
+                    QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderHandle, self
+                )
+            else:
+                # Fallback if style is None
+                handle_rect = QStyle.visualRect(opt.direction, opt.rect, opt.rect)
 
             # Check if the click is on the handle (for dragging behavior)
             handle_pos = handle_rect.contains(event.position().toPoint())
@@ -57,9 +61,14 @@ class ClickableSlider(QSlider):
                 return super().mousePressEvent(event)
             else:
                 # If we're clicking elsewhere, jump to that position
-                groove_rect = self.style().subControlRect(
-                    QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderGroove, self
-                )
+                style = self.style()
+                if style:
+                    groove_rect = style.subControlRect(
+                        QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderGroove, self
+                    )
+                else:
+                    # Fallback if style is None
+                    groove_rect = QStyle.visualRect(opt.direction, opt.rect, opt.rect)
 
                 # For horizontal slider, calculate position
                 slider_length = groove_rect.width()
@@ -117,8 +126,8 @@ class ClickableSlider(QSlider):
 
 from selecta.core.data.models.db import Track
 from selecta.core.utils.audio_player import AudioPlayerFactory, PlayerState, SpotifyAudioPlayer
-from selecta.ui.components.audio_player_component import SpotifyDeviceDialog
-from selecta.ui.components.youtube.youtube_player import create_youtube_player_window
+from selecta.ui.components.player.youtube_player import create_youtube_player_window
+from selecta.ui.dialogs.spotify_device_dialog import SpotifyDeviceDialog
 
 
 class AudioPlayerComponent(QWidget):
@@ -154,9 +163,7 @@ class AudioPlayerComponent(QWidget):
             AudioPlayerComponent._db_image_loader = DatabaseImageLoader()
 
         # Connect to image loader signals
-        AudioPlayerComponent._db_image_loader.track_image_loaded.connect(
-            self._on_track_image_loaded
-        )
+        AudioPlayerComponent._db_image_loader.track_image_loaded.connect(self._on_track_image_loaded)
 
         # Set up UI
         self._setup_ui()
@@ -210,9 +217,7 @@ class AudioPlayerComponent(QWidget):
         # Current position
         self.position_label = QLabel("0:00")
         self.position_label.setMinimumWidth(40)
-        self.position_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        self.position_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_layout.addWidget(self.position_label)
 
         # Progress slider - use our custom ClickableSlider
@@ -240,19 +245,33 @@ class AudioPlayerComponent(QWidget):
 
         # Play/Pause button
         self.play_pause_button = QPushButton()
-        self.play_pause_button.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        )
+        style = self.style()
+        if style:
+            self.play_pause_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        else:
+            # Fallback if style is None
+            self.play_pause_button.setText("▶")
         self.play_pause_button.setFixedSize(40, 40)
         controls_layout.addWidget(self.play_pause_button)
 
         # Store references to the icons
-        self.play_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        self.pause_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
+        style = self.style()
+        if style:
+            self.play_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            self.pause_icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPause)
+        else:
+            # Use simple text fallbacks if style is None
+            self.play_icon = "▶"
+            self.pause_icon = "⏸"
 
         # Stop button
         self.stop_button = QPushButton()
-        self.stop_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        style = self.style()
+        if style:
+            self.stop_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        else:
+            # Fallback if style is None
+            self.stop_button.setText("⏹")
         self.stop_button.setFixedSize(40, 40)
         controls_layout.addWidget(self.stop_button)
 
@@ -428,9 +447,15 @@ class AudioPlayerComponent(QWidget):
             state: New player state
         """
         if state == PlayerState.PLAYING:
-            self.play_pause_button.setIcon(self.pause_icon)
+            if isinstance(self.pause_icon, str):
+                self.play_pause_button.setText(self.pause_icon)
+            else:
+                self.play_pause_button.setIcon(self.pause_icon)
         else:  # PAUSED or STOPPED
-            self.play_pause_button.setIcon(self.play_icon)
+            if isinstance(self.play_icon, str):
+                self.play_pause_button.setText(self.play_icon)
+            else:
+                self.play_pause_button.setIcon(self.play_icon)
 
     def _on_position_changed(self, position: int) -> None:
         """Handle playback position changes.
@@ -479,56 +504,17 @@ class AudioPlayerComponent(QWidget):
 
         # Load cover image from database if we have a track ID
         if self.current_track_id:
-            logger.info(f"Loading track image for track {self.current_track_id}")
             # Reset to default cover first
             self.cover_image.setPixmap(self.default_pixmap)
 
-            # Print debug about image loader
-            logger.info(f"Image loader exists? {AudioPlayerComponent._db_image_loader is not None}")
+            # Request image loading through the proper loader
             if AudioPlayerComponent._db_image_loader:
-                logger.info(
-                    "Signal connected: "
-                    f"{bool(AudioPlayerComponent._db_image_loader.track_image_loaded.receivers)}"
-                )
-
-            # Try to directly access image repository for testing
-            try:
-                from selecta.core.data.database import get_session
-
-                session = get_session()
-                image_repo = ImageRepository(session)
-
-                # Try to get image directly for debugging
-                image = image_repo.get_track_image(self.current_track_id, ImageSize.THUMBNAIL)
-                if image and image.data:
-                    logger.info(
-                        f"Found image data directly from repository, length: {len(image.data)}"
-                    )
-                    # Create pixmap directly
-                    from PyQt6.QtCore import QByteArray
-
-                    byte_array = QByteArray(image.data)
-                    image = QPixmap()
-                    if image.loadFromData(byte_array):
-                        self.cover_image.setPixmap(
-                            image.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
-                        )
-                        logger.info(f"Set cover directly for track {self.current_track_id}")
-                else:
-                    logger.info("No image found in repository, requesting from loader")
-                    # Request image from loader
-                    AudioPlayerComponent._db_image_loader.load_track_image(
-                        self.current_track_id, ImageSize.THUMBNAIL
-                    )
-            except Exception as e:
-                logger.error(f"Error getting image directly: {e}")
-                # Still try the loader as backup
-                AudioPlayerComponent._db_image_loader.load_track_image(
-                    self.current_track_id, ImageSize.THUMBNAIL
-                )
+                AudioPlayerComponent._db_image_loader.load_track_image(self.current_track_id, ImageSize.THUMBNAIL)
+            else:
+                logger.debug("Image loader is not initialized")
         else:
             # No ID, try fallback methods
-            logger.info("No track ID available, using fallback methods")
+            logger.debug("No track ID available, using fallback methods")
             self._load_cover_fallback(track)
 
         # Signal that track was loaded
@@ -541,12 +527,8 @@ class AudioPlayerComponent(QWidget):
             track_id: Track ID
             pixmap: Loaded image
         """
-        logger.info(
-            f"Received image for track {track_id}, current track is {self.current_track_id}"
-        )
-        logger.info(
-            f"Pixmap valid: {not pixmap.isNull()}, size: {pixmap.width()}x{pixmap.height()}"
-        )
+        logger.debug(f"Received image for track {track_id}, current track is {self.current_track_id}")
+        logger.debug(f"Pixmap valid: {not pixmap.isNull()}, size: {pixmap.width()}x{pixmap.height()}")
 
         # Make sure this is for our current track
         if self.current_track_id == track_id:
@@ -554,9 +536,9 @@ class AudioPlayerComponent(QWidget):
             scaled_pixmap = pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
             self.cover_image.setPixmap(scaled_pixmap)
             self.cover_image.repaint()  # Force immediate repaint
-            logger.info(f"Set cover image for track {track_id}")
+            logger.debug(f"Set cover image for track {track_id}")
         else:
-            logger.info(f"Ignoring image for track {track_id} as it's not the current track")
+            logger.debug(f"Ignoring image for track {track_id} as it's not the current track")
 
     def _load_cover_fallback(self, track) -> None:
         """Load and display the cover image for a track using fallback methods.
@@ -768,17 +750,11 @@ class AudioPlayerComponent(QWidget):
         # Check for direct Spotify ID attributes
         if hasattr(track, "spotify_id") and track.spotify_id:
             spotify_id = track.spotify_id
-            if not spotify_id.startswith("spotify:"):
-                spotify_uri = f"spotify:track:{spotify_id}"
-            else:
-                spotify_uri = spotify_id
+            spotify_uri = f"spotify:track:{spotify_id}" if not spotify_id.startswith("spotify:") else spotify_id
         # Check for URI directly
         elif hasattr(track, "uri") and track.uri and "spotify" in track.uri:
             spotify_uri = track.uri
-            if spotify_uri.startswith("spotify:track:"):
-                spotify_id = spotify_uri.split(":")[-1]
-            else:
-                spotify_id = spotify_uri
+            spotify_id = spotify_uri.split(":")[-1] if spotify_uri.startswith("spotify:track:") else spotify_uri
         # Check for platform metadata
         elif hasattr(track, "get_platform_metadata"):
             try:
@@ -805,16 +781,10 @@ class AudioPlayerComponent(QWidget):
                 display_data = track.to_display_data()
                 if "spotify_uri" in display_data and display_data["spotify_uri"]:
                     spotify_uri = display_data["spotify_uri"]
-                    if spotify_uri.startswith("spotify:track:"):
-                        spotify_id = spotify_uri.split(":")[-1]
-                    else:
-                        spotify_id = spotify_uri
+                    spotify_id = spotify_uri.split(":")[-1] if spotify_uri.startswith("spotify:track:") else spotify_uri
                 elif "id" in display_data and "spotify" in str(track.__class__).lower():
                     spotify_id = display_data["id"]
-                    if not spotify_id.startswith("spotify:"):
-                        spotify_uri = f"spotify:track:{spotify_id}"
-                    else:
-                        spotify_uri = spotify_id
+                    spotify_uri = f"spotify:track:{spotify_id}" if not spotify_id.startswith("spotify:") else spotify_id
             except Exception as e:
                 logger.error(f"Error getting display data: {e}")
 
@@ -852,11 +822,7 @@ class AudioPlayerComponent(QWidget):
                 logger.error(f"Error getting display data: {e}")
 
         # Check for platform references
-        if (
-            hasattr(track, "platforms")
-            and isinstance(track.platforms, list)
-            and "spotify" in track.platforms
-        ):
+        if hasattr(track, "platforms") and isinstance(track.platforms, list) and "spotify" in track.platforms:
             return True
 
         # Check platform info
