@@ -127,6 +127,7 @@ class BasePlatformDataProvider(IPlatformDataProvider):
         # Check authentication
         if not self.is_connected():
             logger.warning(f"{self.get_platform_name()} client is not authenticated")
+            # Return empty list instead of triggering authentication
             return []
 
         try:
@@ -138,7 +139,13 @@ class BasePlatformDataProvider(IPlatformDataProvider):
 
             return tracks
         except Exception as e:
-            logger.exception(f"Error getting tracks for playlist {playlist_id}: {e}")
+            logger.error(f"Error getting tracks for playlist {playlist_id}: {e}")
+
+            # Return cached data if available, even if expired
+            if self.cache.has(cache_key):
+                logger.info(f"Returning expired cache data after fetch error for {playlist_id}")
+                return self.cache.get(cache_key, [], ignore_expiry=True)
+
             return []
 
     def refresh(self) -> None:
@@ -246,6 +253,7 @@ class BasePlatformDataProvider(IPlatformDataProvider):
         is_imported = False
         if hasattr(item, "is_imported"):
             is_imported = item.is_imported
+            logger.debug(f"Playlist {item.name} (ID: {getattr(item, 'item_id', 'unknown')}) is_imported={is_imported}")
 
         # Add context menu options based on import status
         if is_imported:
@@ -413,6 +421,8 @@ class BasePlatformDataProvider(IPlatformDataProvider):
 
         if not self.is_connected():
             if parent:
+                from PyQt6.QtWidgets import QMessageBox
+
                 QMessageBox.warning(
                     parent,
                     "Not Connected",
@@ -446,10 +456,24 @@ class BasePlatformDataProvider(IPlatformDataProvider):
             # Import each track
             for track in tracks:
                 try:
-                    # Import the track
-                    imported_track = sync_manager.link_manager.import_track(track)
-                    if imported_track:
-                        successful_imports += 1
+                    # Import the track with proper error handling
+                    try:
+                        imported_track = sync_manager.link_manager.import_track(track)
+                        if imported_track:
+                            successful_imports += 1
+                    except ValueError as e:
+                        # Log validation errors (missing title/artist)
+                        track_info = getattr(track, "title", "Unknown") + " by " + getattr(track, "artist", "Unknown")
+                        logger.warning(f"Import validation error for track {track_info}: {str(e)}")
+
+                        # Show error in parent window if available
+                        if parent:
+                            from PyQt6.QtWidgets import QMessageBox
+
+                            QMessageBox.warning(parent, "Track Import Error", f"Failed to import track: {str(e)}")
+                    except Exception as e:
+                        # Log unexpected errors
+                        logger.exception(f"Unexpected error importing track: {str(e)}")
                 except Exception as e:
                     track_id = getattr(track, "id", "unknown")
                     logger.warning(f"Failed to import track {track_id}: {e}")

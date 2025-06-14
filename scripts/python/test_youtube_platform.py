@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Test script for YouTube platform integration.
+
 This script tests the YouTube client functionality:
 1. Authentication and client creation
 2. Listing playlists
 3. Getting videos from a playlist
 4. Creating a new playlist
-5. Adding videos to a playlist
+5. Adding videos to a playlist.
 """
 
 import sys
@@ -52,9 +53,7 @@ def main():
         playlists = youtube_client.get_playlists()
         logger.info(f"Found {len(playlists)} playlists:")
         for i, playlist in enumerate(playlists[:5]):  # Show first 5 playlists
-            logger.info(
-                f"  {i+1}. {playlist.title} (ID: {playlist.id}, Videos: {playlist.video_count})"
-            )
+            logger.info(f"  {i+1}. {playlist.title} (ID: {playlist.id}, Videos: {playlist.video_count})")
 
         # If we have playlists, test getting videos from the first one
         if playlists:
@@ -88,9 +87,7 @@ def main():
             logger.info(f"Found {len(search_results)} search results:")
             for i, result in enumerate(search_results):
                 snippet = result.get("snippet", {})
-                logger.info(
-                    f"  {i+1}. {snippet.get('title')} (ID: {result.get('id', {}).get('videoId')})"
-                )
+                logger.info(f"  {i+1}. {snippet.get('title')} (ID: {result.get('id', {}).get('videoId')})")
 
     except Exception as e:
         logger.error(f"Error testing YouTube platform: {e}")

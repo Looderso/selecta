@@ -2,45 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run Selecta",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "selecta.app",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "Run Selecta (Dev Mode)",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "selecta.app",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "env": {
-                "SELECTA_DEV_MODE": "true",
-                "SELECTA_DEV_DB_PATH": "${workspaceFolder}/dev-database/dev_selecta.db"
-            }
-        },
-        {
-            "name": "Run Current File",
-            "type": "debugpy",
+            "name": "Python: Current File",
+            "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": false
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
         },
         {
-            "name": "Run CLI Command",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "selecta.cli.main",
-            "console": "integratedTerminal",
-            "args": [],
-            "justMyCode": true
-        },
-        {
-            "name": "Debug Tests",
-            "type": "debugpy",
+            "name": "Python: Pytest Current File",
+            "type": "python",
             "request": "launch",
             "module": "pytest",
             "args": [
@@ -48,15 +22,34 @@
                 "-v"
             ],
             "console": "integratedTerminal",
-            "justMyCode": false
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
         },
         {
-            "name": "Debug Discogs Client",
-            "type": "debugpy",
+            "name": "Python: Pytest Current Test",
+            "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/scripts/python/discogs/debug_client.py",
+            "module": "pytest",
+            "args": [
+                "${file}::${selectedText}",
+                "-v"
+            ],
             "console": "integratedTerminal",
-            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        },
+        {
+            "name": "Run Selecta",
+            "type": "python",
+            "request": "launch",
+            "module": "selecta.app",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             }

@@ -121,9 +121,7 @@ class PlatformSyncManager:
                 platform_id = local_playlist.platform_id
                 is_personal = True  # Default for legacy records
             else:
-                raise ValueError(
-                    f"Playlist {local_playlist.name} is not linked to {self.platform_name}"
-                )
+                raise ValueError(f"Playlist {local_playlist.name} is not linked to {self.platform_name}")
         else:
             platform_id = platform_info.platform_id
             is_personal = platform_info.is_personal_playlist
@@ -151,18 +149,14 @@ class PlatformSyncManager:
 
         if not sync_state:
             # No previous sync - consider all tracks as new additions in both directions
-            logger.info(
-                f"No sync state found for playlist {local_playlist.name} - "
-                "creating initial snapshot"
-            )
+            logger.info(f"No sync state found for playlist {local_playlist.name} - " "creating initial snapshot")
 
             # Create initial sync state
             self._create_initial_sync_state(platform_info, library_tracks, platform_tracks)
 
             # Add warning about first sync
             changes.warnings.append(
-                "This is the first sync for this playlist. "
-                "All tracks will be considered as additions."
+                "This is the first sync for this playlist. " "All tracks will be considered as additions."
             )
 
             # Mark all platform tracks as additions (to be imported to library)
@@ -373,9 +367,7 @@ class PlatformSyncManager:
         # Get platform playlist details
         platform_playlist_name = "Unknown"
         try:
-            _, platform_playlist = self.platform_client.import_playlist_to_local(
-                changes.platform_playlist_id
-            )
+            _, platform_playlist = self.platform_client.import_playlist_to_local(changes.platform_playlist_id)
 
             # Try to extract name from different object types
             if hasattr(platform_playlist, "name"):
@@ -383,9 +375,7 @@ class PlatformSyncManager:
             elif hasattr(platform_playlist, "title"):
                 platform_playlist_name = platform_playlist.title
             elif isinstance(platform_playlist, dict):
-                platform_playlist_name = platform_playlist.get(
-                    "name", platform_playlist.get("title", "Unknown")
-                )
+                platform_playlist_name = platform_playlist.get("name", platform_playlist.get("title", "Unknown"))
 
         except Exception as e:
             logger.warning(f"Failed to get platform playlist details: {e}")
@@ -414,9 +404,7 @@ class PlatformSyncManager:
 
         return preview
 
-    def apply_sync_changes(
-        self, local_playlist_id: int, selected_changes: dict[str, bool]
-    ) -> SyncResult:
+    def apply_sync_changes(self, local_playlist_id: int, selected_changes: dict[str, bool]) -> SyncResult:
         """Apply selected sync changes based on user selection.
 
         Args:
@@ -460,28 +448,33 @@ class PlatformSyncManager:
 
                 if not platform_track:
                     logger.warning(f"Could not fetch platform track {change.platform_track_id}")
-                    result.warnings.append(
-                        f"Could not fetch track: {change.track_artist} - {change.track_title}"
-                    )
+                    result.warnings.append(f"Could not fetch track: {change.track_artist} - {change.track_title}")
                     continue
 
-                # Import track to library
-                library_track = self.link_manager.import_track(platform_track)
+                # Import track to library with proper error handling
+                try:
+                    library_track = self.link_manager.import_track(platform_track)
 
-                if not library_track:
-                    logger.warning(f"Failed to import platform track {change.platform_track_id}")
-                    result.warnings.append(
-                        f"Failed to import: {change.track_artist} - {change.track_title}"
-                    )
+                    if not library_track:
+                        logger.warning(f"Failed to import platform track {change.platform_track_id}")
+                        result.warnings.append(f"Failed to import: {change.track_artist} - {change.track_title}")
+                        continue
+                except ValueError as e:
+                    # Handle validation errors (missing title/artist)
+                    logger.warning(f"Import validation error for {change.platform_track_id}: {str(e)}")
+                    result.warnings.append(f"Failed to import: {change.track_artist} - {change.track_title} - {str(e)}")
+                    continue
+                except Exception as e:
+                    # Handle other unexpected errors
+                    logger.exception(f"Unexpected error importing {change.platform_track_id}: {str(e)}")
+                    result.warnings.append(f"Failed to import: {change.track_artist} - {change.track_title} - {str(e)}")
                     continue
 
                 # Add track to playlist
                 self.playlist_repo.add_track(local_playlist_id, library_track.id)
 
                 # Also add to Collection playlist
-                if collection_playlist_id and not self._track_in_playlist(
-                    library_track.id, collection_playlist_id
-                ):
+                if collection_playlist_id and not self._track_in_playlist(library_track.id, collection_playlist_id):
                     self.playlist_repo.add_track(collection_playlist_id, library_track.id)
                     logger.debug(f"Added track {library_track.id} to Collection during sync")
 
@@ -490,9 +483,7 @@ class PlatformSyncManager:
 
             except Exception as e:
                 logger.exception(f"Error applying platform addition: {e}")
-                result.errors.append(
-                    f"Error adding {change.track_artist} - {change.track_title}: {str(e)}"
-                )
+                result.errors.append(f"Error adding {change.track_artist} - {change.track_title}: {str(e)}")
 
         # 2. Apply platform removals (remove tracks from library playlist)
         for change in changes.platform_removals:
@@ -512,9 +503,7 @@ class PlatformSyncManager:
 
             except Exception as e:
                 logger.exception(f"Error applying platform removal: {e}")
-                result.errors.append(
-                    f"Error removing {change.track_artist} - {change.track_title}: {str(e)}"
-                )
+                result.errors.append(f"Error removing {change.track_artist} - {change.track_title}: {str(e)}")
 
         # 3. Apply library additions (export library tracks to platform)
         if changes.is_personal_playlist:  # Only for personal playlists
@@ -616,17 +605,13 @@ class PlatformSyncManager:
                     platform_id=local_playlist.platform_id,
                 )
             else:
-                raise ValueError(
-                    f"Playlist {local_playlist.name} is not linked to {self.platform_name}"
-                )
+                raise ValueError(f"Playlist {local_playlist.name} is not linked to {self.platform_name}")
 
         # Get current library and platform tracks
         library_tracks = self.playlist_repo.get_playlist_tracks(local_playlist_id)
 
         try:
-            platform_tracks, _ = self.platform_client.import_playlist_to_local(
-                platform_info.platform_id
-            )
+            platform_tracks, _ = self.platform_client.import_playlist_to_local(platform_info.platform_id)
         except Exception as e:
             logger.exception(f"Failed to fetch platform tracks for snapshot: {e}")
             raise ValueError(f"Failed to fetch platform tracks: {str(e)}") from e
@@ -672,9 +657,7 @@ class PlatformSyncManager:
 
                 snapshot["platform_tracks"][platform_id] = {
                     "library_id": library_id,
-                    "added_at": added_at.isoformat()
-                    if isinstance(added_at, datetime)
-                    else added_at,
+                    "added_at": added_at.isoformat() if isinstance(added_at, datetime) else added_at,
                 }
 
         # Get or create sync state
@@ -715,11 +698,7 @@ class PlatformSyncManager:
             return platform_info.sync_state
 
         # If not, query directly
-        return (
-            self.playlist_repo.session.query(PlaylistSyncState)
-            .filter_by(platform_info_id=platform_info.id)
-            .first()
-        )
+        return self.playlist_repo.session.query(PlaylistSyncState).filter_by(platform_info_id=platform_info.id).first()
 
     def _create_initial_sync_state(
         self,
@@ -891,13 +870,9 @@ class PlatformSyncManager:
 
             # Fallback: try to find track in platform playlist
             # This is inefficient but might work
-            platform_info = self.playlist_repo.get_platform_info_by_platform(
-                self.platform_name, platform_id
-            )
+            platform_info = self.playlist_repo.get_platform_info_by_platform(self.platform_name, platform_id)
             if platform_info:
-                platform_tracks, _ = self.platform_client.import_playlist_to_local(
-                    platform_info.platform_id
-                )
+                platform_tracks, _ = self.platform_client.import_playlist_to_local(platform_info.platform_id)
                 for track in platform_tracks:
                     if self._extract_platform_track_id(track) == platform_id:
                         return track
@@ -932,9 +907,7 @@ class PlatformSyncManager:
 
         # Get the playlist tracks and metadata from the platform
         try:
-            platform_tracks, platform_playlist = self.platform_client.import_playlist_to_local(
-                platform_playlist_id
-            )
+            platform_tracks, platform_playlist = self.platform_client.import_playlist_to_local(platform_playlist_id)
         except Exception as e:
             logger.exception(f"Error importing playlist from {self.platform_name}: {e}")
             raise ValueError(f"Failed to import playlist: {str(e)}") from e
@@ -969,9 +942,7 @@ class PlatformSyncManager:
             playlist_description = platform_playlist.get("description", "")
 
         # Check if we already have this playlist imported
-        existing_playlist = self.playlist_repo.get_by_platform_id(
-            self.platform_name, platform_playlist_id
-        )
+        existing_playlist = self.playlist_repo.get_by_platform_id(self.platform_name, platform_playlist_id)
 
         if existing_playlist:
             # Update the existing playlist
@@ -1019,9 +990,7 @@ class PlatformSyncManager:
 
         # Import all tracks and add them to the playlist
         local_tracks = []
-        logger.info(
-            f"Starting import of {len(platform_tracks)} tracks from {self.platform_name} playlist"
-        )
+        logger.info(f"Starting import of {len(platform_tracks)} tracks from {self.platform_name} playlist")
 
         # Debug track info
         if platform_tracks and len(platform_tracks) > 0:
@@ -1039,13 +1008,20 @@ class PlatformSyncManager:
                 track_type = type(platform_track).__name__
                 logger.info(f"Processing track {i + 1}/{len(platform_tracks)} of type {track_type}")
 
-                # Import the track using link manager
-                local_track = self.link_manager.import_track(platform_track)
+                # Import the track using link manager with error handling
+                try:
+                    local_track = self.link_manager.import_track(platform_track)
 
-                if not local_track:
-                    logger.error(
-                        f"Failed to import track {i + 1}: link_manager.import_track returned None"
-                    )
+                    if not local_track:
+                        logger.error(f"Failed to import track {i + 1}: link_manager.import_track returned None")
+                        continue
+                except ValueError as e:
+                    # Log the error but don't crash the entire import process
+                    logger.error(f"Failed to import track {i + 1}: {str(e)}")
+                    continue
+                except Exception as e:
+                    # Log unexpected errors
+                    logger.exception(f"Unexpected error importing track {i + 1}: {str(e)}")
                     continue
 
                 local_tracks.append(local_track)
@@ -1054,9 +1030,7 @@ class PlatformSyncManager:
                 self.playlist_repo.add_track(local_playlist.id, local_track.id, position=i)
 
                 # Also add to Collection playlist
-                if collection_playlist_id and not self._track_in_playlist(
-                    local_track.id, collection_playlist_id
-                ):
+                if collection_playlist_id and not self._track_in_playlist(local_track.id, collection_playlist_id):
                     self.playlist_repo.add_track(collection_playlist_id, local_track.id)
                     logger.debug(f"Added track {local_track.id} to Collection")
 
@@ -1115,17 +1089,14 @@ class PlatformSyncManager:
             try:
                 track_type = type(platform_track).__name__
                 logger.info(
-                    f"Processing track {i + 1}/{len(platform_tracks)} "
-                    f"for existing playlist - type {track_type}"
+                    f"Processing track {i + 1}/{len(platform_tracks)} " f"for existing playlist - type {track_type}"
                 )
 
                 # Import track
                 local_track = self.link_manager.import_track(platform_track)
 
                 if not local_track:
-                    logger.error(
-                        f"Failed to import track {i + 1}: link_manager.import_track returned None"
-                    )
+                    logger.error(f"Failed to import track {i + 1}: link_manager.import_track returned None")
                     continue
 
                 # Skip if already in playlist
@@ -1138,16 +1109,12 @@ class PlatformSyncManager:
                 self.playlist_repo.add_track(target_playlist_id, local_track.id, position=position)
 
                 # Also add to Collection playlist
-                if collection_playlist_id and not self._track_in_playlist(
-                    local_track.id, collection_playlist_id
-                ):
+                if collection_playlist_id and not self._track_in_playlist(local_track.id, collection_playlist_id):
                     self.playlist_repo.add_track(collection_playlist_id, local_track.id)
                     logger.debug(f"Added track {local_track.id} to Collection")
 
                 new_tracks.append(local_track)
-                logger.info(
-                    f"Added track to existing playlist: {local_track.title} by {local_track.artist}"
-                )
+                logger.info(f"Added track to existing playlist: {local_track.title} by {local_track.artist}")
             except Exception:
                 logger.exception(f"Error importing track {i + 1} to existing playlist:")
 
@@ -1267,14 +1234,10 @@ class PlatformSyncManager:
 
         # Verify this is a platform playlist
         platform_info = self.playlist_repo.get_platform_info(local_playlist_id, self.platform_name)
-        old_style_linked = (
-            local_playlist.source_platform == self.platform_name and local_playlist.platform_id
-        )
+        old_style_linked = local_playlist.source_platform == self.platform_name and local_playlist.platform_id
 
         if not platform_info and not old_style_linked:
-            raise ValueError(
-                f"Playlist {local_playlist.name} is not linked to {self.platform_name}"
-            )
+            raise ValueError(f"Playlist {local_playlist.name} is not linked to {self.platform_name}")
 
         # If preview mode, return the sync preview
         if not apply_all_changes:

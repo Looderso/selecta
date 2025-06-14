@@ -140,9 +140,10 @@ known-third-party = ["kivy", "spotipy", "python3-discogs_client", "sqlalchemy"]
 testpaths = ["src/tests"]
 python_files = "test_*.py"
 markers = [
-    "integration: marks tests as integration tests",
+    "integration: marks tests as integration tests (requires real credentials)",
     "gui: marks tests that require a GUI",
     "rekordbox: marks tests that interact with Rekordbox",
     "spotify: marks tests that interact with Spotify",
     "discogs: marks tests that interact with Discogs",
+    "youtube: marks tests that interact with YouTube",
 ]

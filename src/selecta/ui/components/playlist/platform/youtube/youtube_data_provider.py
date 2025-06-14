@@ -85,7 +85,22 @@ class YouTubeDataProvider(BasePlatformDataProvider):
         Returns:
             True if connected, False otherwise
         """
-        return self.client is not None and self.client.is_authenticated()
+        try:
+            # For YouTube, we'll return True if the client exists, even if it's not authenticated.
+            # This helps avoid repeated SSL errors that lead to authentication loops
+            if self.client is not None:
+                # Try to authenticate but don't let failures prevent fetching cached playlists
+                try:
+                    is_auth = self.client.is_authenticated()
+                    return is_auth
+                except Exception as auth_e:
+                    logger.warning(f"YouTube authentication check failed but continuing: {auth_e}")
+                    # Return True so we'll still try to use cached data
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error checking YouTube connection: {e}")
+            return False
 
     def connect_platform(self, parent: QWidget | None = None) -> bool:
         """Connect to the platform.
@@ -99,17 +114,64 @@ class YouTubeDataProvider(BasePlatformDataProvider):
         if self.is_connected():
             return True
 
-        # Attempt to authenticate
-        if self.client and self.client.authenticate():
-            return True
-
-        # Failed to authenticate
+        # Only attempt interactive authentication from Settings panel
+        from_settings = False
         if parent:
-            QMessageBox.warning(
-                parent,
-                "Authentication Failed",
-                "Failed to authenticate with YouTube. Please check your credentials.",
-            )
+            parent_class_name = parent.__class__.__name__
+            # Only allow auth dialog from settings related panels
+            if "Settings" in parent_class_name or "Auth" in parent_class_name:
+                from_settings = True
+
+        # Skip authentication if not called from settings
+        if not from_settings:
+            logger.warning("Skipping YouTube authentication dialog outside settings panel")
+            # Just silently reinitialize without triggering auth flow
+            if self.client and hasattr(self.client, "_initialize_client"):
+                self.client._initialize_client()
+            return False
+
+        # Check for potential running OAuth server
+        import socket
+        import time
+
+        # Check if OAuth ports are in use before attempting authentication
+        ports_in_use = False
+        for port in range(8080, 8090):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.connect(("localhost", port))
+                ports_in_use = True
+                s.close()
+                logger.warning(f"Port {port} is already in use, authentication may fail")
+                break
+            except:
+                s.close()
+
+        # If ports are in use, wait briefly to see if they become available
+        if ports_in_use:
+            logger.info("Waiting for OAuth ports to become available...")
+            time.sleep(2)
+
+        try:
+            # Attempt to authenticate only when called from settings
+            if self.client and self.client.authenticate():
+                return True
+
+            # Failed to authenticate
+            if parent:
+                QMessageBox.warning(
+                    parent,
+                    "Authentication Failed",
+                    "Failed to authenticate with YouTube. Please check your credentials.",
+                )
+        except Exception as e:
+            logger.exception(f"Error during YouTube authentication: {e}")
+            if parent:
+                QMessageBox.warning(
+                    parent,
+                    "Authentication Error",
+                    f"Error during YouTube authentication: {str(e)}",
+                )
         return False
 
     def _fetch_playlists(self) -> list[YouTubePlaylistItem]:
@@ -163,6 +225,64 @@ class YouTubeDataProvider(BasePlatformDataProvider):
 
         return playlist_items
 
+    def _safe_youtube_call(self, playlist_id):
+        """Make a safe YouTube API call to get tracks with crash protection.
+
+        Args:
+            playlist_id: ID of the playlist
+
+        Returns:
+            List of YouTube track objects or empty list on error
+        """
+        # Use a completely separate process to isolate YouTube API calls
+        import multiprocessing
+        import os
+        import pickle
+        import tempfile
+
+        # Create a temporary file for inter-process communication
+        with tempfile.NamedTemporaryFile(delete=False) as temp:
+            result_file = temp.name
+
+        try:
+            # Start worker process - use the module-level function
+            process = multiprocessing.Process(target=_youtube_worker_process, args=(playlist_id, result_file))
+            process.start()
+
+            # Wait for process to finish with timeout
+            process.join(timeout=15)  # 15 second timeout
+
+            # Check if process is still running after timeout
+            if process.is_alive():
+                logger.warning("YouTube worker process timed out, terminating")
+                process.terminate()
+                process.join(1)  # Wait 1 more second for cleanup
+                return []
+
+            # Check if result file exists and has data
+            if os.path.exists(result_file) and os.path.getsize(result_file) > 0:
+                try:
+                    with open(result_file, "rb") as f:
+                        tracks = pickle.load(f)
+                    logger.info(f"Successfully loaded {len(tracks)} tracks from worker")
+                    return tracks
+                except Exception as load_error:
+                    logger.warning(f"Failed to load worker results: {load_error}")
+            else:
+                logger.warning("No result file or empty result from worker")
+
+            return []
+        except Exception as e:
+            logger.error(f"Error in YouTube safecall: {e}")
+            return []
+        finally:
+            # Clean up temporary file
+            try:
+                if os.path.exists(result_file):
+                    os.unlink(result_file)
+            except:
+                pass
+
     def _fetch_playlist_tracks(self, playlist_id: Any) -> list[YouTubeTrackItem]:
         """Fetch tracks for a playlist from YouTube.
 
@@ -172,32 +292,76 @@ class YouTubeDataProvider(BasePlatformDataProvider):
         Returns:
             List of YouTube track items
         """
-        if not self.is_connected():
+        logger.info(f"Fetching tracks for YouTube playlist: {playlist_id}")
+
+        # Use the safe call method to get tracks without risking crashes
+        youtube_tracks = self._safe_youtube_call(playlist_id)
+
+        if not youtube_tracks:
+            logger.warning("No YouTube tracks returned from safe call")
             return []
 
-        # Get the tracks from YouTube
-        youtube_tracks = self.youtube_client.get_playlist_tracks(str(playlist_id))
+        # Debug log for the first track to help diagnostics
+        if youtube_tracks and len(youtube_tracks) > 0:
+            sample_track = youtube_tracks[0]
+            logger.debug(f"Sample track: {type(sample_track).__name__}")
+
+            # Log key attributes
+            attrs = ["id", "title", "channel_title", "duration_seconds", "thumbnail_url", "added_at"]
+            attr_values = {}
+            for attr in attrs:
+                if hasattr(sample_track, attr):
+                    attr_values[attr] = getattr(sample_track, attr)
+            logger.debug(f"Sample track values: {attr_values}")
 
         # Convert tracks to TrackItem objects
         track_items = []
         for yt_track in youtube_tracks:
-            # Extract artist from channel title
-            artist = yt_track.channel_title if yt_track.channel_title else "Unknown Artist"
+            # Extract artist from channel title with fallback
+            artist = "Unknown Artist"
+            if hasattr(yt_track, "channel_title") and yt_track.channel_title:
+                artist = yt_track.channel_title
 
-            # Convert to YouTubeTrackItem using the new BaseTrackItem base class
+            # Safely get track title
+            title = "Unknown Title"
+            if hasattr(yt_track, "title") and yt_track.title:
+                title = yt_track.title
+
+            # Safely get track ID
+            track_id = ""
+            if hasattr(yt_track, "id") and yt_track.id:
+                track_id = yt_track.id
+
+            # Safely get duration with fallback to 0
+            duration = 0
+            if hasattr(yt_track, "duration_seconds") and yt_track.duration_seconds is not None:
+                duration = yt_track.duration_seconds
+
+            # Safely get thumbnail URL
+            thumbnail_url = None
+            if hasattr(yt_track, "thumbnail_url"):
+                thumbnail_url = yt_track.thumbnail_url
+
+            # Safely get added_at
+            added_at = None
+            if hasattr(yt_track, "added_at"):
+                added_at = yt_track.added_at
+
+            # Convert to YouTubeTrackItem
             track_items.append(
                 YouTubeTrackItem(
-                    id=yt_track.id,  # Use the id attribute instead of video_id
-                    title=yt_track.title,
+                    id=track_id,
+                    title=title,
                     artist=artist,
-                    duration=yt_track.duration_seconds or 0,  # Make sure duration is never None
-                    thumbnail_url=yt_track.thumbnail_url,
-                    added_at=None,  # YouTube API doesn't provide added date for playlist items
+                    duration=duration,  # Use the duration_seconds attribute but parameter is named 'duration'
+                    thumbnail_url=thumbnail_url,
+                    added_at=added_at,
                     album_id=None,  # No album in database yet
                     has_image=False,  # No image in database yet
                 )
             )
 
+        logger.info(f"Created {len(track_items)} YouTube track items")
         return track_items
 
     def import_playlist(self, playlist_id: Any, parent: QWidget | None = None) -> bool:
@@ -703,3 +867,42 @@ class YouTubeDataProvider(BasePlatformDataProvider):
             if parent:
                 QMessageBox.critical(parent, "Sync Failed", f"Failed to sync playlist: {str(e)}")
             return False
+
+
+def _youtube_worker_process(playlist_id, result_file):
+    """Worker function that runs in a separate process."""
+    try:
+        # Import needed modules inside worker
+        import pickle
+        import time
+
+        from loguru import logger
+
+        from selecta.core.data.repositories.settings_repository import SettingsRepository
+        from selecta.core.platform.platform_factory import PlatformFactory
+
+        # Set up a clean YouTube client
+        settings_repo = SettingsRepository()
+        platform_client = PlatformFactory.create("youtube", settings_repo)
+
+        if not platform_client:
+            logger.warning("Could not create YouTube client in worker")
+            return
+
+        # Try to get tracks
+        try:
+            # Allow limited time for track fetching
+            time.time() + 10  # 10 second timeout
+
+            tracks = platform_client.get_playlist_tracks(str(playlist_id))
+
+            # Serialize tracks to file
+            with open(result_file, "wb") as f:
+                pickle.dump(tracks, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            logger.info(f"Worker successfully fetched {len(tracks)} YouTube tracks")
+        except Exception as e:
+            logger.warning(f"Worker failed to fetch YouTube tracks: {e}")
+    except Exception as outer_e:
+        # Last resort error handler
+        print(f"YouTube worker fatal error: {outer_e}")

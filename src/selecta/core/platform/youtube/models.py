@@ -1,5 +1,6 @@
 """YouTube data models."""
 
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
@@ -143,6 +144,7 @@ class YouTubeVideo:
     view_count: int | None = None
     like_count: int | None = None
     added_at: datetime | None = None
+    playlist_item_id: str | None = None  # ID of this video in a specific playlist (for removal)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert this video to a dictionary representation.
@@ -171,6 +173,8 @@ class YouTubeVideo:
             result["like_count"] = self.like_count
         if self.added_at:
             result["added_at"] = self.added_at.isoformat()
+        if self.playlist_item_id:
+            result["playlist_item_id"] = self.playlist_item_id
 
         return result
 
@@ -212,17 +216,22 @@ class YouTubeVideo:
             view_count=data.get("view_count"),
             like_count=data.get("like_count"),
             added_at=added_at,
+            playlist_item_id=data.get("playlist_item_id"),
         )
 
     @classmethod
     def from_youtube_dict(
-        cls, video_dict: YouTubeVideoDict | dict[str, Any], added_at: datetime | None = None
+        cls,
+        video_dict: YouTubeVideoDict | dict[str, Any],
+        added_at: datetime | None = None,
+        playlist_item_id: str | None = None,
     ) -> "YouTubeVideo":
         """Create a YouTubeVideo from a YouTube API response dictionary.
 
         Args:
             video_dict: YouTube video dictionary from the API
             added_at: When the video was added to a playlist (if applicable)
+            playlist_item_id: Playlist item ID (for videos from playlists, needed for removal)
 
         Returns:
             YouTubeVideo instance
@@ -267,19 +276,15 @@ class YouTubeVideo:
         like_count = None
 
         if "viewCount" in statistics:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 view_count = int(statistics["viewCount"])
-            except (ValueError, TypeError):
-                pass
 
         if "likeCount" in statistics:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 like_count = int(statistics["likeCount"])
-            except (ValueError, TypeError):
-                pass
 
         return cls(
-            id=video_id,
+            id=str(video_id),
             title=snippet.get("title", ""),
             channel_id=snippet.get("channelId", ""),
             channel_title=snippet.get("channelTitle", ""),
@@ -290,6 +295,7 @@ class YouTubeVideo:
             view_count=view_count,
             like_count=like_count,
             added_at=added_at,
+            playlist_item_id=playlist_item_id,
         )
 
 
@@ -308,9 +314,7 @@ class YouTubePlaylist:
     published_at: datetime | None = None
 
     @classmethod
-    def from_youtube_dict(
-        cls, playlist_dict: YouTubePlaylistDict | dict[str, Any]
-    ) -> "YouTubePlaylist":
+    def from_youtube_dict(cls, playlist_dict: YouTubePlaylistDict | dict[str, Any]) -> "YouTubePlaylist":
         """Create a YouTubePlaylist from a YouTube API response dictionary.
 
         Args:

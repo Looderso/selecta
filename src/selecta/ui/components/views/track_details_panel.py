@@ -22,6 +22,7 @@ from selecta.core.utils.path_helper import get_resource_path
 from selecta.ui.components.common.image_loader import DatabaseImageLoader
 from selecta.ui.components.common.selection_state import SelectionState
 from selecta.ui.components.playlist.base_items import BaseTrackItem
+from selecta.ui.components.views.track_display_config import TrackDisplayConfig
 
 
 class PlatformButton(QPushButton):
@@ -75,20 +76,27 @@ class MetadataField(QWidget):
     # Signal when the field value is changed
     value_changed = pyqtSignal(str, str)  # field_name, new_value
 
-    def __init__(self, name: str, display_name: str, value: str, parent=None):
+    def __init__(self, name: str, display_name: str, value: Any, parent=None):
         """Initialize the metadata field.
 
         Args:
             name: Field name (e.g., "title")
             display_name: Display name (e.g., "Title")
-            value: Current value
+            value: Current value (can be string, int, float, etc.)
             parent: Parent widget
         """
         super().__init__(parent)
         self.name = name
         self.display_name = display_name
-        self.original_value = value
-        self.current_value = value
+
+        # Ensure value is a string for display and storage
+        if not isinstance(value, str):
+            self.original_value = str(value) if value is not None else ""
+            self.current_value = str(value) if value is not None else ""
+        else:
+            self.original_value = value
+            self.current_value = value
+
         self.platform_values: dict[str, str] = {}  # Values from different platforms
 
         # Create layout
@@ -115,7 +123,8 @@ class MetadataField(QWidget):
         # Field value with editing
         edit_layout = QHBoxLayout()
 
-        self.value_edit = QLineEdit(value)
+        # Ensure we always pass a string to QLineEdit
+        self.value_edit = QLineEdit(self.current_value)
         self.value_edit.textChanged.connect(self._on_text_changed)
 
         # Reset button (initially hidden)
@@ -129,21 +138,25 @@ class MetadataField(QWidget):
         edit_layout.addWidget(self.reset_button)
         layout.addLayout(edit_layout)
 
-    def add_platform_suggestion(self, platform: str, value: str) -> None:
+    def add_platform_suggestion(self, platform: str, value: Any) -> None:
         """Add a platform suggestion button.
 
         Args:
             platform: Platform name (e.g., "spotify")
-            value: Value from this platform
+            value: Value from this platform (can be string, int, float, etc.)
         """
-        if not value or value == self.current_value:
+        # Convert value to string if it's not already
+        str_value = (str(value) if value is not None else "") if not isinstance(value, str) else value
+
+        # Skip if empty or matches current value
+        if not str_value or str_value == self.current_value:
             return
 
-        self.platform_values[platform] = value
+        self.platform_values[platform] = str_value
 
         # Create button for this platform
         platform_button = PlatformButton(platform)
-        platform_button.setToolTip(f"Use '{value}' from {platform.capitalize()}")
+        platform_button.setToolTip(f"Use '{str_value}' from {platform.capitalize()}")
         platform_button.clicked.connect(lambda: self._on_platform_clicked(platform))
 
         # Add to container
@@ -471,13 +484,21 @@ class TrackDetailsPanel(QWidget):
             self._platform_info = {}
 
     def _create_metadata_fields(self, track: BaseTrackItem) -> None:
-        """Create metadata fields from track data.
+        """Create metadata fields from track data based on platform.
 
         Args:
             track: Track item to create fields for
         """
         # Get track data
         display_data = track.to_display_data()
+
+        # Determine the platform of the track
+        platform = getattr(track, "platform", "default")
+        platform = platform.lower() if platform else "default"
+
+        from loguru import logger
+
+        logger.debug(f"Creating metadata fields for platform: {platform}")
 
         # Get genres and tags for this track
         genres = []
@@ -500,28 +521,44 @@ class TrackDetailsPanel(QWidget):
                 country = platform_metadata["country"]
                 break
 
-        # Create fields with current values
-        fields_config = [
-            ("title", "Title", display_data.get("title", "")),
-            ("artist", "Artist", display_data.get("artist", "")),
-            ("album", "Album", display_data.get("album_name", "")),
-            ("year", "Year", str(display_data.get("year", "")) if display_data.get("year") else ""),
-            ("bpm", "BPM", str(display_data.get("bpm", "")) if display_data.get("bpm") else ""),
-            ("country", "Country", country),
-            ("genres", "Genres", ", ".join(genres)),
-            ("tags", "Tags", ", ".join(tags)),
-        ]
+        # Create a dictionary of available values, ensuring all values are strings
+        available_values = {
+            "title": display_data.get("title", ""),
+            "artist": display_data.get("artist", ""),
+            "album": display_data.get("album_name", ""),
+            "year": str(display_data.get("year", "")) if display_data.get("year") is not None else "",
+            "bpm": str(display_data.get("bpm", "")) if display_data.get("bpm") is not None else "",
+            "country": country,
+            "genres": ", ".join(genres),
+            "tags": ", ".join(tags),
+            "duration": str(display_data.get("duration", "")) if display_data.get("duration") is not None else "",
+            "quality": str(display_data.get("quality", "")) if display_data.get("quality") is not None else "",
+        }
 
-        for field_name, display_name, value in fields_config:
+        # Get platform-specific field configuration
+        platform_fields = TrackDisplayConfig.get_fields_for_platform(platform)
+
+        # Show/hide update button based on platform
+        self.update_from_platforms_button.setVisible(TrackDisplayConfig.should_show_platform_update_button(platform))
+
+        # Create fields for this platform
+        for field_key, display_name in platform_fields:
+            # Skip fields with no value
+            if field_key not in available_values or not available_values[field_key]:
+                continue
+
             # Create field widget
-            field = MetadataField(field_name, display_name, value)
+            value = available_values[field_key]
+            field = MetadataField(field_key, display_name, value)
             field.value_changed.connect(self._on_field_value_changed)
 
             # Add to layout
             self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, field)
 
             # Save reference
-            self._metadata_fields[field_name] = field
+            self._metadata_fields[field_key] = field
+
+        logger.debug(f"Created {len(self._metadata_fields)} metadata fields for platform {platform}")
 
     def _on_field_value_changed(self, field_name: str, new_value: str) -> None:
         """Handle field value changes.
@@ -617,7 +654,7 @@ class TrackDetailsPanel(QWidget):
             for key in platform_keys:
                 if key in platform_metadata and platform_metadata[key]:
                     # Convert to string if needed
-                    value = str(platform_metadata[key])
+                    value = str(platform_metadata[key]) if platform_metadata[key] is not None else ""
 
                     # Special handling for arrays (like artists in Spotify)
                     if isinstance(platform_metadata[key], list):
