@@ -29,9 +29,7 @@ class DuplicateDetector:
         # Check if Collection playlist exists
         playlists = self.playlist_repo.get_all()
         for playlist in playlists:
-            if column_to_str(playlist.name) == "Collection" and not column_to_bool(
-                playlist.is_folder
-            ):
+            if column_to_str(playlist.name) == "Collection" and not column_to_bool(playlist.is_folder):
                 return column_to_int(playlist.id)
 
         return None
@@ -126,25 +124,17 @@ class DuplicateDetector:
             Similarity score (0.0-1.0)
         """
         # Compare titles
-        title_similarity = difflib.SequenceMatcher(
-            None, track1.title.lower(), track2.title.lower()
-        ).ratio()
+        title_similarity = difflib.SequenceMatcher(None, track1.title.lower(), track2.title.lower()).ratio()
 
         # Compare artists
-        artist_similarity = difflib.SequenceMatcher(
-            None, track1.artist.lower(), track2.artist.lower()
-        ).ratio()
+        artist_similarity = difflib.SequenceMatcher(None, track1.artist.lower(), track2.artist.lower()).ratio()
 
         # Compare duration if available
         duration_similarity = 1.0
         if track1.duration_ms and track2.duration_ms:
             # If duration differs by less than 3 seconds, consider them similar
             duration_diff_seconds = abs(track1.duration_ms - track2.duration_ms) / 1000
-            if duration_diff_seconds < 3:
-                duration_similarity = 1.0
-            else:
-                # Scale similarity based on difference (max difference of 30 seconds)
-                duration_similarity = max(0, 1.0 - (duration_diff_seconds / 30))
+            duration_similarity = 1.0 if duration_diff_seconds < 3 else max(0, 1.0 - duration_diff_seconds / 30)
 
         # Weight the factors
         weighted_similarity = (

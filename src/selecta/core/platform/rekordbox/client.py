@@ -452,11 +452,12 @@ class RekordboxClient(AbstractPlatform):
 
         return RekordboxTrack.from_rekordbox_content(content)
 
-    def search_tracks(self, query: str) -> list[RekordboxTrack]:
+    def search_tracks(self, query: str, limit: int = 10) -> list[RekordboxTrack]:
         """Search for tracks by title, artist, or album.
 
         Args:
             query: The search query
+            limit: Maximum number of results to return
 
         Returns:
             List of matching RekordboxTrack objects
@@ -468,7 +469,8 @@ class RekordboxClient(AbstractPlatform):
             raise ValueError("Rekordbox client not authenticated")
 
         results = self.db.search_content(query)
-        return [RekordboxTrack.from_rekordbox_content(content) for content in results]
+        tracks = [RekordboxTrack.from_rekordbox_content(content) for content in results]
+        return tracks[:limit]  # Apply limit to results
 
     def get_all_playlists(self) -> list[RekordboxPlaylist]:
         """Get all playlists in the Rekordbox database.
@@ -1009,3 +1011,58 @@ class RekordboxClient(AbstractPlatform):
         except Exception as e:
             logger.exception(f"Error adding track to Rekordbox: {e}")
             return None
+
+    def delete_playlist(self, playlist_id: str, force: bool = False) -> bool:
+        """Delete a playlist from Rekordbox.
+
+        Args:
+            playlist_id: The Rekordbox playlist ID
+            force: If True, attempts to commit even if Rekordbox is running
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If the client is not authenticated
+            RuntimeError: If Rekordbox is running and force=False
+        """
+        if not self.db:
+            raise ValueError("Rekordbox client not authenticated")
+
+        try:
+            # Get the playlist to delete
+            playlist = self.db.get_playlist(ID=playlist_id)
+            if not playlist:
+                logger.warning(f"Playlist with ID {playlist_id} not found")
+                return False
+
+            # Check if we have a remove_playlist method
+            if hasattr(self.db, "remove_playlist"):
+                # Remove the playlist from the database
+                self.db.remove_playlist(playlist)
+            elif hasattr(self.db, "delete_playlist"):
+                # Alternative method name
+                self.db.delete_playlist(playlist)
+            else:
+                # If pyrekordbox doesn't support playlist deletion, we'll need to work around it
+                logger.warning("Rekordbox database doesn't support playlist deletion")
+                return False
+
+            # Commit changes to the database
+            try:
+                self.custom_commit(force=force)
+                logger.info(f"Deleted Rekordbox playlist: {playlist_id}")
+                return True
+            except RuntimeError:
+                # Let the RuntimeError propagate up if it's related to Rekordbox running
+                raise
+            except Exception as e:
+                logger.exception(f"Error committing playlist deletion: {e}")
+                return False
+
+        except RuntimeError:
+            # Let the RuntimeError propagate up if it's related to Rekordbox running
+            raise
+        except Exception as e:
+            logger.exception(f"Error deleting Rekordbox playlist {playlist_id}: {e}")
+            return False

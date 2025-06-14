@@ -54,7 +54,8 @@ class SpotifyClient(AbstractPlatform):
             # Try to make a simple API call
             self.client.current_user()
             return True
-        except:
+        except Exception as e:
+            logger.warning(f"Spotify authentication check failed: {e}")
             return False
 
     def authenticate(self) -> bool:
@@ -380,9 +381,7 @@ class SpotifyClient(AbstractPlatform):
 
         return tracks
 
-    def import_playlist_to_local(
-        self, spotify_playlist_id: str
-    ) -> tuple[list[SpotifyTrack], SpotifyPlaylist]:
+    def import_playlist_to_local(self, spotify_playlist_id: str) -> tuple[list[SpotifyTrack], SpotifyPlaylist]:
         """Import a Spotify playlist to the local database.
 
         Args:
@@ -456,3 +455,30 @@ class SpotifyClient(AbstractPlatform):
                 self.add_tracks_to_playlist(playlist.id, track_uris)
 
             return playlist.id
+
+    def delete_playlist(self, playlist_id: str) -> bool:
+        """Delete a playlist (actually unfollow since Spotify doesn't support deletion).
+
+        Note: Spotify API doesn't support playlist deletion. We can only unfollow playlists.
+        For playlists we created, this effectively removes them from our library.
+
+        Args:
+            playlist_id: The Spotify playlist ID
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If the client is not authenticated
+        """
+        if not self.client:
+            raise ValueError("Spotify client not authenticated")
+
+        try:
+            # Unfollow the playlist (this removes it from the user's library)
+            self.client.current_user_unfollow_playlist(playlist_id)
+            logger.info(f"Unfollowed/removed Spotify playlist: {playlist_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error unfollowing Spotify playlist {playlist_id}: {e}")
+            return False

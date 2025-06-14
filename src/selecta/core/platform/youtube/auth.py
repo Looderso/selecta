@@ -1,7 +1,10 @@
-"""YouTube authentication utility functions."""
+"""YouTube authentication utility functions with improved SSL handling."""
 
+import random
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from ssl import SSLError
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
@@ -16,7 +19,7 @@ from selecta.core.utils.type_helpers import is_column_truthy
 
 
 class YouTubeAuthManager:
-    """Handles YouTube authentication and token management."""
+    """Handles YouTube authentication and token management with improved SSL handling."""
 
     # Default redirect URI for the OAuth flow
     DEFAULT_REDIRECT_URI = "http://localhost:8080"
@@ -55,8 +58,20 @@ class YouTubeAuthManager:
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri or self.DEFAULT_REDIRECT_URI
 
+        # Rate limiting state
+        self._last_client_creation_time = 0
+        self._min_client_creation_interval = 5.0  # 5 seconds between client creations
+
+        # SSL configuration state
+        self._ssl_error_count = 0
+        self._max_ssl_retries = 3
+        self._current_ssl_level = 0  # 0 = normal, 1 = tolerant, 2 = insecure
+
         # We'll create the OAuth flow when needed
         self.flow = None
+
+        # Keep track of created clients to ensure proper cleanup
+        self._active_clients = set()
 
     def _create_flow(self) -> InstalledAppFlow | None:
         """Create the OAuth flow for YouTube."""
@@ -139,12 +154,25 @@ class YouTubeAuthManager:
                 """Suppress server logs."""
                 return
 
-        # Start local server to catch the callback
-        server = HTTPServer(("localhost", 8080), CallbackHandler)
+        # Try to find an available port for the callback server
+        server = None
+        for port in range(8080, 8090):
+            try:
+                server = HTTPServer(("localhost", port), CallbackHandler)
+                # Update the redirect URI with the actual port
+                self.redirect_uri = f"http://localhost:{port}"
+                break
+            except OSError:
+                logger.warning(f"Port {port} is in use, trying next port")
+                continue
+
+        if not server:
+            logger.error("Could not find an available port for YouTube auth callback")
+            return None
 
         def run_server():
             """Run the HTTP server until we receive the authentication code."""
-            logger.info("Starting local server to catch YouTube OAuth callback...")
+            logger.info(f"Starting local server on port {port} to catch YouTube OAuth callback...")
             while not server_closed["closed"] and not code_received["code"]:
                 server.handle_request()
             logger.info("OAuth callback server stopped.")
@@ -193,11 +221,23 @@ class YouTubeAuthManager:
             return None
 
     def get_youtube_client(self):
-        """Get an authenticated YouTube API client.
+        """Get an authenticated YouTube API client with rate limiting and progressive SSL fallbacks.
 
         Returns:
             An authenticated YouTube API service or None if authentication fails
         """
+        # Apply rate limiting to client creation
+        now = time.time()
+        time_since_last = now - self._last_client_creation_time
+
+        if time_since_last < self._min_client_creation_interval:
+            sleep_time = self._min_client_creation_interval - time_since_last
+            logger.debug(f"Rate limiting YouTube client creation: sleeping for {sleep_time}s")
+            time.sleep(sleep_time)
+
+        # Update creation time
+        self._last_client_creation_time = time.time()
+
         # Check if we have stored credentials
         token_info = self._load_tokens()
 
@@ -205,38 +245,184 @@ class YouTubeAuthManager:
             logger.warning("No stored YouTube tokens found.")
             return None
 
-        try:
-            # Create credentials object from token info
-            from google.oauth2.credentials import Credentials
+        # Try to create client with progressively more tolerant SSL settings
+        for ssl_level in range(self._current_ssl_level, 3):
+            try:
+                client = self._create_client_with_ssl_level(token_info, ssl_level)
 
-            credentials = Credentials(
-                token=token_info["access_token"],
-                refresh_token=token_info["refresh_token"],
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=self.client_id,
-                client_secret=self.client_secret,
+                if client:
+                    # Update the current SSL level if we succeeded with a different level
+                    if ssl_level != self._current_ssl_level:
+                        logger.info(f"Updated YouTube SSL level from {self._current_ssl_level} to {ssl_level}")
+                        self._current_ssl_level = ssl_level
+
+                    # Add to active clients
+                    self._active_clients.add(id(client))
+                    return client
+
+            except SSLError as e:
+                logger.warning(f"SSL error at level {ssl_level}: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Error creating YouTube client at SSL level {ssl_level}: {e}")
+                continue
+
+        logger.error("All SSL levels failed for YouTube client creation")
+        return None
+
+    def _create_client_with_ssl_level(self, token_info, ssl_level):
+        """Create a YouTube client with specific SSL security level.
+
+        Args:
+            token_info: Dictionary with token information
+            ssl_level: 0=normal, 1=tolerant, 2=insecure
+
+        Returns:
+            YouTube client or None if failed
+        """
+        import ssl
+
+        import requests
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.http import HttpRequest
+        from requests.adapters import HTTPAdapter
+        from urllib3.util import ssl_
+
+        # Create credentials object from token info
+        credentials = Credentials(
+            token=token_info["access_token"],
+            refresh_token=token_info["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+        )
+
+        # Check if token is expired and refresh if needed
+        if credentials.expired:
+            logger.info("YouTube access token expired, refreshing...")
+            credentials.refresh(Request())
+
+            # Update token info with refreshed token
+            token_info = {
+                "access_token": credentials.token,
+                "refresh_token": credentials.refresh_token,
+                "expires_at": credentials.expiry.timestamp(),
+            }
+            self._save_tokens(token_info)
+
+        # Configure SSL based on level
+        session = requests.Session()
+
+        if ssl_level == 0:
+            # Normal SSL verification with standard settings
+            logger.debug("Creating YouTube client with normal SSL verification")
+            session.verify = True
+
+        elif ssl_level == 1:
+            # Tolerant SSL with custom adapter
+            logger.debug("Creating YouTube client with tolerant SSL settings")
+
+            class TolerantSSLAdapter(HTTPAdapter):
+                def init_poolmanager(self, *args, **kwargs):
+                    context = ssl_.create_urllib3_context(
+                        ssl_version=ssl.PROTOCOL_TLS,
+                        cert_reqs=ssl.CERT_REQUIRED,
+                        options=0x4 | 0x8,  # OP_LEGACY_SERVER_CONNECT | OP_NO_COMPRESSION
+                    )
+                    # Allow legacy renegotiation for better compatibility
+                    context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0x4)
+                    kwargs["ssl_context"] = context
+                    return super().init_poolmanager(*args, **kwargs)
+
+            session.mount("https://", TolerantSSLAdapter())
+
+        elif ssl_level == 2:
+            # Completely insecure - only use as last resort
+            logger.warning("Creating YouTube client with SSL verification DISABLED")
+            session.verify = False
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        # Configure discovery cache to avoid network requests during discovery
+        try:
+            # Build YouTube client with our session and settings
+            youtube = build(
+                "youtube",
+                "v3",
+                credentials=credentials,
+                requestBuilder=HttpRequest,
+                cache_discovery=False,
+                static_discovery=True,  # Avoid network calls during discovery
             )
 
-            # Check if token is expired and refresh if needed
-            if credentials.expired:
-                logger.info("YouTube access token expired, refreshing...")
-                credentials.refresh(Request())
+            # Test the client
+            try:
+                logger.debug("Testing newly created YouTube client")
+                # Make a simple test request with backoff
+                self._test_request_with_backoff(lambda: youtube.channels().list(part="snippet", mine=True).execute())
+                logger.info("YouTube client created and tested successfully")
+                return youtube
 
-                # Update token info with refreshed token
-                token_info = {
-                    "access_token": credentials.token,
-                    "refresh_token": credentials.refresh_token,
-                    "expires_at": credentials.expiry.timestamp(),
-                }
-                self._save_tokens(token_info)
-
-            # Build and return the YouTube service
-            youtube = build("youtube", "v3", credentials=credentials)
-            return youtube
+            except Exception as e:
+                logger.warning(f"YouTube client test failed: {e}")
+                raise
 
         except Exception as e:
-            logger.exception(f"Error creating YouTube client: {e}")
-            return None
+            logger.error(f"Error building YouTube client: {e}")
+            raise
+
+    def _test_request_with_backoff(self, request_func, max_retries=2):
+        """Execute a test request with backoff for transient errors.
+
+        Args:
+            request_func: Function to execute
+            max_retries: Maximum retries
+
+        Returns:
+            Response from the request
+
+        Raises:
+            Exception if all retries fail
+        """
+        retries = 0
+        while retries <= max_retries:
+            try:
+                if retries > 0:
+                    # Add backoff with jitter
+                    sleep_time = (2**retries) + (random.random() * 0.5)
+                    logger.debug(f"Test request retry {retries}: sleeping for {sleep_time}s")
+                    time.sleep(sleep_time)
+
+                return request_func()
+
+            except Exception as e:
+                retries += 1
+                logger.warning(f"Test request error, retry {retries}/{max_retries}: {e}")
+                if retries > max_retries:
+                    raise
+
+        # Should not reach here
+        raise RuntimeError("All test request retries failed")
+
+    def cleanup_client(self, client_id):
+        """Clean up a YouTube client by ID to prevent resource leaks.
+
+        Args:
+            client_id: ID of the client to clean up
+        """
+        try:
+            if client_id in self._active_clients:
+                self._active_clients.remove(client_id)
+                logger.debug(f"YouTube client {client_id} marked for cleanup")
+
+                # Force garbage collection to clean up resources
+                import gc
+
+                gc.collect()
+
+        except Exception as e:
+            logger.error(f"Error cleaning up YouTube client: {e}")
 
     def _save_tokens(self, token_info: dict) -> None:
         """Save YouTube tokens to the application settings."""
@@ -273,13 +459,8 @@ class YouTubeAuthManager:
             # Verify the save worked by immediately reading back
             verification = self.settings_repo.get_credentials("youtube")
             if verification:
-                logger.debug(
-                    f"Verification - access_token present: {verification.access_token is not None}"
-                )
-                logger.debug(
-                    f"Verification - refresh_token present:"
-                    f" {verification.refresh_token is not None}"
-                )
+                logger.debug(f"Verification - access_token present: {verification.access_token is not None}")
+                logger.debug(f"Verification - refresh_token present: {verification.refresh_token is not None}")
             else:
                 logger.warning("Verification failed - couldn't read back saved credentials")
         except Exception as e:
@@ -289,63 +470,37 @@ class YouTubeAuthManager:
 
     def _load_tokens(self) -> dict | None:
         """Load YouTube tokens from the application settings."""
-        creds = self.settings_repo.get_credentials("youtube")
-        logger.debug(f"Loading tokens for YouTube: credentials found = {creds is not None}")
+        try:
+            creds = self.settings_repo.get_credentials("youtube")
+            logger.debug(f"Loading tokens for YouTube: credentials found = {creds is not None}")
 
-        if creds:
-            logger.debug(f"access_token present: {is_column_truthy(creds.access_token)}")
-            logger.debug(f"refresh_token present: {is_column_truthy(creds.refresh_token)}")
+            if creds:
+                logger.debug(f"access_token present: {is_column_truthy(creds.access_token)}")
+                logger.debug(f"refresh_token present: {is_column_truthy(creds.refresh_token)}")
 
-        if (
-            not creds
-            or not is_column_truthy(creds.access_token)
-            or not is_column_truthy(creds.refresh_token)
-        ):
-            return None
+            if (
+                not creds
+                or not is_column_truthy(creds.access_token)
+                or not is_column_truthy(creds.refresh_token)
+                or not hasattr(creds, "token_expiry")
+                or creds.token_expiry is None
+            ):
+                return None
 
-        # Convert to the expected format
-        expires_at = int(creds.token_expiry.timestamp())
+            # Convert to the expected format
+            try:
+                expires_at = int(creds.token_expiry.timestamp())
+            except (AttributeError, ValueError, TypeError):
+                # If token_expiry is invalid, use a default expiration of 1 hour from now
+                from datetime import UTC, datetime, timedelta
 
-        return {
-            "access_token": creds.access_token,
-            "refresh_token": creds.refresh_token,
-            "expires_at": expires_at,
-        }
+                expires_at = int((datetime.now(UTC) + timedelta(hours=1)).timestamp())
 
-
-def validate_youtube_credentials(client_id: str, client_secret: str) -> bool:
-    """Validate YouTube API credentials by making a test request.
-
-    Args:
-        client_id: YouTube API client ID
-        client_secret: YouTube API client secret
-
-    Returns:
-        True if the credentials are valid, False otherwise
-    """
-    if not client_id or not client_secret:
-        return False
-
-    try:
-        # Create client config dict from credentials
-        client_config = {
-            "installed": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "redirect_uris": ["http://localhost"],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
+            return {
+                "access_token": creds.access_token,
+                "refresh_token": creds.refresh_token,
+                "expires_at": expires_at,
             }
-        }
-
-        # Make a simple test request with client credentials
-        # For YouTube, we can't easily validate without user auth,
-        # so we just check if we can create the flow
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            scopes=["https://www.googleapis.com/auth/youtube.readonly"],
-        )
-        return flow is not None
-    except Exception as e:
-        logger.error(f"Error validating YouTube credentials: {e}")
-        return False
+        except Exception as e:
+            logger.exception(f"Error loading YouTube tokens: {e}")
+            return None

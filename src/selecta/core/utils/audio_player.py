@@ -396,9 +396,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
                             uris=[f"spotify:track:{self.spotify_track_id}"],
                         )
                     else:
-                        self.spotify_api_client.start_playback(
-                            uris=[f"spotify:track:{self.spotify_track_id}"]
-                        )
+                        self.spotify_api_client.start_playback(uris=[f"spotify:track:{self.spotify_track_id}"])
                 else:
                     # Just resume current playback if no specific track
                     if self.current_device_id:
@@ -486,9 +484,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
         if self.use_spotify_app and self.spotify_api_client:
             try:
                 if self.current_device_id:
-                    self.spotify_api_client.seek_track(
-                        position_ms, device_id=self.current_device_id
-                    )
+                    self.spotify_api_client.seek_track(position_ms, device_id=self.current_device_id)
                 else:
                     self.spotify_api_client.seek_track(position_ms)
 
@@ -579,11 +575,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
                         return info.get("preview_url")
                 else:
                     try:
-                        if (
-                            info.platform == "spotify"
-                            and hasattr(info, "preview_url")
-                            and info.preview_url
-                        ):
+                        if info.platform == "spotify" and hasattr(info, "preview_url") and info.preview_url:
                             return info.preview_url
                     except AttributeError:
                         continue
@@ -592,9 +584,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
         for attr_name in ["preview", "spotify_preview_url", "preview_link"]:
             if hasattr(track, attr_name) and getattr(track, attr_name):
                 value = getattr(track, attr_name)
-                if isinstance(value, str) and (
-                    value.startswith("http://") or value.startswith("https://")
-                ):
+                if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
                     return value
 
         # If we have a Spotify URI or ID but no preview URL, try to fetch it from the API
@@ -656,10 +646,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
         # Check for direct Spotify ID attributes
         if hasattr(track, "spotify_id") and track.spotify_id:
             spotify_id = track.spotify_id
-            if not spotify_id.startswith("spotify:"):
-                spotify_uri = f"spotify:track:{spotify_id}"
-            else:
-                spotify_uri = spotify_id
+            spotify_uri = f"spotify:track:{spotify_id}" if not spotify_id.startswith("spotify:") else spotify_id
         # Check for URI directly
         elif hasattr(track, "uri") and track.uri and "spotify" in track.uri:
             spotify_uri = track.uri
@@ -760,10 +747,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
         spotify_uri = self._get_spotify_uri(track)
         if spotify_uri:
             # Extract ID from URI if needed
-            if spotify_uri.startswith("spotify:track:"):
-                spotify_id = spotify_uri.split(":")[-1]
-            else:
-                spotify_id = spotify_uri
+            spotify_id = spotify_uri.split(":")[-1] if spotify_uri.startswith("spotify:track:") else spotify_uri
             return spotify_id, spotify_uri
 
         # Check platform info directly
@@ -794,10 +778,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
         # Check for direct Spotify ID attributes
         if hasattr(track, "spotify_id") and track.spotify_id:
             spotify_id = track.spotify_id
-            if not spotify_id.startswith("spotify:"):
-                spotify_uri = f"spotify:track:{spotify_id}"
-            else:
-                spotify_uri = spotify_id
+            spotify_uri = f"spotify:track:{spotify_id}" if not spotify_id.startswith("spotify:") else spotify_id
             return spotify_id, spotify_uri
 
         # Check for platform metadata
@@ -806,10 +787,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
                 spotify_metadata = track.get_platform_metadata("spotify")
                 if spotify_metadata and "id" in spotify_metadata:
                     spotify_id = spotify_metadata["id"]
-                    if not spotify_id.startswith("spotify:"):
-                        spotify_uri = f"spotify:track:{spotify_id}"
-                    else:
-                        spotify_uri = spotify_id
+                    spotify_uri = f"spotify:track:{spotify_id}" if not spotify_id.startswith("spotify:") else spotify_id
                     return spotify_id, spotify_uri
             except Exception as e:
                 logger.error(f"Error getting platform metadata: {e}")
@@ -857,17 +835,13 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
                 for device in devices:
                     if device.get("is_active", False):
                         self.current_device_id = device["id"]
-                        logger.info(
-                            f"Using active Spotify device: {device['name']} ({device['id']})"
-                        )
+                        logger.info(f"Using active Spotify device: {device['name']} ({device['id']})")
                         break
 
                 # If no active device found, use the first available one
                 if not self.current_device_id and devices:
                     self.current_device_id = devices[0]["id"]
-                    logger.info(
-                        f"Using first Spotify device: {devices[0]['name']} ({devices[0]['id']})"
-                    )
+                    logger.info(f"Using first Spotify device: {devices[0]['name']} ({devices[0]['id']})")
 
             # Try to start playback immediately if there are devices available
             if devices:
@@ -892,9 +866,7 @@ class SpotifyAudioPlayer(AbstractAudioPlayer):
 
             # If we have an ID but no preview, we can still control Spotify app
             if spotify_id:
-                self.spotify_track_id = (
-                    spotify_id.split(":")[-1] if ":" in spotify_id else spotify_id
-                )
+                self.spotify_track_id = spotify_id.split(":")[-1] if ":" in spotify_id else spotify_id
                 self.use_spotify_app = True
                 self.current_track = track
                 self.track_changed.emit(track)
@@ -977,11 +949,7 @@ class AudioPlayerFactory:
                 logger.error(f"Error checking display data: {e}")
 
         # Check if track has platforms attribute
-        if (
-            hasattr(track, "platforms")
-            and isinstance(track.platforms, list)
-            and "spotify" in track.platforms
-        ):
+        if hasattr(track, "platforms") and isinstance(track.platforms, list) and "spotify" in track.platforms:
             logger.info("Creating Spotify player based on platforms attribute")
             return SpotifyAudioPlayer()
 

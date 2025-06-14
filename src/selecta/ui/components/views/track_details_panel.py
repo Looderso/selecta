@@ -76,20 +76,27 @@ class MetadataField(QWidget):
     # Signal when the field value is changed
     value_changed = pyqtSignal(str, str)  # field_name, new_value
 
-    def __init__(self, name: str, display_name: str, value: str, parent=None):
+    def __init__(self, name: str, display_name: str, value: Any, parent=None):
         """Initialize the metadata field.
 
         Args:
             name: Field name (e.g., "title")
             display_name: Display name (e.g., "Title")
-            value: Current value
+            value: Current value (can be string, int, float, etc.)
             parent: Parent widget
         """
         super().__init__(parent)
         self.name = name
         self.display_name = display_name
-        self.original_value = value
-        self.current_value = value
+
+        # Ensure value is a string for display and storage
+        if not isinstance(value, str):
+            self.original_value = str(value) if value is not None else ""
+            self.current_value = str(value) if value is not None else ""
+        else:
+            self.original_value = value
+            self.current_value = value
+
         self.platform_values: dict[str, str] = {}  # Values from different platforms
 
         # Create layout
@@ -116,7 +123,8 @@ class MetadataField(QWidget):
         # Field value with editing
         edit_layout = QHBoxLayout()
 
-        self.value_edit = QLineEdit(value)
+        # Ensure we always pass a string to QLineEdit
+        self.value_edit = QLineEdit(self.current_value)
         self.value_edit.textChanged.connect(self._on_text_changed)
 
         # Reset button (initially hidden)
@@ -130,21 +138,25 @@ class MetadataField(QWidget):
         edit_layout.addWidget(self.reset_button)
         layout.addLayout(edit_layout)
 
-    def add_platform_suggestion(self, platform: str, value: str) -> None:
+    def add_platform_suggestion(self, platform: str, value: Any) -> None:
         """Add a platform suggestion button.
 
         Args:
             platform: Platform name (e.g., "spotify")
-            value: Value from this platform
+            value: Value from this platform (can be string, int, float, etc.)
         """
-        if not value or value == self.current_value:
+        # Convert value to string if it's not already
+        str_value = (str(value) if value is not None else "") if not isinstance(value, str) else value
+
+        # Skip if empty or matches current value
+        if not str_value or str_value == self.current_value:
             return
 
-        self.platform_values[platform] = value
+        self.platform_values[platform] = str_value
 
         # Create button for this platform
         platform_button = PlatformButton(platform)
-        platform_button.setToolTip(f"Use '{value}' from {platform.capitalize()}")
+        platform_button.setToolTip(f"Use '{str_value}' from {platform.capitalize()}")
         platform_button.clicked.connect(lambda: self._on_platform_clicked(platform))
 
         # Add to container
@@ -509,18 +521,18 @@ class TrackDetailsPanel(QWidget):
                 country = platform_metadata["country"]
                 break
 
-        # Create a dictionary of available values
+        # Create a dictionary of available values, ensuring all values are strings
         available_values = {
             "title": display_data.get("title", ""),
             "artist": display_data.get("artist", ""),
             "album": display_data.get("album_name", ""),
-            "year": str(display_data.get("year", "")) if display_data.get("year") else "",
-            "bpm": str(display_data.get("bpm", "")) if display_data.get("bpm") else "",
+            "year": str(display_data.get("year", "")) if display_data.get("year") is not None else "",
+            "bpm": str(display_data.get("bpm", "")) if display_data.get("bpm") is not None else "",
             "country": country,
             "genres": ", ".join(genres),
             "tags": ", ".join(tags),
-            "duration": display_data.get("duration", ""),
-            "quality": display_data.get("quality", ""),
+            "duration": str(display_data.get("duration", "")) if display_data.get("duration") is not None else "",
+            "quality": str(display_data.get("quality", "")) if display_data.get("quality") is not None else "",
         }
 
         # Get platform-specific field configuration
@@ -642,7 +654,7 @@ class TrackDetailsPanel(QWidget):
             for key in platform_keys:
                 if key in platform_metadata and platform_metadata[key]:
                     # Convert to string if needed
-                    value = str(platform_metadata[key])
+                    value = str(platform_metadata[key]) if platform_metadata[key] is not None else ""
 
                     # Special handling for arrays (like artists in Spotify)
                     if isinstance(platform_metadata[key], list):

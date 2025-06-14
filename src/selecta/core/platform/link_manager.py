@@ -42,6 +42,33 @@ class PlatformLinkManager:
         self.session = session or self.track_repo.session or get_session()
         self.platform_name = self._get_platform_name()
 
+    def _extract_attribute(self, obj: Any, possible_names: list[str], default: Any = None) -> Any:
+        """Safely extract an attribute from an object.
+
+        Tries multiple possible attribute names until one is found.
+
+        Args:
+            obj: The object to extract from
+            possible_names: List of attribute names to try
+            default: Default value if no attribute is found
+
+        Returns:
+            The attribute value or default
+        """
+        # Check if obj is a dictionary
+        if isinstance(obj, dict):
+            for name in possible_names:
+                if name in obj:
+                    return obj[name]
+            return default
+
+        # Check if obj is an object with attributes
+        for name in possible_names:
+            if hasattr(obj, name):
+                return getattr(obj, name)
+
+        return default
+
     def _get_platform_name(self) -> str:
         """Get the name of the platform from the client class.
 
@@ -54,9 +81,7 @@ class PlatformLinkManager:
             return class_name[:-6].lower()
         return class_name.lower()
 
-    def _get_or_create_album(
-        self, album_name: str, artist_name: str, year: int | None = None
-    ) -> Album | None:
+    def _get_or_create_album(self, album_name: str, artist_name: str, year: int | None = None) -> Album | None:
         """Get an existing album or create a new one.
 
         Args:
@@ -73,9 +98,7 @@ class PlatformLinkManager:
 
         # First try to find an existing album with the same title and artist
         existing_album = (
-            self.session.query(Album)
-            .filter(Album.title == album_name, Album.artist == artist_name)
-            .first()
+            self.session.query(Album).filter(Album.title == album_name, Album.artist == artist_name).first()
         )
 
         if existing_album:
@@ -117,19 +140,23 @@ class PlatformLinkManager:
         """
         # Log the track type we're importing
         track_type = type(platform_track).__name__
-        logger.debug(f"Importing {self.platform_name} track of type {track_type}")
+        logger.info(f"Importing {self.platform_name} track of type {track_type}")
+
+        # For debug purposes, dump the platform_track data
+        if hasattr(platform_track, "__dict__"):
+            logger.info(f"Platform track data: {platform_track.__dict__}")
+        elif isinstance(platform_track, dict):
+            logger.info(f"Platform track data (dict): {platform_track}")
+        else:
+            logger.info(f"Platform track attributes: {dir(platform_track)}")
 
         # Extract common attributes based on the platform
         if self.platform_name == "spotify":
             # Handle Spotify track format - with detailed debug
-            if (
-                hasattr(platform_track, "__class__")
-                and platform_track.__class__.__name__ == "SpotifyTrack"
-            ):
+            if hasattr(platform_track, "__class__") and platform_track.__class__.__name__ == "SpotifyTrack":
                 # Detailed logging for SpotifyTrack instances
                 logger.info(
-                    f"Importing SpotifyTrack: {platform_track.name} "
-                    f"by {', '.join(platform_track.artist_names)}"
+                    f"Importing SpotifyTrack: {platform_track.name} " f"by {', '.join(platform_track.artist_names)}"
                 )
 
                 # Extract from SpotifyTrack dataclass (from spotify/models.py)
@@ -157,8 +184,11 @@ class PlatformLinkManager:
                 year = None
 
                 if album_release_date and len(album_release_date) >= 4:
-                    year = int(album_release_date[:4])
-                    track_data["year"] = year
+                    try:
+                        year = int(album_release_date[:4])
+                        track_data["year"] = year
+                    except ValueError:
+                        logger.warning(f"Could not parse year from date {album_release_date}")
 
                 # If we have album info, get or create the album object
                 if album_name and artist_names:
@@ -186,6 +216,7 @@ class PlatformLinkManager:
                     track_data["title"] = platform_track["name"]
                 else:
                     track_data["title"] = "Unknown Track"
+                    logger.warning("Could not find track name in Spotify track object")
 
                 # Get artist
                 artist_names = []
@@ -194,14 +225,14 @@ class PlatformLinkManager:
                 elif isinstance(platform_track, dict):
                     if "artist_names" in platform_track:
                         artist_names = platform_track["artist_names"]
-                    elif "artists" in platform_track and isinstance(
-                        platform_track["artists"], list
-                    ):
+                    elif "artists" in platform_track and isinstance(platform_track["artists"], list):
                         for artist in platform_track["artists"]:
                             if isinstance(artist, dict) and "name" in artist:
                                 artist_names.append(artist["name"])
 
                 track_data["artist"] = ", ".join(artist_names) if artist_names else "Unknown Artist"
+                if not artist_names:
+                    logger.warning("Could not find artist names in Spotify track object")
 
                 # Get duration
                 if hasattr(platform_track, "duration_ms"):
@@ -221,6 +252,7 @@ class PlatformLinkManager:
                     platform_id = platform_track["id"]
                 else:
                     platform_id = ""
+                    logger.warning("Could not find platform ID in Spotify track object")
 
                 if hasattr(platform_track, "uri"):
                     uri = platform_track.uri
@@ -230,10 +262,7 @@ class PlatformLinkManager:
                     uri = ""
 
             # Create additional platform metadata
-            if (
-                hasattr(platform_track, "__class__")
-                and platform_track.__class__.__name__ == "SpotifyTrack"
-            ):
+            if hasattr(platform_track, "__class__") and platform_track.__class__.__name__ == "SpotifyTrack":
                 # Handle SpotifyTrack metadata with safe attribute access
                 platform_metadata = {}
 
@@ -299,7 +328,7 @@ class PlatformLinkManager:
                             year = int(release_date[:4])
                             track_data["year"] = year
                         except ValueError:
-                            pass
+                            logger.warning(f"Could not parse year from date {release_date}")
 
                     # Create album object if we have name and artist
                     if album_name and track_data.get("artist"):
@@ -318,9 +347,7 @@ class PlatformLinkManager:
                 "artist": getattr(
                     platform_track,
                     "artist_name",
-                    platform_track.get("artist_name", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("artist_name", "") if isinstance(platform_track, dict) else "",
                 ),
                 "duration_ms": getattr(
                     platform_track,
@@ -462,9 +489,7 @@ class PlatformLinkManager:
                 "artist": getattr(
                     platform_track,
                     "channel_title",
-                    platform_track.get("channel_title", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("channel_title", "") if isinstance(platform_track, dict) else "",
                 ),
                 "is_available_locally": False,  # YouTube videos are not local files
             }
@@ -490,7 +515,7 @@ class PlatformLinkManager:
                     year = int(published_at[:4])
                     track_data["year"] = year
                 except ValueError:
-                    pass
+                    logger.warning(f"Could not parse year from published_at {published_at}")
 
             # YouTube videos don't typically have album info, but we could create one
             # based on channel/playlist if needed in the future
@@ -521,20 +546,39 @@ class PlatformLinkManager:
                 "channel_id": getattr(
                     platform_track,
                     "channel_id",
-                    platform_track.get("channel_id", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("channel_id", "") if isinstance(platform_track, dict) else "",
                 ),
                 "thumbnail_url": getattr(
                     platform_track,
                     "thumbnail_url",
-                    platform_track.get("thumbnail_url", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("thumbnail_url", "") if isinstance(platform_track, dict) else "",
                 ),
             }
         else:
             raise ValueError(f"Unsupported platform: {self.platform_name}")
+
+        # Validate essential track data - if missing title or artist, raise exception
+        if not track_data.get("title") or not track_data.get("artist"):
+            logger.error("Cannot import track with missing title or artist")
+            logger.error(f"Track data: {track_data}")
+
+            # Gather platform information for better error reporting
+            platform_description = f"{self.platform_name} track"
+            if platform_id:
+                platform_description += f" with ID {platform_id}"
+
+            error_message = f"Failed to import {platform_description}: "
+            if not track_data.get("title") and not track_data.get("artist"):
+                error_message += "Missing both title and artist"
+            elif not track_data.get("title"):
+                error_message += f"Missing title (Artist: {track_data.get('artist', '')})"
+            else:
+                error_message += f"Missing artist (Title: {track_data.get('title', '')})"
+
+            raise ValueError(error_message)
+
+        # Log the final track data we'll use to create/update the track
+        logger.info(f"Final track data for database: {track_data}")
 
         # Check if this track already exists in our database
         existing_track = None
@@ -640,9 +684,7 @@ class PlatformLinkManager:
                 "explicit": getattr(
                     platform_track,
                     "explicit",
-                    platform_track.get("explicit", False)
-                    if isinstance(platform_track, dict)
-                    else False,
+                    platform_track.get("explicit", False) if isinstance(platform_track, dict) else False,
                 ),
             }
 
@@ -748,23 +790,17 @@ class PlatformLinkManager:
                 "channel_id": getattr(
                     platform_track,
                     "channel_id",
-                    platform_track.get("channel_id", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("channel_id", "") if isinstance(platform_track, dict) else "",
                 ),
                 "channel_title": getattr(
                     platform_track,
                     "channel_title",
-                    platform_track.get("channel_title", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("channel_title", "") if isinstance(platform_track, dict) else "",
                 ),
                 "thumbnail_url": getattr(
                     platform_track,
                     "thumbnail_url",
-                    platform_track.get("thumbnail_url", "")
-                    if isinstance(platform_track, dict)
-                    else "",
+                    platform_track.get("thumbnail_url", "") if isinstance(platform_track, dict) else "",
                 ),
             }
 

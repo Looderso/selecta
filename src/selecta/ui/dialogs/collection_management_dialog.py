@@ -220,9 +220,7 @@ class CollectionManagementDialog(QDialog):
         controls_layout = QHBoxLayout(controls_group)
 
         # Description
-        description = QLabel(
-            "Orphaned tracks are tracks in your Collection that don't appear in any other playlist."
-        )
+        description = QLabel("Orphaned tracks are tracks in your Collection that don't appear in any other playlist.")
         description.setWordWrap(True)
         controls_layout.addWidget(description)
 
@@ -362,12 +360,8 @@ class CollectionManagementDialog(QDialog):
 
                     # Checkbox for selection (first in group is checked by default)
                     checkbox_item = QTableWidgetItem()
-                    checkbox_item.setFlags(
-                        Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
-                    )
-                    checkbox_item.setCheckState(
-                        Qt.CheckState.Checked if is_first_in_group else Qt.CheckState.Unchecked
-                    )
+                    checkbox_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+                    checkbox_item.setCheckState(Qt.CheckState.Checked if is_first_in_group else Qt.CheckState.Unchecked)
                     if is_first_in_group:
                         self.selected_duplicates.add(track_id)
                     checkbox_item.setData(Qt.ItemDataRole.UserRole, track_id)
@@ -386,9 +380,7 @@ class CollectionManagementDialog(QDialog):
 
                     # Duration in minutes:seconds with type checking
                     is_valid_dict = isinstance(track, dict)
-                    duration_ms = (
-                        track["duration_ms"] if is_valid_dict and "duration_ms" in track else 0
-                    )
+                    duration_ms = track["duration_ms"] if is_valid_dict and "duration_ms" in track else 0
                     # Ensure duration_ms is an integer for division
                     is_valid_type = isinstance(duration_ms, int | float | str)
                     duration_ms_int = int(duration_ms) if is_valid_type else 0
@@ -422,10 +414,7 @@ class CollectionManagementDialog(QDialog):
                         # Check if similarity can be converted to a number
                         try:
                             # First check if similarity is not None before conversion
-                            if similarity is not None:
-                                similarity_pct = int(float(similarity) * 100)
-                            else:
-                                similarity_pct = 0
+                            similarity_pct = int(float(similarity) * 100) if similarity is not None else 0
                         except (ValueError, TypeError):
                             similarity_pct = 0
 
@@ -435,9 +424,7 @@ class CollectionManagementDialog(QDialog):
                             if item is not None:
                                 item.setToolTip(f"Similarity: {similarity_pct}%")
                                 item.setBackground(
-                                    Qt.GlobalColor.darkGreen
-                                    if similarity_pct > 90
-                                    else Qt.GlobalColor.darkBlue
+                                    Qt.GlobalColor.darkGreen if similarity_pct > 90 else Qt.GlobalColor.darkBlue
                                 )
 
                     row += 1
@@ -522,9 +509,7 @@ class CollectionManagementDialog(QDialog):
                 self.orphans_table.setItem(row, 3, QTableWidgetItem(album))
 
                 # Duration in minutes:seconds with type checking
-                duration_ms = (
-                    track["duration_ms"] if is_valid_dict and "duration_ms" in track else 0
-                )
+                duration_ms = track["duration_ms"] if is_valid_dict and "duration_ms" in track else 0
 
                 # Ensure duration_ms is valid for integer operations
                 try:
@@ -566,8 +551,7 @@ class CollectionManagementDialog(QDialog):
                 QMessageBox.information(
                     self,
                     "No Orphaned Tracks",
-                    "No orphaned tracks found. "
-                    "All tracks in your Collection are in at least one playlist.",
+                    "No orphaned tracks found. " "All tracks in your Collection are in at least one playlist.",
                 )
 
         except Exception as e:
@@ -766,16 +750,8 @@ class CollectionManagementDialog(QDialog):
                             continue
 
                         # Merge platform info
-                        keep_id = (
-                            keep_track["id"]
-                            if isinstance(keep_track, dict) and "id" in keep_track
-                            else 0
-                        )
-                        merge_id = (
-                            merge_track["id"]
-                            if isinstance(merge_track, dict) and "id" in merge_track
-                            else 0
-                        )
+                        keep_id = keep_track["id"] if isinstance(keep_track, dict) and "id" in keep_track else 0
+                        merge_id = merge_track["id"] if isinstance(merge_track, dict) and "id" in merge_track else 0
 
                         self._merge_track_platforms(keep_id, merge_id)
 
@@ -872,10 +848,7 @@ class CollectionManagementDialog(QDialog):
                             uri=uri,
                             metadata=metadata,
                         )
-                        logger.info(
-                            f"Added {platform} info from track {merge_track_id_int} "
-                            f"to {keep_track_id_int}"
-                        )
+                        logger.info(f"Added {platform} info from track {merge_track_id_int} " f"to {keep_track_id_int}")
 
         except Exception as e:
             logger.exception(f"Error merging track platforms: {e}")
@@ -979,9 +952,7 @@ class CollectionManagementDialog(QDialog):
 
             # Check if playlist was created successfully
             if new_playlist is None or not hasattr(new_playlist, "id"):
-                QMessageBox.critical(
-                    self, "Error", "Failed to create playlist: invalid playlist object"
-                )
+                QMessageBox.critical(self, "Error", "Failed to create playlist: invalid playlist object")
                 return
 
             # Add selected tracks to the playlist
@@ -1066,9 +1037,7 @@ class CollectionManagementDialog(QDialog):
                     continue
 
             # Show success message
-            QMessageBox.information(
-                self, "Removal Complete", f"Removed {removed_count} tracks from your Collection."
-            )
+            QMessageBox.information(self, "Removal Complete", f"Removed {removed_count} tracks from your Collection.")
 
             # Emit signal that collection was modified
             self.collection_modified.emit()

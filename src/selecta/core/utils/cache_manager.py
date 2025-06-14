@@ -43,18 +43,19 @@ class CacheManager:
         """
         self._cache[key] = CacheEntry(data, time.time())
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None, ignore_expiry: bool = False) -> Any:
         """Get cached data if it exists and is valid.
 
         Args:
             key: Cache key
             default: Value to return if cache miss or invalid
+            ignore_expiry: If True, return data even if expired
 
         Returns:
             Cached data or default value
         """
         entry = self._cache.get(key)
-        if entry and not self._is_expired(entry, self.default_timeout):
+        if entry and (ignore_expiry or not self._is_expired(entry, self.default_timeout)):
             return entry.data
         return default
 
@@ -86,6 +87,17 @@ class CacheManager:
 
         check_timeout = timeout if timeout is not None else self.default_timeout
         return not self._is_expired(entry, check_timeout)
+
+    def has(self, key: str) -> bool:
+        """Check if the cache has data for a key, regardless of expiry.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            True if data exists, False otherwise
+        """
+        return key in self._cache
 
     def invalidate(self, key: str) -> None:
         """Remove an item from the cache.

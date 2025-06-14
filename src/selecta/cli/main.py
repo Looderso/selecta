@@ -5,8 +5,10 @@ import click
 from selecta.cli.database import database
 from selecta.cli.discogs import discogs
 from selecta.cli.env import env
+from selecta.cli.integration_test import integration_test
 from selecta.cli.rekordbox import rekordbox
 from selecta.cli.spotify import spotify
+from selecta.cli.test import test
 
 
 @click.group()
@@ -22,6 +24,8 @@ cli.add_command(spotify)
 cli.add_command(discogs)
 cli.add_command(rekordbox)
 cli.add_command(database)
+cli.add_command(test)
+cli.add_command(integration_test)
 
 
 @cli.command(help="Print shell completion instructions")

@@ -1,0 +1,1 @@
+"""Discogs platform tests."""

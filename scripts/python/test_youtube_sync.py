@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test script for YouTube synchronization.
+
 This script tests importing a YouTube playlist into the local database.
 """
 
@@ -48,14 +49,10 @@ def main():
     # Display playlists
     logger.info(f"Found {len(playlists)} playlists:")
     for i, playlist in enumerate(playlists[:5]):  # Show first 5 playlists
-        logger.info(
-            f"  {i+1}. {playlist.title} (ID: {playlist.id}, Videos: {playlist.video_count})"
-        )
+        logger.info(f"  {i+1}. {playlist.title} (ID: {playlist.id}, Videos: {playlist.video_count})")
 
     # Ask user to select a playlist to import
-    selection = input(
-        "\nEnter the number of the playlist to import (or press Enter to skip import test): "
-    )
+    selection = input("\nEnter the number of the playlist to import (or press Enter to skip import test): ")
     if selection and selection.isdigit() and 1 <= int(selection) <= len(playlists):
         selected_playlist = playlists[int(selection) - 1]
         logger.info(f"Selected playlist: {selected_playlist.title}")
@@ -64,36 +61,22 @@ def main():
         logger.info(f"Importing playlist {selected_playlist.title} to local database...")
         try:
             with get_db_session() as session:
-                playlist, tracks = import_youtube_playlist(
-                    youtube_client, selected_playlist.id, session
-                )
-                logger.info(
-                    f"Successfully imported playlist '{playlist.name}' with {len(tracks)} tracks"
-                )
+                playlist, tracks = import_youtube_playlist(youtube_client, selected_playlist.id, session)
+                logger.info(f"Successfully imported playlist '{playlist.name}' with {len(tracks)} tracks")
 
                 # Try exporting the playlist back to YouTube
-                export_test = input(
-                    "\nDo you want to test exporting this playlist back to YouTube? (y/n): "
-                )
+                export_test = input("\nDo you want to test exporting this playlist back to YouTube? (y/n): ")
                 if export_test.lower() == "y":
                     logger.info(f"Exporting playlist '{playlist.name}' to YouTube...")
-                    youtube_playlist_id = export_playlist_to_youtube(
-                        youtube_client, playlist.id, session=session
-                    )
-                    logger.info(
-                        f"Successfully exported playlist to YouTube (ID: {youtube_playlist_id})"
-                    )
+                    youtube_playlist_id = export_playlist_to_youtube(youtube_client, playlist.id, session=session)
+                    logger.info(f"Successfully exported playlist to YouTube (ID: {youtube_playlist_id})")
 
                     # Try syncing the playlist
                     sync_test = input("\nDo you want to test syncing this playlist? (y/n): ")
                     if sync_test.lower() == "y":
                         logger.info(f"Syncing playlist '{playlist.name}' with YouTube...")
-                        added, removed = sync_youtube_playlist(
-                            youtube_client, playlist.id, session=session
-                        )
-                        logger.info(
-                            f"Sync complete: Added {added} tracks, removed {removed} tracks"
-                        )
+                        added, removed = sync_youtube_playlist(youtube_client, playlist.id, session=session)
+                        logger.info(f"Sync complete: Added {added} tracks, removed {removed} tracks")
 
         except Exception as e:
             logger.error(f"Error during YouTube sync test: {e}")
