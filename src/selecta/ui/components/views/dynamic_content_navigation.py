@@ -32,9 +32,14 @@ class DynamicContentNavigationBar(QWidget):
         self.search_button.setCheckable(True)
         self.search_button.clicked.connect(lambda: self._on_view_selected("search"))
 
+        self.sync_button = QPushButton("Sync")
+        self.sync_button.setCheckable(True)
+        self.sync_button.clicked.connect(lambda: self._on_view_selected("sync"))
+
         # Add buttons to layout
         layout.addWidget(self.details_button)
         layout.addWidget(self.search_button)
+        layout.addWidget(self.sync_button)
         layout.addStretch(1)
 
         # Set initial state
@@ -49,6 +54,7 @@ class DynamicContentNavigationBar(QWidget):
         # Update button states
         self.details_button.setChecked(view_name == "details")
         self.search_button.setChecked(view_name == "search")
+        self.sync_button.setChecked(view_name == "sync")
 
         # Update current view
         self._current_view = view_name

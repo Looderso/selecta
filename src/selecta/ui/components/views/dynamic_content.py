@@ -18,6 +18,7 @@ from selecta.core.utils.worker import ThreadManager
 from selecta.ui.components.common.selection_state import SelectionState
 from selecta.ui.components.search.search_panel import SearchPanel
 from selecta.ui.components.search.search_platform_tabs import SearchPlatformTabs
+from selecta.ui.components.sync.sync_center import SyncCenter
 from selecta.ui.components.views.dynamic_content_navigation import DynamicContentNavigationBar
 from selecta.ui.components.views.playlist_details_panel import PlaylistDetailsPanel
 from selecta.ui.components.views.track_details_panel import TrackDetailsPanel
@@ -115,11 +116,15 @@ class DynamicContent(LoadableWidget):
         # Search panel
         self.search_panel = SearchPanel()
 
+        # Sync center
+        self.sync_center = SyncCenter()
+
         # Add panels to stacked widget
         self.stack.addWidget(self.track_details_panel)
         self.stack.addWidget(self.playlist_details_panel)
         self.stack.addWidget(self.empty_panel)
         self.stack.addWidget(self.search_panel)
+        self.stack.addWidget(self.sync_center)
 
         # Set initial state
         self.stack.setCurrentWidget(self.empty_panel)
@@ -143,6 +148,10 @@ class DynamicContent(LoadableWidget):
 
             # Set current search platform
             self.search_panel.set_platform(self._current_search_platform)
+        elif view_name == "sync":
+            # Show sync center
+            self.search_platform_tabs.setVisible(False)
+            self.stack.setCurrentWidget(self.sync_center)
 
     def _on_search_platform_changed(self, platform_name: str) -> None:
         """Handle search platform change.
